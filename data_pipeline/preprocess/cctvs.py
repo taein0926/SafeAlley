@@ -76,7 +76,7 @@ def preprocess_cctvs(
     coordinate_present = 0
     coordinate_null = 0
     coordinate_invalid = 0
-    for record in records:
+    for record_index, record in enumerate(records):
         purpose = _text(_pick(record, "purpose"))
         purpose_counts[purpose or "(NULL)"] += 1
         longitude, longitude_error = _coordinate(_pick(record, "longitude"))
@@ -95,7 +95,9 @@ def preprocess_cctvs(
             coordinate_present += 1
 
         canonical = json.dumps(record, ensure_ascii=False, sort_keys=True)
-        source_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+        source_id = hashlib.sha256(
+            f"{record_index}:{canonical}".encode("utf-8")
+        ).hexdigest()[:32]
         normalized.append(
             {
                 "source": "data-go-kr-15096428",

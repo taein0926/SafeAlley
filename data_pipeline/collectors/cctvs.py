@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 
@@ -38,13 +38,10 @@ def collect_cctvs(output_path: Path) -> dict[str, Any]:
     if not service_key:
         raise CctvCollectionError("DATA_GO_KR_SERVICE_KEY is required")
 
-    query = urlencode(
-        {
-            "serviceKey": service_key,
-            "pageNo": 1,
-            "numOfRows": 10000,
-            "type": "json",
-        }
+    # data.go.kr may issue a percent-encoded key. Preserve existing percent escapes
+    # while still safely encoding a decoded key.
+    query = "serviceKey=" + quote(service_key, safe="%") + "&" + urlencode(
+        {"pageNo": 1, "numOfRows": 10000, "type": "json"}
     )
     separator = "&" if "?" in endpoint else "?"
     request = Request(

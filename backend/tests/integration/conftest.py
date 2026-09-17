@@ -6,6 +6,8 @@ from app.db.connection import connect_database
 TEST_SOURCE = "test-fixture"
 TEST_BUILDING_SOURCE = "test-building-fixture"
 TEST_STREETLIGHT_SOURCE = "test-streetlight-fixture"
+TEST_CCTV_SOURCE = "test-cctv-fixture"
+TEST_HELP_POINT_SOURCE = "test-help-point-fixture"
 
 TEST_ROADS = (
     ("test-road-001", "짧고 낮은 길 1", 9001, 9002, 10, "LINESTRING(126.679 37.4608, 126.681 37.4608)"),
@@ -27,6 +29,11 @@ def isolated_test_road_graph():
             cursor.execute(
                 "DELETE FROM streetlights WHERE source = %s",
                 (TEST_STREETLIGHT_SOURCE,),
+            )
+            cursor.execute("DELETE FROM cctvs WHERE source = %s", (TEST_CCTV_SOURCE,))
+            cursor.execute(
+                "DELETE FROM help_points WHERE source = %s",
+                (TEST_HELP_POINT_SOURCE,),
             )
             for source_id, name, source_node, target_node, score, wkt in TEST_ROADS:
                 cursor.execute(
@@ -88,11 +95,18 @@ def isolated_test_road_graph():
                     road_id, segment_index, length_m, geom,
                     nearest_light_distance_m, nearby_light_count,
                     light_density, dark_gap_proxy_m, distance_score,
-                    density_score, gap_score, safety_score, analysis_version
+                    density_score, gap_score, streetlight_score,
+                    nearest_cctv_distance_m, nearby_cctv_count, cctv_density,
+                    cctv_gap_proxy_m, cctv_score,
+                    nearest_help_point_distance_m,
+                    nearest_help_point_category, help_point_score,
+                    safety_score, analysis_version
                 )
                 SELECT
                     id, 0, length_m, geom, 4.5, 2, 1.25, 7.0,
-                    80, 70, 75, 76.5, 'test-v1'
+                    80, 70, 75, 82.0,
+                    12.0, 3, 2.5, 18.0, 68.0,
+                    25.0, 'police', 74.0, 76.5, 'test-composite-v1'
                 FROM road_segments
                 WHERE source = %s
                 """,
@@ -112,6 +126,33 @@ def isolated_test_road_graph():
                 """,
                 (TEST_STREETLIGHT_SOURCE,),
             )
+            cursor.execute(
+                """
+                INSERT INTO cctvs (
+                    source, source_id, management_agency, road_address,
+                    purpose, camera_count, longitude, latitude, geom,
+                    is_safety_cctv
+                ) VALUES (
+                    %s, 'cctv-001', '테스트 기관', '인천광역시 미추홀구',
+                    '방범', 2, 126.6801, 37.4611,
+                    ST_Transform(ST_SetSRID(ST_MakePoint(126.6801, 37.4611), 4326), 5179),
+                    TRUE
+                )
+                """,
+                (TEST_CCTV_SOURCE,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO help_points (
+                    source, external_id, name, category, address, geom
+                ) VALUES (
+                    %s, 'help-001', '테스트 경찰시설', 'police',
+                    '인천광역시 미추홀구',
+                    ST_Transform(ST_SetSRID(ST_MakePoint(126.6802, 37.4612), 4326), 5179)
+                )
+                """,
+                (TEST_HELP_POINT_SOURCE,),
+            )
 
     yield
 
@@ -120,6 +161,11 @@ def isolated_test_road_graph():
             cursor.execute(
                 "DELETE FROM streetlights WHERE source = %s",
                 (TEST_STREETLIGHT_SOURCE,),
+            )
+            cursor.execute("DELETE FROM cctvs WHERE source = %s", (TEST_CCTV_SOURCE,))
+            cursor.execute(
+                "DELETE FROM help_points WHERE source = %s",
+                (TEST_HELP_POINT_SOURCE,),
             )
             cursor.execute("DELETE FROM road_segments WHERE source = %s", (TEST_SOURCE,))
             cursor.execute(
