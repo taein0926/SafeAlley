@@ -1,0 +1,143 @@
+name: safealley
+
+services:
+  database:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-safealley}
+      POSTGRES_USER: ${POSTGRES_USER:-safealley}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safealley-local-only}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} && psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -tAc 'SELECT PostGIS_Version()'"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - private
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-safealley}
+      POSTGRES_USER: ${POSTGRES_USER:-safealley}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safealley-local-only}
+      DB_HOST: ${DB_HOST:-database}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      ROUTE_SNAP_MAX_DISTANCE_M: ${ROUTE_SNAP_MAX_DISTANCE_M:-500}
+      SAFE_ROUTE_DISTANCE_WEIGHT: ${SAFE_ROUTE_DISTANCE_WEIGHT:-1.0}
+      SAFE_ROUTE_RISK_WEIGHT: ${SAFE_ROUTE_RISK_WEIGHT:-5.0}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - public
+      - private
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN:-}
+        VITE_OSM_TILE_URL: ${VITE_OSM_TILE_URL:-https://tile.openstreetmap.org/}
+        VITE_BUILDING_SOURCE: ${VITE_BUILDING_SOURCE:-molit-gis-building}
+        VITE_SHOW_STREETLIGHTS: ${VITE_SHOW_STREETLIGHTS:-true}
+        VITE_SHOW_CCTVS: ${VITE_SHOW_CCTVS:-true}
+        VITE_SHOW_HELP_POINTS: ${VITE_SHOW_HELP_POINTS:-true}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - public
+
+  pipeline:
+    profiles: ["tools"]
+    build:
+      context: ./data_pipeline
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-safealley}
+      POSTGRES_USER: ${POSTGRES_USER:-safealley}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safealley-local-only}
+      DB_HOST: ${DB_HOST:-database}
+      DB_PORT: ${DB_PORT:-5432}
+      SAFETY_STREETLIGHT_WEIGHT: ${SAFETY_STREETLIGHT_WEIGHT:-0.40}
+      SAFETY_CCTV_WEIGHT: ${SAFETY_CCTV_WEIGHT:-0.40}
+      SAFETY_HELP_POINT_WEIGHT: ${SAFETY_HELP_POINT_WEIGHT:-0.20}
+      SAFETY_POPULATION_WEIGHT: ${SAFETY_POPULATION_WEIGHT:-0.20}
+      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      DATA_GO_KR_CCTV_API_URL: ${DATA_GO_KR_CCTV_API_URL:-}
+      SAFETY_CCTV_PURPOSES: ${SAFETY_CCTV_PURPOSES:-}
+      CCTV_SEARCH_RADIUS_M: ${CCTV_SEARCH_RADIUS_M:-30}
+      CCTV_SAMPLE_INTERVAL_M: ${CCTV_SAMPLE_INTERVAL_M:-5}
+      CCTV_CANDIDATE_SEARCH_RADIUS_M: ${CCTV_CANDIDATE_SEARCH_RADIUS_M:-500}
+      CCTV_DISTANCE_WEIGHT: ${CCTV_DISTANCE_WEIGHT:-0.40}
+      CCTV_DENSITY_WEIGHT: ${CCTV_DENSITY_WEIGHT:-0.30}
+      CCTV_GAP_WEIGHT: ${CCTV_GAP_WEIGHT:-0.30}
+      OVERPASS_API_URL: ${OVERPASS_API_URL:-https://overpass-api.de/api/interpreter}
+      OVERPASS_TIMEOUT_SECONDS: ${OVERPASS_TIMEOUT_SECONDS:-240}
+      OSM_AREA_NAME: ${OSM_AREA_NAME:-미추홀구}
+      OSM_AREA_ADMIN_LEVEL: ${OSM_AREA_ADMIN_LEVEL:-6}
+      OSM_USER_AGENT: ${OSM_USER_AGENT:-SafeAlley-MVP/0.1}
+      OSM_SAFETY_SCORE_MODE: ${OSM_SAFETY_SCORE_MODE:-demo}
+      OSM_DEFAULT_SAFETY_SCORE: ${OSM_DEFAULT_SAFETY_SCORE:-50}
+      OSM_MIN_SEGMENT_LENGTH_M: ${OSM_MIN_SEGMENT_LENGTH_M:-1}
+      STREETLIGHT_SEGMENT_LENGTH_M: ${STREETLIGHT_SEGMENT_LENGTH_M:-20}
+      STREETLIGHT_SEARCH_RADIUS_M: ${STREETLIGHT_SEARCH_RADIUS_M:-30}
+      STREETLIGHT_SAMPLE_INTERVAL_M: ${STREETLIGHT_SAMPLE_INTERVAL_M:-5}
+      STREETLIGHT_CANDIDATE_SEARCH_RADIUS_M: ${STREETLIGHT_CANDIDATE_SEARCH_RADIUS_M:-500}
+      STREETLIGHT_DISTANCE_WEIGHT: ${STREETLIGHT_DISTANCE_WEIGHT:-0.40}
+      STREETLIGHT_DENSITY_WEIGHT: ${STREETLIGHT_DENSITY_WEIGHT:-0.30}
+      STREETLIGHT_GAP_WEIGHT: ${STREETLIGHT_GAP_WEIGHT:-0.30}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - public
+      - private
+    volumes:
+      - ./data_pipeline/raw:/pipeline/raw
+      - ./data_pipeline/processed:/pipeline/processed
+
+volumes:
+  postgis_data:
+
+networks:
+  public:
+  private:
+    internal: true

@@ -1,0 +1,2 @@
+"""SafeAlley FastAPI application."""
+

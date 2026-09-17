@@ -1,0 +1,11 @@
+{
+  "building_id": "BULD_PK",
+  "building_name": "BULD_NM",
+  "address": "PLAT_PLC",
+  "main_use": "MAIN_PURPS_NM",
+  "building_area": "ARCH_AREA",
+  "total_floor_area": "TOT_AREA",
+  "height_m": "HEIGHT",
+  "floors": "GRND_FLR_CNT",
+  "source_updated_at": "GIS_CRET_DAT"
+}

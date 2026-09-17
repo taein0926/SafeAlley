@@ -1,0 +1,11 @@
+{
+  "building_id": "A1",
+  "building_name": "A24",
+  "address": ["A4", "A5"],
+  "main_use": "A9",
+  "building_area": "A12",
+  "total_floor_area": "A14",
+  "height_m": "A16",
+  "floors": "A26",
+  "source_updated_at": "A28"
+}

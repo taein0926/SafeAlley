@@ -1,0 +1,43 @@
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    id: int
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    segment_id: int
+    source_id: str
+    name: str | None
+    from_node_id: int
+    to_node_id: int
+    distance_m: float
+    streetlight_score: float
+    cctv_score: float
+    population_score: float
+    safety_score: float
+    coordinates: tuple[tuple[float, float], ...]
+
+
+@dataclass
+class RoadGraph:
+    nodes: dict[int, GraphNode] = field(default_factory=dict)
+    adjacency: dict[int, list[GraphEdge]] = field(default_factory=dict)
+
+    def add_node(self, node: GraphNode) -> None:
+        self.nodes.setdefault(node.id, node)
+        self.adjacency.setdefault(node.id, [])
+
+    def add_edge(self, edge: GraphEdge) -> None:
+        if edge.from_node_id not in self.nodes or edge.to_node_id not in self.nodes:
+            raise ValueError("Both edge nodes must be added before the edge")
+        if edge.distance_m <= 0:
+            raise ValueError("Edge distance must be greater than zero")
+        self.adjacency[edge.from_node_id].append(edge)
+
+    def neighbors(self, node_id: int) -> tuple[GraphEdge, ...]:
+        return tuple(self.adjacency.get(node_id, ()))
