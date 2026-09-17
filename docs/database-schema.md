@@ -13,6 +13,7 @@
 | `length_m` | `double precision` | PostGIS에서 계산한 미터 길이 |
 | `streetlight_score` | `numeric(5,2)` | 정규화된 가로등 점수, 0–100 |
 | `cctv_score` | `numeric(5,2)` | 정규화된 CCTV 점수, 0–100 |
+| `help_point_score` | `numeric(5,2)` | 비상 안전서비스 상대 접근성 점수, 0–100 |
 | `population_score` | `numeric(5,2)` | 정규화된 유동인구 점수, 0–100 |
 | `safety_score` | `numeric(5,2)` | 세 구성 점수의 가중 평균, 0–100 |
 | `properties` | `jsonb` | 원본 속성 보존 |
@@ -52,3 +53,18 @@
 `road_segments`를 20m 이하로 나눈 분석 전용 `LineString(EPSG:5179)`입니다. `road_id` FK로 원본에 연결되며 원본의 node ID와 geometry는 바꾸지 않습니다. 최근접 거리, 주변 개수·100m 환산 밀도, 5m 샘플의 최대 최근접 거리, 세 percentile 점수와 최종 점수를 저장합니다. `(road_id, segment_index)` unique 및 geometry GiST index를 사용합니다.
 
 두 테이블은 migration `0004`, source-aware KNN 최적화는 `0005`에서 관리합니다.
+
+Migration `0006`은 기존 `road_safety_segments.safety_score`를 `streetlight_score`로 먼저 복사해 보존한 뒤 다음 값을 추가합니다.
+
+- CCTV raw metric: `nearest_cctv_distance_m`, `nearby_cctv_count`, `cctv_density`, `cctv_gap_proxy_m`
+- CCTV component score와 `cctv_score`
+- Help Point 최근접 ID/category/전체 및 category별 거리, `help_point_score`
+- `safety_score`: 세 component의 종합 점수
+
+## cctvs
+
+공식 API의 모든 record를 보존합니다. 좌표가 없거나 잘못된 행은 `geom=NULL`이며 공간분석에서 제외됩니다. 유효 geometry는 `Point(EPSG:5179)`, API 경위도 원문은 별도 컬럼, 원본 속성은 JSONB입니다. `(source, source_id)` unique, geometry GiST 및 유효 방범 CCTV partial index를 사용합니다.
+
+## help_points
+
+AI-ready GeoJSON validation을 통과한 Point만 저장합니다. 이름/category/연락처/원천 메타데이터와 원본 properties JSONB를 보존하고 geometry는 `Point(EPSG:5179)`입니다. `(source, external_id)` unique, geometry GiST, `(source, category)` index를 사용합니다.

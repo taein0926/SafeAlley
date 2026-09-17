@@ -17,5 +17,5 @@ def test_invalid_composite_weights_are_rejected(monkeypatch) -> None:
     monkeypatch.setenv("SAFETY_STREETLIGHT_WEIGHT", "0.5")
     monkeypatch.setenv("SAFETY_CCTV_WEIGHT", "0.5")
     monkeypatch.setenv("SAFETY_HELP_POINT_WEIGHT", "0.5")
-    with pytest.raises(ValueError, match="sum to 1"):
+    with pytest.raises(ValueError, match="add up to 1"):
         SafetyComponentConfig.from_environment()

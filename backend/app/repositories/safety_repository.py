@@ -196,8 +196,8 @@ def list_help_points(
     query = f"""
         SELECT
             id, source, external_id, name, category, subtype, address,
-            phone, emergency_phone, coordinate_source, coordinate_method,
-            source_dataset, data_reference_date,
+            phone, emergency_phone, coordinate_quality, coordinate_status,
+            coordinate_source, source_org, source_dataset, reference_date,
             ST_AsGeoJSON(ST_Transform(geom, 4326), 7)::json AS geometry
         FROM help_points
         {conditions}

@@ -2,7 +2,7 @@
 
 인천광역시 미추홀구를 대상으로 하는 **Digital Twin 기반 안전한 골목 탐색 서비스**의 MVP입니다.
 
-현재 MVP는 OpenStreetMap 보행 도로와 공식 건물 공간정보에 더해, 미추홀구 가로등 5,313개 위치로 계산한 상대적 조명 접근성 분석 구간을 제공합니다.
+현재 MVP는 OpenStreetMap 보행 도로와 공식 건물 공간정보에 더해, 가로등·방범 CCTV·안전시설 접근성의 상대 점수를 독립적으로 저장하고 종합 안전도를 표시하는 구조를 제공합니다. CCTV와 AI-ready 안전시설은 원천 파일/인증 설정 후 배치 적재합니다.
 
 ## 현재 구성
 
@@ -57,6 +57,8 @@ docker compose --profile tools run --build --rm pipeline run-osm
 - Road GeoJSON: http://localhost:8000/api/roads
 - Streetlight safety GeoJSON: http://localhost:8000/api/safety/roads?source=osm
 - Streetlight Point GeoJSON: http://localhost:8000/api/streetlights?source=michuhol-public-data
+- Safety CCTV GeoJSON: http://localhost:8000/api/cctvs?source=data-go-kr-15096428
+- Help Point GeoJSON: http://localhost:8000/api/help-points?source=ai-ready-help-points
 - Building GeoJSON: http://localhost:8000/api/buildings?source=molit-gis-building
 - Shortest route: `POST http://localhost:8000/api/routes/shortest`
 - Safe route: `POST http://localhost:8000/api/routes/safe`
@@ -154,16 +156,41 @@ safety_score   = distance_score * 0.4 + density_score * 0.3 + gap_score * 0.3
 
 이 점수는 국가 공식 안전점수가 아니라 **미추홀구 가로등 공간 분포 내 상대 순위로 만든 프로젝트 자체의 조명 접근성 지표**입니다.
 
-## 경로 안전도와 cost 설정
+## CCTV·AI-ready 안전시설·종합 안전도
 
-도로 안전도는 0–100으로 정규화한 세 값을 가중 평균하여 data pipeline 적재 시 계산합니다.
+CCTV 원천은 공공데이터포털 데이터 ID `15096428`인 `인천광역시 미추홀구 CCTV관리대장목록`입니다. `.env`의 `DATA_GO_KR_CCTV_API_URL`에는 인증된 공식 활용신청 화면에 표시된 요청 URL을, `DATA_GO_KR_SERVICE_KEY`에는 발급받은 키를 넣습니다. 저장소에는 임의 endpoint나 키를 포함하지 않습니다.
+
+먼저 실제 설치목적 값과 건수를 확인한 뒤 그 값만 `SAFETY_CCTV_PURPOSES`에 쉼표로 지정합니다.
+
+```bash
+docker compose --profile tools run --rm pipeline collect-cctvs
+docker compose --profile tools run --rm pipeline preprocess-cctvs
+docker compose --profile tools run --rm pipeline load-cctvs
+```
+
+AI-ready 파일은 다음 위치에 그대로 둡니다. CSV 재병합·geocoding·새 GeoJSON 생성은 하지 않습니다.
 
 ```text
-safety_score = weighted_average(
-  streetlight_score,
-  cctv_score,
-  population_score
-)
+data_pipeline/raw/help_points/help_points_michuhol_routing_ready.geojson
+```
+
+```bash
+docker compose --profile tools run --rm pipeline load-help-points
+docker compose --profile tools run --rm pipeline analyze-safety-components
+```
+
+공간 계산은 EPSG:5179(m), API GeoJSON은 EPSG:4326입니다. CCTV 점수는 최근접 거리·30m 밀도·5m 표본 공백 대리값의 상대 순위이고, Help Point 점수는 최근접 유효 Point 거리의 상대 순위입니다.
+
+```text
+cctv_score = cctv_distance_score * 0.4
+           + cctv_density_score  * 0.3
+           + cctv_gap_score      * 0.3
+
+help_point_score = 100 * (1 - percentile_rank(nearest_help_point_distance_m))
+
+safety_score = streetlight_score * 0.4
+             + cctv_score        * 0.4
+             + help_point_score  * 0.2
 
 risk = (100 - safety_score) / 100
 safe_cost = distance_m * distance_weight
@@ -172,7 +199,7 @@ safe_cost = distance_m * distance_weight
 
 가중치는 `.env`의 다음 항목에서 변경합니다.
 
-- `SAFETY_STREETLIGHT_WEIGHT`, `SAFETY_CCTV_WEIGHT`, `SAFETY_POPULATION_WEIGHT`
+- `SAFETY_STREETLIGHT_WEIGHT`, `SAFETY_CCTV_WEIGHT`, `SAFETY_HELP_POINT_WEIGHT`
 - `SAFE_ROUTE_DISTANCE_WEIGHT`, `SAFE_ROUTE_RISK_WEIGHT`
 
 안전도 구성 가중치를 변경한 뒤에는 pipeline을 다시 실행하여 DB의 `safety_score`를 갱신해야 합니다. 경로 cost 가중치는 backend 재시작 후 바로 적용됩니다.
@@ -217,13 +244,10 @@ PostGIS road_segments        -> FastAPI /api/roads ---------+
 PostGIS road_safety_segments -> FastAPI /api/safety/roads --+
 PostGIS streetlights         -> FastAPI /api/streetlights ---+-> Browser/CesiumJS overlay
 PostGIS buildings            -> FastAPI /api/buildings ------+
+PostGIS cctvs                -> FastAPI /api/cctvs -----------+
+PostGIS help_points          -> FastAPI /api/help-points -----+
 ```
 
 OSM 타일은 FastAPI나 Nginx의 `/api` 프록시를 거치지 않습니다. 공용 OSM 타일은 개발·PT 수준의 대화형 지도에만 사용하고, 서비스 트래픽이 커지면 OSM Tile Usage Policy에 맞는 별도 제공자를 선택해야 합니다.
 
-## 현재 범위 밖
-
-- CCTV/유동인구 공공데이터 수집
-- i-Map 자체 배포 건물 데이터와의 직접 연계
-- 실제 경로 비교 UI
-- 시간대별 유동인구와 실제 가로등/CCTV 공간 결합
+현재 CCTV 설치목적별 실제 건수와 Help Point category별 실제 건수는 원천 접근 설정/파일이 없으므로 문서에 임의로 기입하지 않습니다. 각 배치 명령이 실제 통계를 출력합니다.

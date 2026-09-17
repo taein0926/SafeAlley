@@ -65,7 +65,7 @@ docker compose --profile tools run --rm pipeline load-osm
 
 `OSM_SAFETY_SCORE_MODE=demo`에서는 PT 시각화를 위해 `source_id` 기반의 재현 가능한 의사난수로 빨강(20–54), 노랑(55–74), 초록(75–100) 점수를 대략 균등하게 배정합니다. 매번 pipeline을 실행해도 같은 segment는 같은 점수를 받습니다. `uniform` 모드에서는 `OSM_DEFAULT_SAFETY_SCORE`가 적용됩니다. 실제 안전 데이터를 연결하기 전에는 이 값을 분석이나 의사결정에 사용하면 안 됩니다.
 
-안전도 구성 가중치는 루트 `.env`의 `SAFETY_STREETLIGHT_WEIGHT`, `SAFETY_CCTV_WEIGHT`, `SAFETY_POPULATION_WEIGHT`에서 관리합니다. 값을 바꾼 뒤 위 명령을 다시 실행해야 저장된 `safety_score`가 갱신됩니다.
+안전도 구성 가중치는 루트 `.env`의 `SAFETY_STREETLIGHT_WEIGHT`, `SAFETY_CCTV_WEIGHT`, `SAFETY_HELP_POINT_WEIGHT`에서 관리합니다. 값을 바꾼 뒤 분석 명령을 다시 실행해야 저장된 `safety_score`가 갱신됩니다.
 
 테스트:
 
@@ -119,3 +119,29 @@ docker compose --profile tools run --build --rm pipeline run-buildings \
 ```
 
 `--source-encoding`은 `.cpg`가 없는 SHP의 DBF 문자 인코딩을 명시합니다. 필드 매핑의 배열 값은 여러 원본 필드를 공백으로 연결하며, 이 파일에서는 `A4` 법정동명과 `A5` 지번으로 주소를 만듭니다.
+
+## CCTV와 AI-ready Help Point
+
+CCTV 공식 원천은 공공데이터포털 데이터 ID `15096428`입니다. 활용신청 후 확인한 요청 URL과 키를 각각 `DATA_GO_KR_CCTV_API_URL`, `DATA_GO_KR_SERVICE_KEY`에 설정합니다. collector는 임의 endpoint를 기본값으로 사용하지 않습니다.
+
+```bash
+docker compose --profile tools run --rm pipeline collect-cctvs
+docker compose --profile tools run --rm pipeline preprocess-cctvs
+```
+
+`preprocess-cctvs`가 출력한 실제 `purpose_counts`를 검토한 뒤에만 `SAFETY_CCTV_PURPOSES`를 설정합니다. 모든 원본 record를 `cctvs`에 보존하되 유효 좌표와 일치 목적을 가진 행만 `is_safety_cctv=true`로 분석합니다.
+
+Help Point operational source는 아래 단일 GeoJSON입니다.
+
+```text
+raw/help_points/help_points_michuhol_routing_ready.geojson
+```
+
+```bash
+docker compose --profile tools run --rm pipeline load-help-points
+docker compose --profile tools run --rm pipeline analyze-safety-components
+```
+
+validation은 Point geometry의 `[longitude, latitude]`를 source of truth로 사용합니다. 좌표 누락·비 Point·비수치·범위 오류 Feature는 이유와 식별자를 출력하고 제외하며 나머지 pipeline은 계속됩니다. properties는 JSONB로 보존합니다.
+
+`analyze-safety-components`는 CCTV 최근접 거리·30m 개수/밀도·5m 표본 공백 대리값과 Help Point 최근접 거리를 EPSG:5179에서 계산합니다. 결과는 `road_safety_segments`의 component/raw metric에 독립 저장되고, 종합 점수는 기본 `0.4 * streetlight + 0.4 * cctv + 0.2 * help_point`입니다. 이 값들은 공식 안전등급이나 CCTV 촬영범위를 뜻하지 않습니다.

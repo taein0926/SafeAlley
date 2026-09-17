@@ -53,22 +53,30 @@ function App() {
   }, []);
 
   const systemReady = health.kind === "ready" && roads.kind === "ready";
+  const componentDataReady =
+    roads.kind === "ready" && roads.cctvCount > 0 && roads.helpPointCount > 0;
 
   return (
     <main className="app-shell">
       <CesiumRoadMap onStatusChange={handleRoadStatus} />
 
       <aside className="map-panel">
-        <p className="eyebrow">MICHUHOL-GU · COMPOSITE SAFETY</p>
+        <p className="eyebrow">MICHUHOL-GU · COMPOSITE SAFETY READY</p>
         <h1>SafeAlley</h1>
         <p className="description">
           OpenStreetMap 위에 PostGIS 도로와 건물 공간정보를 표시합니다.
-          도로 색상은 가로등·방범 CCTV·안전시설 접근성을 합산한 상대 안전지표입니다.
+          신규 원천 적재·분석 후 도로 색상은 가로등·방범 CCTV·안전시설 접근성을 합산한 상대 안전지표를 사용합니다.
         </p>
 
         <div className="status-row">
           <span className={`indicator ${systemReady ? "indicator--ready" : ""}`} />
-          <span>{systemReady ? "전체 데이터 흐름 정상" : "데이터 흐름 확인 중"}</span>
+          <span>
+            {systemReady
+              ? componentDataReady
+                ? "종합 안전도 데이터 흐름 정상"
+                : "기존 레이어 정상 · 신규 원천 적재 대기"
+              : "데이터 흐름 확인 중"}
+          </span>
         </div>
 
         <dl className="service-list">
@@ -131,6 +139,7 @@ function App() {
         </div>
 
         <div className="facility-legend" aria-label="시설 레이어 범례">
+          <span><i className="facility-streetlight" />가로등</span>
           <span><i className="facility-cctv" />방범 CCTV</span>
           <span><i className="facility-police" />경찰</span>
           <span><i className="facility-fire" />소방</span>

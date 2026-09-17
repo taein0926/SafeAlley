@@ -408,6 +408,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
                 ["설치 목적", feature.properties.purpose],
                 ["카메라 수", feature.properties.camera_count],
                 ["촬영 방면", feature.properties.direction_info],
+                ["설치 연월", feature.properties.installed_at],
                 ["주소", feature.properties.road_address ?? feature.properties.parcel_address],
                 ["관리 기관", feature.properties.management_agency],
               ],
@@ -433,7 +434,9 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
                 ["세부 유형", feature.properties.subtype],
                 ["주소", feature.properties.address],
                 ["전화", feature.properties.phone ?? feature.properties.emergency_phone],
+                ["원천 기관", feature.properties.source_org],
                 ["출처", feature.properties.source_dataset ?? feature.properties.source],
+                ["기준일", feature.properties.reference_date],
               ],
             ),
           });

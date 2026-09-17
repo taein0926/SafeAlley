@@ -49,4 +49,4 @@ def test_help_point_validation_uses_geometry_and_reports_exact_exclusions(tmp_pa
         "not_point",
         "geometry_null",
     ]
-    assert len(stats["warnings"]) == 1
+    assert len(stats["warnings"]) == 2

@@ -192,6 +192,7 @@ h1 {
   border-radius: 50%;
 }
 
+.facility-streetlight { background: #fff4a8; }
 .facility-cctv { background: #38dce8; }
 .facility-police { background: #4b8dff; }
 .facility-fire { background: #ff5b5b; }
