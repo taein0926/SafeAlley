@@ -59,11 +59,11 @@ function App() {
       <CesiumRoadMap onStatusChange={handleRoadStatus} />
 
       <aside className="map-panel">
-        <p className="eyebrow">MICHUHOL-GU · STREETLIGHT SAFETY</p>
+        <p className="eyebrow">MICHUHOL-GU · COMPOSITE SAFETY</p>
         <h1>SafeAlley</h1>
         <p className="description">
           OpenStreetMap 위에 PostGIS 도로와 건물 공간정보를 표시합니다.
-          도로 색상은 가로등 위치에서 계산한 상대 안전지표입니다.
+          도로 색상은 가로등·방범 CCTV·안전시설 접근성을 합산한 상대 안전지표입니다.
         </p>
 
         <div className="status-row">
@@ -104,6 +104,22 @@ function App() {
               {roads.kind === "error" && roads.message}
             </dd>
           </div>
+          <div>
+            <dt>Safety CCTV GeoJSON</dt>
+            <dd>
+              {roads.kind === "ready" && `${roads.cctvCount}개 point · EPSG:4326`}
+              {roads.kind === "loading" && "불러오는 중"}
+              {roads.kind === "error" && roads.message}
+            </dd>
+          </div>
+          <div>
+            <dt>Help Point GeoJSON</dt>
+            <dd>
+              {roads.kind === "ready" && `${roads.helpPointCount}개 point · EPSG:4326`}
+              {roads.kind === "loading" && "불러오는 중"}
+              {roads.kind === "error" && roads.message}
+            </dd>
+          </div>
         </dl>
 
         <div className="legend" aria-label="가로등 접근 안전도 범례">
@@ -114,8 +130,15 @@ function App() {
           <span><i className="legend-vlow" />0–19</span>
         </div>
 
+        <div className="facility-legend" aria-label="시설 레이어 범례">
+          <span><i className="facility-cctv" />방범 CCTV</span>
+          <span><i className="facility-police" />경찰</span>
+          <span><i className="facility-fire" />소방</span>
+          <span><i className="facility-medical" />응급의료</span>
+        </div>
+
         <p className="disclaimer">
-          이 점수는 미추홀구 가로등 데이터 내 거리·밀도·공백의 상대 순위를 합산한 분석지표이며,
+          이 점수는 가로등·CCTV·안전시설 거리와 밀도의 상대 순위를 합산한 분석지표이며,
           범죄 위험이나 공식 안전등급을 의미하지 않습니다. OSM 데이터 ©{" "}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors

@@ -171,6 +171,32 @@ h1 {
 .legend-low { background: #ff9f43; }
 .legend-vlow { background: #ff5c70; }
 
+.facility-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: #a8c1bc;
+  font-size: 0.7rem;
+}
+
+.facility-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.facility-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.facility-cctv { background: #38dce8; }
+.facility-police { background: #4b8dff; }
+.facility-fire { background: #ff5b5b; }
+.facility-medical { background: #46df88; }
+
 .disclaimer {
   margin: 16px 0 0;
   color: #718e89;
