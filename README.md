@@ -164,6 +164,24 @@ Content-Type: application/json
 
 Tool 이름은 allowlist로 제한되고, 추가 JSON 필드와 임의 Tool 이름은 HTTP 422로 거부됩니다. 지표를 확장할 때는 Tool을 새로 늘리는 대신 `backend/app/services/route_metrics.py`의 registry에 검증된 계산 함수를 등록합니다.
 
+### 로컬 LLM 자연어 입력
+
+`POST /api/agent/query`는 자연어와 별도로 전달된 출발·도착 좌표를 받습니다. 로컬 Ollama의 `qwen3:4b`가 자연어에서 출발 시각과 경로 선호조건만 Structured Output으로 추출하고, 좌표는 모델에 맡기지 않습니다. 검증된 결과는 동일한 Tool Router로 전달됩니다.
+
+```http
+POST /api/agent/query
+Content-Type: application/json
+
+{
+  "query": "밤 10시에 가로등과 CCTV가 많은 길로 안내해줘",
+  "origin": {"latitude": 37.4608, "longitude": 126.6790},
+  "destination": {"latitude": 37.4623, "longitude": 126.6830},
+  "source": "osm"
+}
+```
+
+Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=120`입니다. 모델 연결 실패는 HTTP 503, 스키마에 맞지 않는 출력은 HTTP 502로 반환합니다. 오류가 발생해도 규칙 Parser로 조용히 대체하지 않습니다. 장소명 지오코딩은 이 API의 범위가 아니므로 클라이언트가 WGS84 좌표를 함께 전달해야 합니다.
+
 ## 가로등 기반 상대 안전지표
 
 원본 `data_pipeline/raw/streetlights/인천광역시 미추홀구_가로등_20240806.csv`는 CP949, WGS84 좌표의 5,313개 가로등입니다. 원본과 처리 산출물은 Git에서 제외됩니다. 전체 파이프라인은 다음 명령으로 다시 실행합니다.

@@ -71,3 +71,53 @@ class AgentExecutionResponse(BaseModel):
     selected_route: RouteFeature | None
     candidates: list[RouteCandidate]
     unsupported_preferences: list[UnsupportedPreference]
+
+
+class ParsedRouteIntent(BaseModel):
+    """Fields the local LLM may infer from natural language."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    departure_time: time | None = None
+    profile: Literal["pedestrian"] = "pedestrian"
+    preferences: list[RoutePreference] = Field(default_factory=list, max_length=20)
+
+    @field_validator("departure_time")
+    @classmethod
+    def normalize_local_departure_time(cls, value: time | None) -> time | None:
+        if value is None or value.tzinfo is None:
+            return value
+        return value.replace(tzinfo=None)
+
+    @field_validator("preferences")
+    @classmethod
+    def reject_duplicate_intent_factors(
+        cls,
+        preferences: list[RoutePreference],
+    ) -> list[RoutePreference]:
+        factors = [preference.factor for preference in preferences]
+        if len(factors) != len(set(factors)):
+            raise ValueError("preference factors must be unique")
+        reserved = {"departure_time", "profile", "origin", "destination", "source"}
+        invalid = reserved.intersection(factors)
+        if invalid:
+            raise ValueError(
+                f"request fields cannot be route preference factors: {sorted(invalid)}"
+            )
+        return preferences
+
+
+class NaturalLanguageQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=1000)
+    origin: AgentCoordinateInput
+    destination: AgentCoordinateInput
+    source: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class NaturalLanguageQueryResponse(BaseModel):
+    query: str
+    model: str
+    interpretation: ParsedRouteIntent
+    result: AgentExecutionResponse
