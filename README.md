@@ -134,6 +134,36 @@ Content-Type: application/json
 
 입력 좌표에서 가장 가까운 그래프 노드를 찾으며 도로 graph에서 너무 먼 좌표는 `ROUTE_SNAP_MAX_DISTANCE_M` 기준으로 거부합니다.
 
+## Structured Output과 Tool Router
+
+`POST /api/agent/execute`는 LLM 또는 규칙 Parser가 만든 JSON을 Pydantic으로 검증한 뒤, 명시적으로 등록된 GIS Tool만 실행합니다. 이 엔드포인트가 자연어를 직접 해석하거나 SQL을 실행하지는 않습니다.
+
+```http
+POST /api/agent/execute
+Content-Type: application/json
+
+{
+  "tool": "rank_routes",
+  "arguments": {
+    "origin": {"latitude": 37.4608, "longitude": 126.6790},
+    "destination": {"latitude": 37.4623, "longitude": 126.6830},
+    "departure_time": "22:00:00",
+    "profile": "pedestrian",
+    "source": "osm",
+    "preferences": [
+      {"factor": "distance_m", "direction": "minimize", "weight": 1},
+      {"factor": "streetlight_score", "direction": "maximize", "weight": 3}
+    ]
+  }
+}
+```
+
+현재 검증된 평가 지표는 `distance_m`, `safety_score`, `streetlight_score`, `cctv_score`입니다. `population_score`는 실제 유동인구 데이터가 적재되기 전까지 지원 지표로 노출하지 않습니다. Router는 경로 후보 생성과 지표 기반 순위 평가를 분리하며, 후보마다 요청 지표가 모두 존재할 때만 점수를 계산합니다. 등록됐더라도 데이터가 없는 지표와 `crosswalk_count`, `stairs`, `slope`, `police_accessibility` 같은 미등록 조건은 다른 값이나 0점으로 대체하지 않고 `unsupported_preferences`로 반환합니다. 모든 요청 조건이 미지원이면 후보는 반환하되 최종 경로는 선택하지 않습니다.
+
+`departure_time`이 20:00 이상 또는 06:00 미만이면 야간 정책을 적용합니다. 사용자가 조건을 생략한 야간 요청은 거리와 함께 안전도·가로등·CCTV를 기본 평가하고, 사용자가 지정한 안전 관련 조건에도 야간 가중치를 적용합니다. 주간에 조건을 생략하면 최단거리를 기본값으로 사용합니다. 이는 실시간 유동인구나 운영 여부를 추정하는 기능이 아니라 입력 시각에 따른 명시적 경로 평가 정책입니다.
+
+Tool 이름은 allowlist로 제한되고, 추가 JSON 필드와 임의 Tool 이름은 HTTP 422로 거부됩니다. 지표를 확장할 때는 Tool을 새로 늘리는 대신 `backend/app/services/route_metrics.py`의 registry에 검증된 계산 함수를 등록합니다.
+
 ## 가로등 기반 상대 안전지표
 
 원본 `data_pipeline/raw/streetlights/인천광역시 미추홀구_가로등_20240806.csv`는 CP949, WGS84 좌표의 5,313개 가로등입니다. 원본과 처리 산출물은 Git에서 제외됩니다. 전체 파이프라인은 다음 명령으로 다시 실행합니다.
