@@ -58,6 +58,13 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     cctv_score=segment.cctv_score,
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
+                    streetlight_data_available=segment.streetlight_data_available,
+                    walkability_factor=segment.walkability_factor,
+                    crossing_node_ids=segment.crossing_node_ids,
+                    sidewalk_confirmed=segment.sidewalk_confirmed,
+                    incline_percent=segment.incline_percent,
+                    walkability_class=segment.walkability_class,
+                    field_status=segment.field_status,
                     coordinates=segment.coordinates,
                     highway=segment.highway,
                     is_steps=segment.is_steps,
@@ -81,6 +88,13 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     cctv_score=segment.cctv_score,
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
+                    streetlight_data_available=segment.streetlight_data_available,
+                    walkability_factor=segment.walkability_factor,
+                    crossing_node_ids=segment.crossing_node_ids,
+                    sidewalk_confirmed=segment.sidewalk_confirmed,
+                    incline_percent=segment.incline_percent,
+                    walkability_class=segment.walkability_class,
+                    field_status=segment.field_status,
                     coordinates=tuple(reversed(segment.coordinates)),
                     highway=segment.highway,
                     is_steps=segment.is_steps,
@@ -134,10 +148,32 @@ def _route_feature(
     result: PathResult,
     start_node: NearestRoadNode,
     end_node: NearestRoadNode,
-    route_type: Literal["shortest", "safe"],
+    route_type: Literal["shortest", "balanced", "safe"],
     policy: SafetyCostPolicy,
 ) -> dict[str, object]:
     average_safety_score = _average_safety_score(result)
+    crossing_node_ids = {
+        node_id for edge in result.edges for node_id in edge.crossing_node_ids
+    }
+    stairs_distance_m = sum(
+        edge.distance_m for edge in result.edges if edge.is_steps
+    )
+    sidewalk_distance_m = sum(
+        edge.distance_m for edge in result.edges if edge.sidewalk_confirmed
+    )
+    explicit_slopes = [
+        edge.incline_percent
+        for edge in result.edges
+        if edge.incline_percent is not None
+    ]
+    known_slope_distance_m = sum(
+        edge.distance_m for edge in result.edges if edge.incline_percent is not None
+    )
+    unverified_major_road_ids = sorted({
+        edge.source_id for edge in result.edges
+        if edge.walkability_class == "major_road_fallback"
+        and edge.field_status != "verified_walkable"
+    })
     return {
         "type": "Feature",
         "geometry": {
@@ -165,6 +201,25 @@ def _route_feature(
             "end_node_id": end_node.node_id,
             "start_snap_distance_m": round(start_node.distance_m, 2),
             "end_snap_distance_m": round(end_node.distance_m, 2),
+            "total_crosswalk_count": len(crossing_node_ids),
+            "stairs_distance_m": round(stairs_distance_m, 2),
+            "sidewalk_coverage_percent": round(
+                sidewalk_distance_m / result.total_distance_m * 100, 2
+            ) if result.total_distance_m else 0.0,
+            "slope_coverage_percent": round(
+                known_slope_distance_m / result.total_distance_m * 100, 2
+            ) if result.total_distance_m else 0.0,
+            "review_status": (
+                "needs_field_review" if unverified_major_road_ids else "map_data_only"
+            ),
+            "unverified_major_road_count": len(unverified_major_road_ids),
+            "unverified_major_road_source_ids": unverified_major_road_ids,
+            # A partial DEM must not silently imply the unmeasured route is flat.
+            "max_slope_percent": (
+                round(max(explicit_slopes), 2)
+                if explicit_slopes and len(explicit_slopes) == len(result.edges)
+                else None
+            ),
             "road_segments": [
                 {
                     "id": edge.segment_id,
@@ -184,6 +239,13 @@ def _route_feature(
                     "ramp": edge.ramp,
                     "wheelchair": edge.wheelchair,
                     "handrail": edge.handrail,
+                    "streetlight_data_available": edge.streetlight_data_available,
+                    "walkability_factor": edge.walkability_factor,
+                    "crossing_node_ids": list(edge.crossing_node_ids),
+                    "sidewalk_confirmed": edge.sidewalk_confirmed,
+                    "incline_percent": edge.incline_percent,
+                    "walkability_class": edge.walkability_class,
+                    "field_status": edge.field_status,
                     "distance_factor": round(
                         policy.breakdown(edge).distance_factor,
                         2,
@@ -193,7 +255,11 @@ def _route_feature(
                         policy.breakdown(edge).stairs_penalty,
                         2,
                     ),
-                    "traversal_cost": round(policy.edge_cost(edge), 2),
+                    "traversal_cost": round(
+                        policy.edge_cost(edge)
+                        + edge.distance_m * max(0.0, edge.walkability_factor - 1.0),
+                        2,
+                    ),
                 }
                 for edge in result.edges
             ],
@@ -206,9 +272,10 @@ def _get_route(
     start_latitude: float,
     end_longitude: float,
     end_latitude: float,
-    route_type: Literal["shortest", "safe"],
+    route_type: Literal["shortest", "balanced", "safe"],
     source: str | None = None,
     stairs_weight: float = 0.0,
+    penalized_segment_ids: set[int] | None = None,
 ) -> dict[str, object]:
     start_node = find_nearest_road_node(
         start_longitude,
@@ -232,25 +299,41 @@ def _get_route(
 
     graph = _build_graph(segments)
     settings = get_settings()
-    policy = (
-        SafetyCostPolicy(
+    if route_type == "shortest":
+        policy = SafetyCostPolicy(
             distance_weight=1.0,
             risk_weight=0.0,
             stairs_weight=stairs_weight,
         )
-        if route_type == "shortest"
-        else SafetyCostPolicy(
+    elif route_type == "balanced":
+        policy = SafetyCostPolicy(
+            distance_weight=settings.safe_route_distance_weight,
+            risk_weight=settings.safe_route_risk_weight / 2,
+            stairs_weight=stairs_weight,
+        )
+    else:
+        policy = SafetyCostPolicy(
             distance_weight=settings.safe_route_distance_weight,
             risk_weight=settings.safe_route_risk_weight,
             stairs_weight=stairs_weight,
         )
-    )
+    penalized_segment_ids = penalized_segment_ids or set()
+
+    def route_cost(edge: GraphEdge) -> float:
+        base_cost = (
+            policy.edge_cost(edge)
+            + edge.distance_m * max(0.0, edge.walkability_factor - 1.0)
+        )
+        if edge.segment_id in penalized_segment_ids:
+            return base_cost + edge.distance_m * 10
+        return base_cost
+
     try:
         result = find_path(
             graph=graph,
             start_node_id=start_node.node_id,
             goal_node_id=end_node.node_id,
-            edge_cost=policy.edge_cost,
+            edge_cost=route_cost,
             minimum_cost_per_meter=policy.distance_weight,
         )
     except PathNotFoundError as exc:
@@ -294,4 +377,25 @@ def get_safe_route(
         route_type="safe",
         source=source,
         stairs_weight=stairs_weight,
+    )
+
+
+def get_balanced_route(
+    start_longitude: float,
+    start_latitude: float,
+    end_longitude: float,
+    end_latitude: float,
+    source: str | None = None,
+    stairs_weight: float = 0.0,
+    penalized_segment_ids: set[int] | None = None,
+) -> dict[str, object]:
+    return _get_route(
+        start_longitude,
+        start_latitude,
+        end_longitude,
+        end_latitude,
+        route_type="balanced",
+        source=source,
+        stairs_weight=stairs_weight,
+        penalized_segment_ids=penalized_segment_ids,
     )

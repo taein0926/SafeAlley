@@ -8,6 +8,7 @@ from app.services.route_service import (
     RouteNotFoundError,
     RoutingDataNotFoundError,
     SnapDistanceExceededError,
+    get_balanced_route,
     get_safe_route,
     get_shortest_route,
 )
@@ -45,3 +46,8 @@ def create_shortest_route(request: RouteRequest) -> dict[str, object]:
 @router.post("/safe", response_model=RouteFeature)
 def create_safe_route(request: RouteRequest) -> dict[str, object]:
     return _run_route(request, get_safe_route)
+
+
+@router.post("/balanced", response_model=RouteFeature)
+def create_balanced_route(request: RouteRequest) -> dict[str, object]:
+    return _run_route(request, get_balanced_route)

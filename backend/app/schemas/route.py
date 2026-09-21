@@ -32,12 +32,19 @@ class RouteRoadSegment(BaseModel):
     population_score: float
     safety_score: float
     highway: str | None = None
-    is_steps: bool = False
     step_count: str | None = None
     incline: str | None = None
     ramp: str | None = None
     wheelchair: str | None = None
     handrail: str | None = None
+    streetlight_data_available: bool = True
+    walkability_factor: float = 1.0
+    crossing_node_ids: list[int] = Field(default_factory=list)
+    is_steps: bool = False
+    sidewalk_confirmed: bool = False
+    incline_percent: float | None = None
+    walkability_class: str | None = None
+    field_status: str = "unverified"
     distance_factor: float
     risk_factor: float
     stairs_penalty: float = 0.0
@@ -51,7 +58,7 @@ class RouteCostWeights(BaseModel):
 
 
 class RouteProperties(BaseModel):
-    route_type: Literal["shortest", "safe"]
+    route_type: Literal["shortest", "balanced", "safe"]
     crs: Literal["EPSG:4326"]
     total_distance: float
     total_distance_m: float
@@ -63,6 +70,14 @@ class RouteProperties(BaseModel):
     end_node_id: int
     start_snap_distance_m: float
     end_snap_distance_m: float
+    total_crosswalk_count: int = 0
+    stairs_distance_m: float = 0
+    sidewalk_coverage_percent: float = 0
+    max_slope_percent: float | None = None
+    slope_coverage_percent: float = 0
+    review_status: Literal["needs_field_review", "map_data_only"] = "map_data_only"
+    unverified_major_road_count: int = Field(default=0, ge=0)
+    unverified_major_road_source_ids: list[str] = Field(default_factory=list)
     road_segments: list[RouteRoadSegment]
 
 

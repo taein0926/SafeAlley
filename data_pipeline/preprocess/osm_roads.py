@@ -1,31 +1,33 @@
 import json
 from hashlib import sha256
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, radians, sin, sqrt, tan
 import os
 from pathlib import Path
 from typing import Any
 
 
-WALKABLE_HIGHWAYS = {
+PEDESTRIAN_FIRST_HIGHWAYS = {
     "footway",
     "living_street",
     "path",
     "pedestrian",
-    "primary",
-    "primary_link",
     "residential",
-    "road",
-    "secondary",
-    "secondary_link",
     "service",
     "steps",
-    "tertiary",
-    "tertiary_link",
     "track",
     "unclassified",
 }
+MAJOR_ROAD_HIGHWAYS = {
+    "primary",
+    "primary_link",
+    "secondary",
+    "secondary_link",
+    "tertiary",
+    "tertiary_link",
+}
 DENIED_ACCESS = {"no", "private"}
 EXPLICIT_FOOT_ACCESS = {"yes", "designated", "permissive", "destination"}
+SIDEWALK_ACCESS = {"yes", "both", "left", "right"}
 
 
 class OsmPreprocessError(RuntimeError):
@@ -43,7 +45,61 @@ def _is_walkable(tags: dict[str, str]) -> bool:
         return False
     if highway == "cycleway":
         return False
-    return highway in WALKABLE_HIGHWAYS
+    if highway in PEDESTRIAN_FIRST_HIGHWAYS:
+        return True
+    return highway in MAJOR_ROAD_HIGHWAYS
+
+
+def _has_pedestrian_evidence(tags: dict[str, str]) -> bool:
+    if tags.get("foot", "").lower() in EXPLICIT_FOOT_ACCESS:
+        return True
+    if tags.get("sidewalk", "").lower() in SIDEWALK_ACCESS:
+        return True
+    return any(
+        tags.get(key, "").lower() in SIDEWALK_ACCESS
+        for key in ("sidewalk:left", "sidewalk:right", "sidewalk:both")
+    )
+
+
+def _walkability_factor(tags: dict[str, str]) -> tuple[str, float]:
+    highway = tags.get("highway")
+    if highway in {"footway", "path", "pedestrian", "steps"}:
+        return "pedestrian_only", 1.0
+    if highway == "living_street":
+        return "living_street", 1.05
+    if highway in {"residential", "service", "track", "unclassified"}:
+        return "local_road", 1.15
+    if highway in MAJOR_ROAD_HIGHWAYS and _has_pedestrian_evidence(tags):
+        return "major_road_with_sidewalk", 1.5
+    return "major_road_fallback", 4.0
+
+
+def _sidewalk_status(tags: dict[str, str]) -> str:
+    if tags.get("highway") in {"footway", "path", "pedestrian", "living_street"}:
+        return "dedicated_or_shared_space"
+    values = {
+        tags.get(key, "").lower()
+        for key in ("sidewalk", "sidewalk:left", "sidewalk:right", "sidewalk:both")
+    }
+    if values.intersection(SIDEWALK_ACCESS):
+        return "confirmed"
+    if "no" in values or "none" in values:
+        return "no"
+    return "unknown"
+
+
+def _incline_percent(value: object) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower().replace(" ", "")
+    try:
+        if text.endswith("%"):
+            return abs(float(text[:-1]))
+        if text.endswith("°"):
+            return abs(tan(radians(float(text[:-1]))) * 100)
+        return abs(float(text))
+    except ValueError:
+        return None
 
 
 def _walking_directions(tags: dict[str, str]) -> tuple[bool, bool]:
@@ -114,6 +170,7 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
         raise OsmPreprocessError("Raw OSM document must contain an elements array")
 
     nodes: dict[int, tuple[float, float]] = {}
+    node_tags: dict[int, dict[str, str]] = {}
     ways: list[dict[str, Any]] = []
     for element in elements:
         if element.get("type") == "node":
@@ -125,6 +182,9 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
                 continue
             if -180 <= longitude <= 180 and -90 <= latitude <= 90:
                 nodes[node_id] = (longitude, latitude)
+                tags = element.get("tags")
+                if isinstance(tags, dict):
+                    node_tags.setdefault(node_id, {}).update(tags)
         elif element.get("type") == "way":
             ways.append(element)
 
@@ -143,6 +203,7 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
             continue
 
         walkable_way_count += 1
+        walkability_class, walkability_factor = _walkability_factor(tags)
         forward_allowed, reverse_allowed = _walking_directions(tags)
         way_id = int(way["id"])
         for edge_index, (source_node_id, target_node_id) in enumerate(
@@ -165,6 +226,17 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
             source_id = f"osm-way-{way_id}-edge-{edge_index}"
             safety_score = safety_score_for_segment(source_id, safety_score_mode)
             highway = tags.get("highway")
+            crossing_node_ids = [
+                int(node_id)
+                for node_id in (source_node_id, target_node_id)
+                if node_tags.get(int(node_id), {}).get("highway") == "crossing"
+            ]
+            # A mapped crossing may be a short footway rather than a tagged node.
+            # Negative IDs cannot collide with positive OSM node IDs and are shared
+            # across all edges of the same crossing way for route-level deduplication.
+            if tags.get("footway") == "crossing":
+                crossing_node_ids.append(-way_id)
+            sidewalk_status = _sidewalk_status(tags)
             properties = {
                 "source": "osm",
                 "source_id": source_id,
@@ -187,6 +259,15 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
                 "ramp": tags.get("ramp"),
                 "wheelchair": tags.get("wheelchair"),
                 "handrail": tags.get("handrail"),
+                "walkability_class": walkability_class,
+                "walkability_factor": walkability_factor,
+                "crossing_node_ids": crossing_node_ids,
+                "sidewalk_status": sidewalk_status,
+                "sidewalk_confirmed": sidewalk_status in {
+                    "confirmed",
+                    "dedicated_or_shared_space",
+                },
+                "incline_percent": _incline_percent(tags.get("incline")),
                 "osm_tags": tags,
             }
             features.append(

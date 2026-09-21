@@ -132,7 +132,74 @@ Content-Type: application/json
 
 같은 요청 body를 `POST /api/routes/safe`에도 사용할 수 있습니다. 두 응답은 동일한 구조이며 `route_type`, `total_distance`, `average_safety_score`, `total_cost`, GeoJSON `geometry`, segment별 안전도와 cost 내역을 포함합니다. `total_distance`와 호환 필드 `total_distance_m`의 단위는 m입니다.
 
-입력 좌표에서 가장 가까운 그래프 노드를 찾으며 도로 graph에서 너무 먼 좌표는 `ROUTE_SNAP_MAX_DISTANCE_M` 기준으로 거부합니다.
+입력 좌표에서 가장 가까운 그래프 노드를 찾으며 도로 graph에서 너무 먼 좌표는 `ROUTE_SNAP_MAX_DISTANCE_M` 기준으로 거부합니다. 보행 그래프는 `footway`, `path`, `pedestrian`, `living_street`, 생활·주거·서비스 도로를 우선합니다. `primary`, `secondary`, `tertiary` 및 연결로는 OSM의 보도 태그가 부족한 지역에서 그래프가 끊기지 않도록 fallback으로 유지하되, 보도 또는 명시적 보행 허용 정보가 없으면 비용을 4배로 부여합니다. 따라서 보행자 전용·생활도로가 연결돼 있으면 해당 경로가 먼저 선택됩니다.
+
+## Structured Output과 Tool Router
+
+`POST /api/agent/execute`는 LLM 또는 규칙 Parser가 만든 JSON을 Pydantic으로 검증한 뒤, 명시적으로 등록된 GIS Tool만 실행합니다. 이 엔드포인트가 자연어를 직접 해석하거나 SQL을 실행하지는 않습니다.
+
+```http
+POST /api/agent/execute
+Content-Type: application/json
+
+{
+  "tool": "rank_routes",
+  "arguments": {
+    "origin": {"latitude": 37.4608, "longitude": 126.6790},
+    "destination": {"latitude": 37.4623, "longitude": 126.6830},
+    "departure_time": "22:00:00",
+    "profile": "pedestrian",
+    "source": "osm",
+    "preferences": [
+      {"factor": "distance_m", "direction": "minimize", "weight": 1},
+      {"factor": "streetlight_score", "direction": "maximize", "weight": 3}
+    ]
+  }
+}
+```
+
+현재 검증된 평가 지표는 `distance_m`, `safety_score`, `streetlight_score`, `cctv_score`, `crosswalk_count`, `stairs_distance_m`, `sidewalk_coverage_percent`, `max_slope_percent`입니다. 횡단보도·계단·보도는 OSM 태그를 기반으로 합니다. 가로등은 2022년 인천시 공식 도로시설물 POI의 미추홀구 3,884건을 사용하지만, 현재 점등 여부나 2차선 미만 골목의 전체 조도를 보증하지 않습니다. 경사는 명시적 OSM `incline` 태그 또는 출처가 명시된 고해상도 DEM으로 계산하며, 현재 실제 DEM이 적재되지 않아 미측정 구간은 0으로 추정하지 않습니다. 공식 횡단보도 POI는 별도 테이블에 보존하고, 근접만으로 실제 횡단했다고 판단하지 않습니다. `population_score`는 실제 유동인구 데이터가 적재되기 전까지 지원 지표로 노출하지 않습니다. Router는 경로 후보 생성과 지표 기반 순위 평가를 분리하며, 후보마다 요청 지표가 모두 존재할 때만 점수를 계산합니다. 등록됐더라도 데이터가 없는 지표와 `police_accessibility` 같은 미등록 조건은 다른 값이나 0점으로 대체하지 않고 `unsupported_preferences`로 반환합니다. 모든 요청 조건이 미지원이면 후보는 반환하되 최종 경로는 선택하지 않습니다. 현장 미검증 `major_road_fallback` 구간을 포함한 후보는 최종 추천에서 제외하며, 모든 후보가 해당하면 후보만 보여주고 현장 검토 필요 상태로 응답합니다. 자료 출처와 검증 범위는 [보행 데이터·품질 문서](docs/pedestrian-data-quality.md)에 정리했습니다.
+
+`departure_time`이 20:00 이상 또는 06:00 미만이면 야간 정책을 적용합니다. 사용자가 조건을 생략한 야간 요청은 거리와 함께 안전도·가로등·CCTV를 기본 평가하고, 사용자가 지정한 안전 관련 조건에도 야간 가중치를 적용합니다. 주간에 조건을 생략하면 최단거리를 기본값으로 사용합니다. 이는 실시간 유동인구나 운영 여부를 추정하는 기능이 아니라 입력 시각에 따른 명시적 경로 평가 정책입니다.
+
+### 사용자 선택 기반 경로 개인화
+
+`rank_routes`는 빠른 길(`shortest`), 기존 경로와 겹침을 줄인 균형 길(`balanced`), 안전 길(`safe`) 후보를 생성합니다. `user_id`가 있는 요청은 후보의 지표 요약을 서버에 저장하고 `recommendation_id`를 반환합니다. 사용자가 경로를 선택하면 다음 API로 명시적인 선택을 기록합니다.
+
+```http
+POST /api/agent/route-selections
+Content-Type: application/json
+
+{
+  "recommendation_id": "2666a33d-ea69-43e5-b3ae-fdf9a95fb8f3",
+  "user_id": "anonymous-browser-id",
+  "selected_route_type": "safe"
+}
+```
+
+서버는 클라이언트가 보낸 임의 점수가 아니라 해당 추천 시점에 저장한 후보 지표를 비교하여 `distance_m`, `safety_score`, `streetlight_score`, `cctv_score` 선호를 지수이동평균으로 갱신합니다. 동일 사용자의 관측이 3회 이상 쌓인 지표만 다음 무조건 요청의 가중치로 사용합니다. 현재 요청에 자연어로 명시된 조건은 학습 선호보다 우선합니다.
+
+이 기능에서 `user_id`는 로그인 계정이 아니라 PoC용 가명 식별자입니다. 사람의 성격이나 장애 여부를 추론하지 않고 경로 선택 성향만 저장합니다. 운영 전에는 인증·동의·보존기간·초기화 기능을 추가해야 합니다.
+
+Tool 이름은 allowlist로 제한되고, 추가 JSON 필드와 임의 Tool 이름은 HTTP 422로 거부됩니다. 지표를 확장할 때는 Tool을 새로 늘리는 대신 `backend/app/services/route_metrics.py`의 registry에 검증된 계산 함수를 등록합니다.
+
+### 로컬 LLM 자연어 입력
+
+`POST /api/agent/query`는 한 문장에서 출발 장소, 도착 장소, 출발 시각, 경로 선호조건을 로컬 Ollama의 `qwen3:4b` Structured Output으로 추출합니다. 장소명은 SQL이나 좌표로 자유 생성하지 않고 `places` 테이블의 allowlisted DB Resolver가 실제 좌표로 변환합니다. 변환된 좌표와 검증된 조건만 동일한 Tool Router로 전달됩니다. 기존 클라이언트를 위해 `origin`과 `destination` 좌표를 직접 전달하는 방식도 유지합니다.
+
+```http
+POST /api/agent/query
+Content-Type: application/json
+
+{
+  "query": "밤 10시에 주안역에서 인천사랑병원까지 CCTV가 많은 길로 안내해줘",
+  "source": "osm"
+}
+```
+
+Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=120`입니다. 모델 연결 실패는 HTTP 503, 스키마에 맞지 않는 출력은 HTTP 502로 반환합니다. 오류가 발생해도 규칙 Parser로 조용히 대체하지 않습니다. 장소를 찾지 못하면 HTTP 404로 명확히 중단하며 다른 장소로 임의 대체하지 않습니다.
+
+`places`에는 현재 주안역과 공식 도움시설(경찰·소방·응급의료)이 들어 있습니다. 범용 장소 검색 범위를 넓히려면 OSM 또는 권위 있는 기관의 역·학교·공공시설 데이터를 같은 테이블에 적재하고 별칭을 관리해야 합니다. 런타임 외부 지오코딩 API에는 의존하지 않습니다.
 
 ## 가로등 기반 상대 안전지표
 
@@ -205,6 +272,8 @@ safe_cost = distance_m * distance_weight
 안전도 구성 가중치를 변경한 뒤에는 pipeline을 다시 실행하여 DB의 `safety_score`를 갱신해야 합니다. 경로 cost 가중치는 backend 재시작 후 바로 적용됩니다.
 
 가로등 분석 실행 전 `OSM_SAFETY_SCORE_MODE=demo`는 PT용 임시값을 생성합니다. 분석 실행 후에는 파생 구간 점수의 길이 가중 평균이 원본 도로의 `streetlight_score`와 `safety_score`에 반영되어 안전 경로 탐색에서도 사용됩니다.
+
+운영 기본 CCTV 원천은 정밀 좌표가 검증된 `michuhol-cctv-ai-ready` GeoJSON입니다. 전국 표준 CSV 전처리 기능은 별도 원천 검증을 위한 보조 경로이며 기본 적재·분석 소스를 변경하지 않습니다. 경찰·소방·응급의료 Help Point도 검증된 `ai-ready-help-points` 원천을 기본으로 사용합니다.
 
 테스트 실행:
 

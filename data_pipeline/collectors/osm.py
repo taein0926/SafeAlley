@@ -17,7 +17,10 @@ def build_overpass_query(area_name: str, admin_level: str) -> str:
     return f"""
 [out:json][timeout:180];
 area["boundary"="administrative"]["admin_level"="{escaped_level}"]["name"="{escaped_name}"]->.searchArea;
-way["highway"](area.searchArea);
+(
+  way["highway"](area.searchArea);
+  node["highway"="crossing"](area.searchArea);
+);
 out body;
 >;
 out skel qt;
@@ -81,6 +84,57 @@ def collect_osm_roads(output_path: Path) -> int:
     )
     metadata_path = output_path.with_suffix(".meta.json")
     metadata_path.write_text(
+        json.dumps(
+            {
+                "source": "OpenStreetMap",
+                "license": "ODbL-1.0",
+                "area_name": area_name,
+                "admin_level": admin_level,
+                "overpass_api_url": endpoint,
+                "query": query,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return len(elements)
+
+
+def collect_osm_streetlights(output_path: Path) -> int:
+    endpoint = os.environ["OVERPASS_API_URL"].strip()
+    area_name = os.getenv("OSM_AREA_NAME", "미추홀구").strip()
+    admin_level = os.getenv("OSM_AREA_ADMIN_LEVEL", "6").strip()
+    timeout_seconds = int(os.getenv("OVERPASS_TIMEOUT_SECONDS", "240"))
+    escaped_name = area_name.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_level = admin_level.replace("\\", "\\\\").replace('"', '\\"')
+    query = f'''[out:json][timeout:180];
+area["boundary"="administrative"]["admin_level"="{escaped_level}"]["name"="{escaped_name}"]->.searchArea;
+node["highway"="street_lamp"](area.searchArea);
+out body qt;'''
+    request = Request(
+        endpoint,
+        data=urlencode({"data": query}).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            "User-Agent": os.getenv("OSM_USER_AGENT", "SafeAlley-MVP/0.1"),
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            document = json.load(response)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise OsmCollectionError("OSM streetlight collection failed") from exc
+    elements = document.get("elements")
+    if not isinstance(elements, list):
+        raise OsmCollectionError("Overpass streetlight response has no elements array")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    output_path.with_suffix(".meta.json").write_text(
         json.dumps(
             {
                 "source": "OpenStreetMap",

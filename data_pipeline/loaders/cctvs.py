@@ -31,7 +31,10 @@ def load_cctvs(path: Path, *, replace_source: str) -> int:
                         parcel_address, purpose, camera_count, camera_pixels,
                         direction_info, retention_days, installed_at,
                         agency_phone, longitude, latitude, geom,
-                        data_reference_date, is_safety_cctv, properties
+                        data_reference_date, is_safety_cctv,
+                        coordinate_quality, coordinate_source,
+                        longitude_precision_digits, latitude_precision_digits,
+                        properties
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
@@ -43,7 +46,7 @@ def load_cctvs(path: Path, *, replace_source: str) -> int:
                                 ST_SetSRID(ST_MakePoint(%s, %s), 4326), 5179
                             )
                         END,
-                        %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -54,7 +57,12 @@ def load_cctvs(path: Path, *, replace_source: str) -> int:
                         row["installed_at"], row["agency_phone"], row["longitude"],
                         row["latitude"], row["longitude"], row["latitude"],
                         row["longitude"], row["latitude"], row["data_reference_date"],
-                        row["is_safety_cctv"], Jsonb(row["properties"]),
+                        row["is_safety_cctv"],
+                        row.get("coordinate_quality", "unknown"),
+                        row.get("coordinate_source", "official_source"),
+                        row.get("longitude_precision_digits"),
+                        row.get("latitude_precision_digits"),
+                        Jsonb(row["properties"]),
                     ),
                 )
     return len(records)

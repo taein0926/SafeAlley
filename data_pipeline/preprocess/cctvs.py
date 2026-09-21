@@ -1,6 +1,8 @@
 import hashlib
+import csv
 import json
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +22,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "retention_days": ("보관일수", "retentionDays", "cstdyDayCnt"),
     "installed_at": ("설치연월", "설치년월", "installedAt", "instlYymm"),
     "agency_phone": ("관리기관전화번호", "agencyPhone", "mngInsttTelno"),
-    "latitude": ("위도", "latitude"),
-    "longitude": ("경도", "longitude"),
+    "latitude": ("위도", "WGS84위도", "latitude"),
+    "longitude": ("경도", "WGS84경도", "longitude"),
     "data_reference_date": ("데이터기준일자", "referenceDate"),
 }
 
@@ -161,6 +163,32 @@ def validate_cctv_geojson(
     }
 
 
+def _decimal_places(value: Any) -> int:
+    """Return the precision actually supplied by the source, including zeros."""
+
+    if value in (None, ""):
+        return 0
+    try:
+        exponent = Decimal(str(value).strip()).as_tuple().exponent
+    except (InvalidOperation, ValueError):
+        return 0
+    return max(0, -exponent)
+
+
+def _coordinate_quality(
+    longitude_value: Any,
+    latitude_value: Any,
+    coordinate_status: str,
+) -> str:
+    if coordinate_status != "valid":
+        return "unusable"
+    # Five decimal places are roughly metre-level in Korea. Values below that
+    # are kept for reference but must not be presented as exact camera sites.
+    if min(_decimal_places(longitude_value), _decimal_places(latitude_value)) >= 5:
+        return "source_precise"
+    return "source_approximate"
+
+
 def preprocess_cctvs(
     input_path: Path,
     output_path: Path,
@@ -180,6 +208,7 @@ def preprocess_cctvs(
     coordinate_present = 0
     coordinate_null = 0
     coordinate_invalid = 0
+    coordinate_quality_counts: Counter[str] = Counter()
     for record_index, record in enumerate(records):
         purpose = _text(_pick(record, "purpose"))
         purpose_counts[purpose or "(NULL)"] += 1
@@ -197,6 +226,12 @@ def preprocess_cctvs(
             coordinate_invalid += 1
         else:
             coordinate_present += 1
+        coordinate_quality = _coordinate_quality(
+            _pick(record, "longitude"), _pick(record, "latitude"), coordinate_status
+        )
+        longitude_precision_digits = _decimal_places(_pick(record, "longitude"))
+        latitude_precision_digits = _decimal_places(_pick(record, "latitude"))
+        coordinate_quality_counts[coordinate_quality] += 1
 
         canonical = json.dumps(record, ensure_ascii=False, sort_keys=True)
         source_id = hashlib.sha256(
@@ -219,6 +254,10 @@ def preprocess_cctvs(
                 "longitude": longitude if coordinate_status == "valid" else None,
                 "latitude": latitude if coordinate_status == "valid" else None,
                 "coordinate_status": coordinate_status,
+                "coordinate_quality": coordinate_quality,
+                "coordinate_source": "official_source",
+                "longitude_precision_digits": longitude_precision_digits,
+                "latitude_precision_digits": latitude_precision_digits,
                 "data_reference_date": _text(_pick(record, "data_reference_date")),
                 "is_safety_cctv": purpose in safety_purposes,
                 "properties": record,
@@ -237,6 +276,7 @@ def preprocess_cctvs(
             "coordinate_present_count": coordinate_present,
             "coordinate_null_count": coordinate_null,
             "coordinate_invalid_count": coordinate_invalid,
+            "coordinate_quality_counts": dict(sorted(coordinate_quality_counts.items())),
         },
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -244,3 +284,63 @@ def preprocess_cctvs(
         json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return output["metadata"]
+
+
+def preprocess_cctv_csv(
+    input_path: Path,
+    output_path: Path,
+    *,
+    district_name: str,
+    safety_purposes: set[str],
+    source: str = "mois-cctv-standard",
+    encoding: str = "cp949",
+) -> dict[str, Any]:
+    """Filter the MOIS national standard CSV and normalize it for PostGIS."""
+
+    try:
+        with input_path.open(encoding=encoding, newline="") as stream:
+            reader = csv.DictReader(stream)
+            records = [
+                row
+                for row in reader
+                if district_name
+                in " ".join(
+                    (
+                        row.get("관리기관명") or "",
+                        row.get("소재지도로명주소") or "",
+                        row.get("소재지지번주소") or "",
+                    )
+                )
+            ]
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise CctvPreprocessError(f"Cannot read CCTV standard CSV: {input_path}") from exc
+
+    temporary_input = output_path.with_suffix(".source.json")
+    temporary_input.parent.mkdir(parents=True, exist_ok=True)
+    temporary_input.write_text(
+        json.dumps({"records": records}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    try:
+        metadata = preprocess_cctvs(
+            temporary_input,
+            output_path,
+            safety_purposes=safety_purposes,
+        )
+    finally:
+        temporary_input.unlink(missing_ok=True)
+
+    document = json.loads(output_path.read_text(encoding="utf-8"))
+    document["source"] = source
+    document["dataset_id"] = "15075538"
+    metadata["district_name"] = district_name
+    metadata["source_encoding"] = encoding
+    for index, row in enumerate(document["records"]):
+        original = records[index]
+        row["source"] = source
+        row["source_id"] = _text(original.get("관리번호")) or row["source_id"]
+    output_path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return metadata

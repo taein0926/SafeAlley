@@ -18,6 +18,7 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
+import type { RouteCandidate, RouteType } from "../types";
 
 export type RoadMapStatus =
   | { kind: "loading" }
@@ -27,17 +28,23 @@ export type RoadMapStatus =
       buildingCount: number;
       streetlightCount: number;
       cctvCount: number;
+      cctvRecordCount: number;
       helpPointCount: number;
     }
   | { kind: "error"; message: string };
 
 type CesiumRoadMapProps = {
   onStatusChange: (status: RoadMapStatus) => void;
+  routeCandidates: RouteCandidate[];
+  selectedRouteType: RouteType | null;
 };
 
 type FeatureCollectionMetadata = {
   count: number;
   crs: string;
+  record_count?: number;
+  coordinate_quality_counts?: Record<string, number>;
+  position_semantics?: "coordinate_cells" | "point_locations";
 };
 
 type RoadFeatureCollection = {
@@ -201,8 +208,22 @@ function webGlCapabilityError(): string | null {
   return null;
 }
 
-export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
+const routeColors: Record<RouteType, Color> = {
+  shortest: Color.fromCssColorString("#1261ff"),
+  balanced: Color.fromCssColorString("#ffe600"),
+  safe: Color.fromCssColorString("#ff2bd6"),
+};
+
+export function CesiumRoadMap({
+  onStatusChange,
+  routeCandidates,
+  selectedRouteType,
+}: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<Viewer | null>(null);
+  const roadDataSourceRef = useRef<GeoJsonDataSource | null>(null);
+  const routeEntityIdsRef = useRef<string[]>([]);
+  const lastRouteSignatureRef = useRef("");
   const [renderingError, setRenderingError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -252,6 +273,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
         showRenderLoopErrors: false,
         timeline: false,
       });
+      viewerRef.current = viewer;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "알 수 없는 오류";
       const message = `Cesium 초기화에 실패했습니다: ${detail}`;
@@ -392,6 +414,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
           { clampToGround: false },
         );
         roadDataSource.name = "Walkable road segments";
+        roadDataSourceRef.current = roadDataSource;
 
         for (const entity of roadDataSource.entities.values) {
           if (!entity.polyline) continue;
@@ -425,6 +448,47 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
         const cctvPrimitives = new PointPrimitiveCollection();
         for (const feature of cctvs.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
+          const coordinateQuality = String(feature.properties.coordinate_quality ?? "unknown");
+          const recordCount = Number(feature.properties.location_record_count ?? 1);
+          const description = pointDescription(
+            coordinateQuality === "source_approximate" ? "CCTV 저정밀 위치 셀" : "방범 CCTV",
+            feature.properties,
+            [
+              ["좌표 품질", coordinateQuality],
+              ["이 좌표에 묶인 원본", recordCount],
+              ["카메라 수", feature.properties.camera_count],
+              ["설치 목적", feature.properties.purpose],
+              ["촬영 방면", feature.properties.direction_info],
+              ["설치 연월", feature.properties.installed_at],
+              ["대표 주소", feature.properties.road_address ?? feature.properties.parcel_address],
+              ["관리 기관", feature.properties.management_agency],
+            ],
+            "cctv",
+          );
+          if (coordinateQuality === "source_approximate") {
+            const longitudeDigits = Number(feature.properties.longitude_precision_digits ?? 2);
+            const latitudeDigits = Number(feature.properties.latitude_precision_digits ?? 3);
+            const longitudeHalfCell = 0.5 * 10 ** -longitudeDigits;
+            const latitudeHalfCell = 0.5 * 10 ** -latitudeDigits;
+            const alpha = Math.min(0.42, 0.10 + Math.log2(Math.max(1, recordCount)) * 0.045);
+            viewer.entities.add({
+              id: `cctv-cell-${feature.id}`,
+              name: "CCTV 추정 위치 범위",
+              description: new ConstantProperty(description),
+              rectangle: {
+                coordinates: Rectangle.fromDegrees(
+                  longitude - longitudeHalfCell,
+                  latitude - latitudeHalfCell,
+                  longitude + longitudeHalfCell,
+                  latitude + latitudeHalfCell,
+                ),
+                material: Color.fromCssColorString("#38dce8").withAlpha(alpha),
+                outline: true,
+                outlineColor: Color.fromCssColorString("#b8f9ff").withAlpha(0.55),
+              },
+            });
+            continue;
+          }
           cctvPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 3),
             pixelSize: 6,
@@ -432,19 +496,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
             outlineColor: Color.fromCssColorString("#d8fcff"),
             outlineWidth: 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            id: pointDescription(
-              String(feature.properties.management_agency ?? "방범 CCTV"),
-              feature.properties,
-              [
-                ["설치 목적", feature.properties.purpose],
-                ["카메라 수", feature.properties.camera_count],
-                ["촬영 방면", feature.properties.direction_info],
-                ["설치 연월", feature.properties.installed_at],
-                ["주소", feature.properties.road_address ?? feature.properties.parcel_address],
-                ["관리 기관", feature.properties.management_agency],
-              ],
-              "cctv",
-            ),
+            id: description,
           });
         }
         viewer.scene.primitives.add(cctvPrimitives);
@@ -501,6 +553,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
           buildingCount: buildings.metadata.count,
           streetlightCount: streetlights.metadata.count,
           cctvCount: cctvs.metadata.count,
+          cctvRecordCount: cctvs.metadata.record_count ?? cctvs.metadata.count,
           helpPointCount: helpPoints.metadata.count,
         });
       } catch (error) {
@@ -516,9 +569,79 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
     return () => {
       cancelled = true;
       removeRenderErrorListener();
+      viewerRef.current = null;
+      roadDataSourceRef.current = null;
       if (!viewer.isDestroyed()) viewer.destroy();
     };
   }, [onStatusChange]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (viewer === null || viewer.isDestroyed()) return;
+
+    if (roadDataSourceRef.current !== null) {
+      roadDataSourceRef.current.show = routeCandidates.length === 0;
+    }
+
+    for (const id of routeEntityIdsRef.current) viewer.entities.removeById(id);
+    routeEntityIdsRef.current = [];
+
+    const visibleCandidates = selectedRouteType
+      ? routeCandidates.filter((candidate) => candidate.route_type === selectedRouteType)
+      : routeCandidates;
+
+    for (const candidate of visibleCandidates) {
+      const selected = candidate.route_type === selectedRouteType;
+      const casingId = `recommended-route-${candidate.route_type}-casing`;
+      const lineId = `recommended-route-${candidate.route_type}`;
+      const positions = candidate.route.geometry.coordinates.map(([longitude, latitude]) =>
+        Cartesian3.fromDegrees(longitude, latitude, selected ? 12 : 9),
+      );
+      viewer.entities.add({
+        id: casingId,
+        name: `${candidate.route_type} 경로 후보 외곽선`,
+        polyline: {
+          positions,
+          width: selected ? 18 : 10,
+          material: selected
+            ? Color.WHITE.withAlpha(0.98)
+            : Color.fromCssColorString("#07111d").withAlpha(0.9),
+          clampToGround: false,
+        },
+      });
+      viewer.entities.add({
+        id: lineId,
+        name: `${candidate.route_type} 경로 후보`,
+        polyline: {
+          positions,
+          width: selected ? 12 : 6,
+          material: routeColors[candidate.route_type].withAlpha(selected ? 1 : 0.92),
+          clampToGround: false,
+        },
+      });
+      routeEntityIdsRef.current.push(casingId, lineId);
+    }
+
+    const signature = visibleCandidates
+      .map((candidate) => `${candidate.route_type}:${candidate.route.geometry.coordinates.length}`)
+      .join("|");
+    if (visibleCandidates.length > 0 && signature !== lastRouteSignatureRef.current) {
+      const coordinates = visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates);
+      const longitudes = coordinates.map(([longitude]) => longitude);
+      const latitudes = coordinates.map(([, latitude]) => latitude);
+      const padding = 0.002;
+      viewer.camera.flyTo({
+        duration: 0.8,
+        destination: Rectangle.fromDegrees(
+          Math.min(...longitudes) - padding,
+          Math.min(...latitudes) - padding,
+          Math.max(...longitudes) + padding,
+          Math.max(...latitudes) + padding,
+        ),
+      });
+      lastRouteSignatureRef.current = signature;
+    }
+  }, [routeCandidates, selectedRouteType]);
 
   return (
     <div ref={containerRef} className="cesium-map" aria-label="보행 가능 도로 지도">

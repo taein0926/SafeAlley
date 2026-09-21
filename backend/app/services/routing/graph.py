@@ -22,12 +22,19 @@ class GraphEdge:
     safety_score: float
     coordinates: tuple[tuple[float, float], ...]
     highway: str | None = None
-    is_steps: bool = False
     step_count: str | None = None
     incline: str | None = None
     ramp: str | None = None
     wheelchair: str | None = None
     handrail: str | None = None
+    streetlight_data_available: bool = True
+    walkability_factor: float = 1.0
+    crossing_node_ids: tuple[int, ...] = ()
+    is_steps: bool = False
+    sidewalk_confirmed: bool = False
+    incline_percent: float | None = None
+    walkability_class: str | None = None
+    field_status: str = "unverified"
 
 
 @dataclass

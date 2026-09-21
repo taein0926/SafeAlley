@@ -8,6 +8,7 @@ TEST_BUILDING_SOURCE = "test-building-fixture"
 TEST_STREETLIGHT_SOURCE = "test-streetlight-fixture"
 TEST_CCTV_SOURCE = "test-cctv-fixture"
 TEST_HELP_POINT_SOURCE = "test-help-point-fixture"
+TEST_USER_ID = "test-route-user"
 
 TEST_ROADS = (
     ("test-road-001", "짧고 낮은 계단 1", 9001, 9002, 10, "LINESTRING(126.679 37.4608, 126.681 37.4608)", "steps", True),
@@ -21,6 +22,18 @@ TEST_ROADS = (
 def isolated_test_road_graph():
     with connect_database() as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM route_selection_events WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM route_recommendations WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM user_route_preferences WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
             cursor.execute("DELETE FROM road_segments WHERE source = %s", (TEST_SOURCE,))
             cursor.execute(
                 "DELETE FROM buildings WHERE source = %s",
@@ -60,7 +73,11 @@ def isolated_test_road_graph():
                         jsonb_build_object(
                             'highway', %s::text,
                             'is_steps', %s::boolean,
-                            'incline', CASE WHEN %s::boolean THEN 'up' ELSE NULL END
+                            'incline', CASE WHEN %s::boolean THEN 'up' ELSE NULL END,
+                            'safety_data_status', 'streetlight-test-v1',
+                            'walkability_factor', 1.0,
+                            'sidewalk_confirmed', TRUE,
+                            'field_status', 'verified_walkable'
                         )
                     FROM transformed
                     """,
@@ -175,6 +192,18 @@ def isolated_test_road_graph():
 
     with connect_database() as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM route_selection_events WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM route_recommendations WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM user_route_preferences WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
             cursor.execute(
                 "DELETE FROM streetlights WHERE source = %s",
                 (TEST_STREETLIGHT_SOURCE,),
