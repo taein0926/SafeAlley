@@ -120,16 +120,19 @@ docker compose --profile tools run --build --rm pipeline run-buildings \
 
 `--source-encoding`은 `.cpg`가 없는 SHP의 DBF 문자 인코딩을 명시합니다. 필드 매핑의 배열 값은 여러 원본 필드를 공백으로 연결하며, 이 파일에서는 `A4` 법정동명과 `A5` 지번으로 주소를 만듭니다.
 
-## CCTV와 AI-ready Help Point
+## Local AI-ready CCTV와 Help Point
 
-CCTV 공식 원천은 공공데이터포털 데이터 ID `15096428`입니다. 활용신청 후 확인한 요청 URL과 키를 각각 `DATA_GO_KR_CCTV_API_URL`, `DATA_GO_KR_SERVICE_KEY`에 설정합니다. collector는 임의 endpoint를 기본값으로 사용하지 않습니다.
+CCTV operational source는 다음 로컬 AI-ready GeoJSON입니다. 미추홀구 생활방범 CCTV만 포함된 입력이므로 loader는 설치목적을 다시 판정하지 않고 validation을 통과한 모든 Point를 `is_safety_cctv=true`로 적재합니다.
 
-```bash
-docker compose --profile tools run --rm pipeline collect-cctvs
-docker compose --profile tools run --rm pipeline preprocess-cctvs
+```text
+raw/cctvs/cctv_michuhol_ai_ready.geojson
 ```
 
-`preprocess-cctvs`가 출력한 실제 `purpose_counts`를 검토한 뒤에만 `SAFETY_CCTV_PURPOSES`를 설정합니다. 모든 원본 record를 `cctvs`에 보존하되 유효 좌표와 일치 목적을 가진 행만 `is_safety_cctv=true`로 분석합니다.
+```bash
+docker compose --profile tools run --rm pipeline load-cctvs
+```
+
+geometry Point와 `[경도, 위도]` 숫자·범위만 검증하며 실제 properties는 JSONB로 보존합니다. `DATA_GO_KR_SERVICE_KEY`, `DATA_GO_KR_CCTV_API_URL`, `SAFETY_CCTV_PURPOSES`는 legacy API collector용이며 로컬 적재에는 사용하지 않습니다.
 
 Help Point operational source는 아래 단일 GeoJSON입니다.
 

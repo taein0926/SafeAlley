@@ -58,7 +58,7 @@ def _distribution(cursor: Any, column: str, road_source: str) -> dict[str, float
 
 def run_safety_component_analysis(
     *,
-    cctv_source: str = "data-go-kr-15096428",
+    cctv_source: str = "michuhol-cctv-ai-ready",
     help_point_source: str = "ai-ready-help-points",
     road_source: str = "osm",
 ) -> dict[str, Any]:

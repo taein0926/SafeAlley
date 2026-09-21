@@ -1,5 +1,6 @@
 import {
   Cartesian3,
+  Cartesian2,
   Color,
   ColorMaterialProperty,
   ConstantProperty,
@@ -12,6 +13,7 @@ import {
   OpenStreetMapImageryProvider,
   PointPrimitiveCollection,
   Rectangle,
+  ScreenSpaceEventType,
   Viewer,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
@@ -158,11 +160,16 @@ function pointDescription(
   title: string,
   properties: Record<string, unknown>,
   rows: Array<[string, unknown]>,
+  layer: "cctv" | "help_point",
 ): Entity {
   const description = `<table class="cesium-infoBox-defaultTable"><tbody>${rows
     .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
     .join("")}</tbody></table>`;
-  return new Entity({ name: title, description: new ConstantProperty(description), properties });
+  return new Entity({
+    name: title,
+    description: new ConstantProperty(description),
+    properties: { ...properties, safealley_layer: layer },
+  });
 }
 
 function colorForHelpPoint(category: unknown): Color {
@@ -265,6 +272,29 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
 
     viewer.scene.backgroundColor = Color.fromCssColorString("#071a2b");
     viewer.scene.globe.baseColor = Color.fromCssColorString("#173944");
+    viewer.screenSpaceEventHandler.setInputAction(
+      (movement: { position: Cartesian2 }) => {
+        const pickedObjects = viewer.scene.drillPick(movement.position);
+        let fallback: Entity | undefined;
+        for (const picked of pickedObjects) {
+          const candidate = picked.id;
+          if (!(candidate instanceof Entity)) continue;
+          fallback ??= candidate;
+          const properties = candidate.properties?.getValue(JulianDate.now()) as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            properties?.safealley_layer === "help_point" ||
+            properties?.safealley_layer === "cctv"
+          ) {
+            viewer.selectedEntity = candidate;
+            return;
+          }
+        }
+        viewer.selectedEntity = fallback;
+      },
+      ScreenSpaceEventType.LEFT_CLICK,
+    );
 
     async function loadGeoJson<
       T extends { type: "FeatureCollection"; metadata: FeatureCollectionMetadata },
@@ -307,7 +337,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
         };
         const cctvRequest = showCctvs
           ? loadGeoJson<PointFeatureCollection>(
-              "/api/cctvs?source=data-go-kr-15096428&safety_only=true",
+              "/api/cctvs?source=michuhol-cctv-ai-ready&safety_only=true",
               "방범 CCTV",
             )
           : Promise.resolve(emptyPoints);
@@ -401,6 +431,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
             color: Color.fromCssColorString("#38dce8").withAlpha(0.9),
             outlineColor: Color.fromCssColorString("#d8fcff"),
             outlineWidth: 1,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: pointDescription(
               String(feature.properties.management_agency ?? "방범 CCTV"),
               feature.properties,
@@ -412,6 +443,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
                 ["주소", feature.properties.road_address ?? feature.properties.parcel_address],
                 ["관리 기관", feature.properties.management_agency],
               ],
+              "cctv",
             ),
           });
         }
@@ -426,6 +458,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
             color: colorForHelpPoint(feature.properties.category).withAlpha(0.94),
             outlineColor: Color.WHITE,
             outlineWidth: 1,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: pointDescription(
               String(feature.properties.name ?? "안전·보건 시설"),
               feature.properties,
@@ -438,6 +471,7 @@ export function CesiumRoadMap({ onStatusChange }: CesiumRoadMapProps) {
                 ["출처", feature.properties.source_dataset ?? feature.properties.source],
                 ["기준일", feature.properties.reference_date],
               ],
+              "help_point",
             ),
           });
         }

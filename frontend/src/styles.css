@@ -214,7 +214,7 @@ h1 {
   margin: 10px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .map-panel {
     top: 14px;
     left: 14px;

@@ -45,7 +45,7 @@ def get_streetlights(
 def get_cctvs(
     bbox: str | None = Query(default=None),
     source: str | None = Query(
-        default="data-go-kr-15096428", min_length=1, max_length=64
+        default="michuhol-cctv-ai-ready", min_length=1, max_length=64
     ),
     safety_only: bool = Query(default=True),
 ) -> dict[str, object]:

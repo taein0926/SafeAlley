@@ -57,7 +57,7 @@ docker compose --profile tools run --build --rm pipeline run-osm
 - Road GeoJSON: http://localhost:8000/api/roads
 - Streetlight safety GeoJSON: http://localhost:8000/api/safety/roads?source=osm
 - Streetlight Point GeoJSON: http://localhost:8000/api/streetlights?source=michuhol-public-data
-- Safety CCTV GeoJSON: http://localhost:8000/api/cctvs?source=data-go-kr-15096428
+- Safety CCTV GeoJSON: http://localhost:8000/api/cctvs?source=michuhol-cctv-ai-ready
 - Help Point GeoJSON: http://localhost:8000/api/help-points?source=ai-ready-help-points
 - Building GeoJSON: http://localhost:8000/api/buildings?source=molit-gis-building
 - Shortest route: `POST http://localhost:8000/api/routes/shortest`
@@ -158,13 +158,13 @@ safety_score   = distance_score * 0.4 + density_score * 0.3 + gap_score * 0.3
 
 ## CCTV·AI-ready 안전시설·종합 안전도
 
-CCTV 원천은 공공데이터포털 데이터 ID `15096428`인 `인천광역시 미추홀구 CCTV관리대장목록`입니다. `.env`의 `DATA_GO_KR_CCTV_API_URL`에는 인증된 공식 활용신청 화면에 표시된 요청 URL을, `DATA_GO_KR_SERVICE_KEY`에는 발급받은 키를 넣습니다. 저장소에는 임의 endpoint나 키를 포함하지 않습니다.
+CCTV 기본 운영 원천은 이미 미추홀구 생활방범 데이터로 정제된 다음 AI-ready GeoJSON입니다. 로컬 적재에는 API URL, 인증키, 설치목적 재필터링이 필요하지 않습니다.
 
-먼저 실제 설치목적 값과 건수를 확인한 뒤 그 값만 `SAFETY_CCTV_PURPOSES`에 쉼표로 지정합니다.
+```text
+data_pipeline/raw/cctvs/cctv_michuhol_ai_ready.geojson
+```
 
 ```bash
-docker compose --profile tools run --rm pipeline collect-cctvs
-docker compose --profile tools run --rm pipeline preprocess-cctvs
 docker compose --profile tools run --rm pipeline load-cctvs
 ```
 
@@ -250,7 +250,7 @@ PostGIS help_points          -> FastAPI /api/help-points -----+
 
 OSM 타일은 FastAPI나 Nginx의 `/api` 프록시를 거치지 않습니다. 공용 OSM 타일은 개발·PT 수준의 대화형 지도에만 사용하고, 서비스 트래픽이 커지면 OSM Tile Usage Policy에 맞는 별도 제공자를 선택해야 합니다.
 
-현재 CCTV 설치목적별 실제 건수와 Help Point category별 실제 건수는 원천 접근 설정/파일이 없으므로 문서에 임의로 기입하지 않습니다. 각 배치 명령이 실제 통계를 출력합니다.
+`collect-cctvs`와 `preprocess-cctvs`는 이전 API 방식의 재현을 위한 legacy 명령으로만 남아 있으며 기본 운영 경로에서는 호출하지 않습니다.
 ---
 
 <details>

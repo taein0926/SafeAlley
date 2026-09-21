@@ -5,6 +5,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from loaders.postgis import database_connection
+from preprocess.cctvs import validate_cctv_geojson
 
 
 class CctvLoadError(RuntimeError):
@@ -57,3 +58,43 @@ def load_cctvs(path: Path, *, replace_source: str) -> int:
                     ),
                 )
     return len(records)
+
+
+def load_cctv_geojson(
+    path: Path,
+    *,
+    replace_source: str = "michuhol-cctv-ai-ready",
+) -> dict[str, Any]:
+    records, stats = validate_cctv_geojson(path)
+    with database_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM cctvs WHERE source = %s", (replace_source,))
+            for row in records:
+                cursor.execute(
+                    """
+                    INSERT INTO cctvs (
+                        source, source_id, management_agency, road_address,
+                        parcel_address, purpose, camera_count, camera_pixels,
+                        direction_info, retention_days, installed_at,
+                        agency_phone, longitude, latitude, geom,
+                        data_reference_date, is_safety_cctv, properties
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s,
+                        ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 5179),
+                        %s, TRUE, %s
+                    )
+                    """,
+                    (
+                        replace_source, row["source_id"], row["management_agency"],
+                        row["road_address"], row["parcel_address"], row["purpose"],
+                        row["camera_count"], row["camera_pixels"],
+                        row["direction_info"], row["retention_days"],
+                        row["installed_at"], row["agency_phone"], row["longitude"],
+                        row["latitude"], row["longitude"], row["latitude"],
+                        row["data_reference_date"], Jsonb(row["properties"]),
+                    ),
+                )
+    stats["loaded_count"] = len(records)
+    stats["source"] = replace_source
+    return stats

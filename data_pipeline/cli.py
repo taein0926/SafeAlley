@@ -10,7 +10,7 @@ from collectors.osm import collect_osm_roads
 from loaders.buildings import load_buildings
 from loaders.postgis import load_road_segments
 from loaders.streetlights import load_streetlights
-from loaders.cctvs import load_cctvs
+from loaders.cctvs import load_cctv_geojson
 from loaders.help_points import load_help_points
 from preprocess.buildings import preprocess_buildings
 from preprocess.osm_roads import preprocess_osm_roads
@@ -34,7 +34,12 @@ RAW_STREETLIGHTS_PATH = (
 PROCESSED_STREETLIGHTS_PATH = (
     Path(__file__).parent / "processed" / "streetlights" / "streetlights.geojson"
 )
-RAW_CCTVS_PATH = Path(__file__).parent / "raw" / "cctvs" / "michuhol_cctvs.json"
+RAW_CCTVS_PATH = (
+    Path(__file__).parent / "raw" / "cctvs" / "cctv_michuhol_ai_ready.geojson"
+)
+LEGACY_RAW_CCTVS_PATH = (
+    Path(__file__).parent / "raw" / "cctvs" / "michuhol_cctvs.json"
+)
 PROCESSED_CCTVS_PATH = (
     Path(__file__).parent / "processed" / "cctvs" / "michuhol_cctvs.json"
 )
@@ -150,7 +155,7 @@ def run_streetlight_pipeline(arguments: argparse.Namespace) -> None:
 
 
 def collect_cctv_file() -> None:
-    print(json.dumps(collect_cctvs(RAW_CCTVS_PATH), ensure_ascii=False, indent=2))
+    print(json.dumps(collect_cctvs(LEGACY_RAW_CCTVS_PATH), ensure_ascii=False, indent=2))
 
 
 def _safety_cctv_purposes() -> set[str]:
@@ -165,7 +170,9 @@ def preprocess_cctv_file() -> None:
     from preprocess.cctvs import preprocess_cctvs
 
     stats = preprocess_cctvs(
-        RAW_CCTVS_PATH,
+        LEGACY_RAW_CCTVS_PATH,
+        # Legacy API flow writes a normalized JSON file and is not the
+        # operational local-GeoJSON path used by load-cctvs.
         PROCESSED_CCTVS_PATH,
         safety_purposes=_safety_cctv_purposes(),
     )
@@ -173,15 +180,15 @@ def preprocess_cctv_file() -> None:
 
 
 def load_cctv_file() -> None:
-    count = load_cctvs(
-        PROCESSED_CCTVS_PATH, replace_source="data-go-kr-15096428"
+    stats = load_cctv_geojson(
+        RAW_CCTVS_PATH, replace_source="michuhol-cctv-ai-ready"
     )
-    print(f"Replaced data-go-kr-15096428 CCTV records with {count} PostGIS rows")
+    for item in stats["excluded_features"]:
+        print(f"Excluded CCTV {item['identifier']}: {item['reason']}")
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
 def run_cctv_pipeline() -> None:
-    collect_cctv_file()
-    preprocess_cctv_file()
     load_cctv_file()
 
 
@@ -205,7 +212,7 @@ def analyze_safety_components(arguments: argparse.Namespace) -> None:
 
 
 def run_safety_components(arguments: argparse.Namespace) -> None:
-    run_cctv_pipeline()
+    load_cctv_file()
     load_help_point_file(arguments)
     analyze_safety_components(arguments)
 
@@ -250,7 +257,7 @@ def main() -> None:
     )
     parser.add_argument("--source")
     parser.add_argument("--road-source", default="osm")
-    parser.add_argument("--cctv-source", default="data-go-kr-15096428")
+    parser.add_argument("--cctv-source", default="michuhol-cctv-ai-ready")
     parser.add_argument("--help-point-source", default="ai-ready-help-points")
     parser.add_argument(
         "--source-dataset",

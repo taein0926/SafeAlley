@@ -18,12 +18,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "camera_pixels": ("카메라화소수", "cameraPixels", "cameraPixel"),
     "direction_info": ("촬영방면정보", "directionInfo", "potogrfInfo"),
     "retention_days": ("보관일수", "retentionDays", "cstdyDayCnt"),
-    "installed_at": ("설치년월", "installedAt", "instlYymm"),
+    "installed_at": ("설치연월", "설치년월", "installedAt", "instlYymm"),
     "agency_phone": ("관리기관전화번호", "agencyPhone", "mngInsttTelno"),
     "latitude": ("위도", "latitude"),
     "longitude": ("경도", "longitude"),
     "data_reference_date": ("데이터기준일자", "referenceDate"),
 }
+
+SOURCE_ID_ALIASES = ("관리번호", "source_id", "external_id", "id")
 
 
 def _pick(record: dict[str, Any], name: str) -> Any:
@@ -55,6 +57,108 @@ def _coordinate(value: Any) -> tuple[float | None, str | None]:
         return float(str(value).strip()), None
     except (TypeError, ValueError):
         return None, "not_numeric"
+
+
+def _feature_identifier(
+    feature: dict[str, Any], properties: dict[str, Any], index: int
+) -> str:
+    for value in (feature.get("id"), *(
+        properties.get(alias) for alias in SOURCE_ID_ALIASES
+    )):
+        text = _text(value)
+        if text is not None:
+            return text
+    canonical = json.dumps(feature, ensure_ascii=False, sort_keys=True)
+    digest = hashlib.sha256(f"{index}:{canonical}".encode("utf-8")).hexdigest()[:24]
+    return f"generated-{digest}"
+
+
+def validate_cctv_geojson(
+    path: Path,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Validate the operational AI-ready CCTV GeoJSON without refiltering it."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CctvPreprocessError(f"Cannot read CCTV GeoJSON: {path}") from exc
+    if document.get("type") != "FeatureCollection":
+        raise CctvPreprocessError("CCTV GeoJSON must be a FeatureCollection")
+    features = document.get("features")
+    if not isinstance(features, list):
+        raise CctvPreprocessError("CCTV GeoJSON requires a features array")
+
+    valid: list[dict[str, Any]] = []
+    excluded: list[dict[str, str]] = []
+    purpose_counts: Counter[str] = Counter()
+    seen_source_ids: Counter[str] = Counter()
+    for index, feature in enumerate(features):
+        if not isinstance(feature, dict):
+            excluded.append({"identifier": f"index-{index}", "reason": "invalid_feature"})
+            continue
+        properties = feature.get("properties")
+        properties = properties if isinstance(properties, dict) else {}
+        identifier = _feature_identifier(feature, properties, index)
+        geometry = feature.get("geometry")
+        if geometry is None:
+            excluded.append({"identifier": identifier, "reason": "geometry_null"})
+            continue
+        if not isinstance(geometry, dict) or geometry.get("type") != "Point":
+            excluded.append({"identifier": identifier, "reason": "not_point"})
+            continue
+        coordinates = geometry.get("coordinates")
+        if not isinstance(coordinates, list) or len(coordinates) < 2:
+            excluded.append({"identifier": identifier, "reason": "coordinates_null"})
+            continue
+        longitude, longitude_error = _coordinate(coordinates[0])
+        latitude, latitude_error = _coordinate(coordinates[1])
+        if longitude_error is not None or longitude is None or not -180 <= longitude <= 180:
+            excluded.append({"identifier": identifier, "reason": "invalid_longitude"})
+            continue
+        if latitude_error is not None or latitude is None or not -90 <= latitude <= 90:
+            excluded.append({"identifier": identifier, "reason": "invalid_latitude"})
+            continue
+
+        seen_source_ids[identifier] += 1
+        source_id = (
+            identifier
+            if seen_source_ids[identifier] == 1
+            else f"{identifier}-duplicate-{seen_source_ids[identifier]}"
+        )
+        purpose = _text(_pick(properties, "purpose"))
+        purpose_counts[purpose or "(NULL)"] += 1
+        valid.append(
+            {
+                "source": "michuhol-cctv-ai-ready",
+                "source_id": source_id,
+                "management_agency": _text(_pick(properties, "management_agency")),
+                "road_address": _text(_pick(properties, "road_address")),
+                "parcel_address": _text(_pick(properties, "parcel_address")),
+                "purpose": purpose,
+                "camera_count": _number(_pick(properties, "camera_count"), integer=True),
+                "camera_pixels": _number(_pick(properties, "camera_pixels")),
+                "direction_info": _text(_pick(properties, "direction_info")),
+                "retention_days": _number(_pick(properties, "retention_days"), integer=True),
+                "installed_at": _text(_pick(properties, "installed_at")),
+                "agency_phone": _text(_pick(properties, "agency_phone")),
+                "longitude": longitude,
+                "latitude": latitude,
+                "data_reference_date": _text(_pick(properties, "data_reference_date")),
+                "is_safety_cctv": True,
+                "properties": properties,
+            }
+        )
+
+    exclusion_counts = Counter(item["reason"] for item in excluded)
+    return valid, {
+        "total_feature_count": len(features),
+        "valid_feature_count": len(valid),
+        "excluded_feature_count": len(excluded),
+        "exclusion_counts": dict(sorted(exclusion_counts.items())),
+        "excluded_features": excluded,
+        "purpose_counts": dict(sorted(purpose_counts.items())),
+        "safety_cctv_count": len(valid),
+        "source_file": path.name,
+    }
 
 
 def preprocess_cctvs(
