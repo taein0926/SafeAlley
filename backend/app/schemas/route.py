@@ -12,6 +12,7 @@ class RouteRequest(BaseModel):
     start: CoordinateInput
     end: CoordinateInput
     source: str | None = Field(default=None, min_length=1, max_length=32)
+    stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class GeoJSONLineString(BaseModel):
@@ -30,14 +31,23 @@ class RouteRoadSegment(BaseModel):
     cctv_score: float
     population_score: float
     safety_score: float
+    highway: str | None = None
+    is_steps: bool = False
+    step_count: str | None = None
+    incline: str | None = None
+    ramp: str | None = None
+    wheelchair: str | None = None
+    handrail: str | None = None
     distance_factor: float
     risk_factor: float
+    stairs_penalty: float = 0.0
     traversal_cost: float
 
 
 class RouteCostWeights(BaseModel):
     distance: float
     risk: float
+    stairs: float = 0.0
 
 
 class RouteProperties(BaseModel):
@@ -47,6 +57,7 @@ class RouteProperties(BaseModel):
     total_distance_m: float
     average_safety_score: float | None
     total_cost: float
+    stairs_segment_count: int = 0
     cost_weights: RouteCostWeights
     start_node_id: int
     end_node_id: int

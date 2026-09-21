@@ -59,6 +59,32 @@ def list_safety_segments(
             road.source,
             road.source_id AS road_source_id,
             road.name,
+            road.properties->>'highway' AS highway,
+            COALESCE(
+                (road.properties->>'is_steps')::boolean,
+                road.properties->>'highway' = 'steps',
+                FALSE
+            ) AS is_steps,
+            COALESCE(
+                road.properties->>'step_count',
+                road.properties->'osm_tags'->>'step_count'
+            ) AS step_count,
+            COALESCE(
+                road.properties->>'incline',
+                road.properties->'osm_tags'->>'incline'
+            ) AS incline,
+            COALESCE(
+                road.properties->>'ramp',
+                road.properties->'osm_tags'->>'ramp'
+            ) AS ramp,
+            COALESCE(
+                road.properties->>'wheelchair',
+                road.properties->'osm_tags'->>'wheelchair'
+            ) AS wheelchair,
+            COALESCE(
+                road.properties->>'handrail',
+                road.properties->'osm_tags'->>'handrail'
+            ) AS handrail,
             analysis.segment_index,
             ROUND(analysis.length_m::numeric, 2)::double precision AS length_m,
             ROUND(analysis.nearest_light_distance_m::numeric, 2)::double precision

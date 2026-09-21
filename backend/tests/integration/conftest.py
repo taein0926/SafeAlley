@@ -10,10 +10,10 @@ TEST_CCTV_SOURCE = "test-cctv-fixture"
 TEST_HELP_POINT_SOURCE = "test-help-point-fixture"
 
 TEST_ROADS = (
-    ("test-road-001", "짧고 낮은 길 1", 9001, 9002, 10, "LINESTRING(126.679 37.4608, 126.681 37.4608)"),
-    ("test-road-002", "짧고 낮은 길 2", 9002, 9004, 10, "LINESTRING(126.681 37.4608, 126.683 37.4608)"),
-    ("test-road-003", "길고 안전한 길 1", 9001, 9003, 100, "LINESTRING(126.679 37.4608, 126.681 37.4623)"),
-    ("test-road-004", "길고 안전한 길 2", 9003, 9004, 100, "LINESTRING(126.681 37.4623, 126.683 37.4608)"),
+    ("test-road-001", "짧고 낮은 계단 1", 9001, 9002, 10, "LINESTRING(126.679 37.4608, 126.681 37.4608)", "steps", True),
+    ("test-road-002", "짧고 낮은 계단 2", 9002, 9004, 10, "LINESTRING(126.681 37.4608, 126.683 37.4608)", "steps", True),
+    ("test-road-003", "길고 안전한 길 1", 9001, 9003, 100, "LINESTRING(126.679 37.4608, 126.681 37.4623)", "footway", False),
+    ("test-road-004", "길고 안전한 길 2", 9003, 9004, 100, "LINESTRING(126.681 37.4623, 126.683 37.4608)", "footway", False),
 )
 
 
@@ -35,7 +35,16 @@ def isolated_test_road_graph():
                 "DELETE FROM help_points WHERE source = %s",
                 (TEST_HELP_POINT_SOURCE,),
             )
-            for source_id, name, source_node, target_node, score, wkt in TEST_ROADS:
+            for (
+                source_id,
+                name,
+                source_node,
+                target_node,
+                score,
+                wkt,
+                highway,
+                is_steps,
+            ) in TEST_ROADS:
                 cursor.execute(
                     """
                     WITH transformed AS (
@@ -44,10 +53,15 @@ def isolated_test_road_graph():
                     INSERT INTO road_segments (
                         source, source_id, name, source_node_id, target_node_id,
                         geom, length_m, streetlight_score, cctv_score,
-                        population_score, safety_score
+                        population_score, safety_score, properties
                     )
                     SELECT
-                        %s, %s, %s, %s, %s, geom, ST_Length(geom), %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, geom, ST_Length(geom), %s, %s, %s, %s,
+                        jsonb_build_object(
+                            'highway', %s::text,
+                            'is_steps', %s::boolean,
+                            'incline', CASE WHEN %s::boolean THEN 'up' ELSE NULL END
+                        )
                     FROM transformed
                     """,
                     (
@@ -61,6 +75,9 @@ def isolated_test_road_graph():
                         score,
                         score,
                         score,
+                        highway,
+                        is_steps,
+                        is_steps,
                     ),
                 )
             cursor.execute(

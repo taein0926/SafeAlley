@@ -164,6 +164,7 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
 
             source_id = f"osm-way-{way_id}-edge-{edge_index}"
             safety_score = safety_score_for_segment(source_id, safety_score_mode)
+            highway = tags.get("highway")
             properties = {
                 "source": "osm",
                 "source_id": source_id,
@@ -179,7 +180,13 @@ def preprocess_osm_roads(input_path: Path, output_path: Path) -> dict[str, int]:
                     "demo" if safety_score_mode == "demo" else "unavailable"
                 ),
                 "osm_way_id": way_id,
-                "highway": tags.get("highway"),
+                "highway": highway,
+                "is_steps": highway == "steps",
+                "step_count": tags.get("step_count"),
+                "incline": tags.get("incline"),
+                "ramp": tags.get("ramp"),
+                "wheelchair": tags.get("wheelchair"),
+                "handrail": tags.get("handrail"),
                 "osm_tags": tags,
             }
             features.append(

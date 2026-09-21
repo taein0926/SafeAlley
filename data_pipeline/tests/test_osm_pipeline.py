@@ -93,3 +93,54 @@ def test_demo_safety_scores_are_stable_and_cover_all_color_bands() -> None:
     assert any(score <= 54 for score in first_scores)
     assert any(55 <= score <= 74 for score in first_scores)
     assert any(score >= 75 for score in first_scores)
+
+
+def test_preprocess_preserves_stairs_metadata(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OSM_DEFAULT_SAFETY_SCORE", "50")
+    monkeypatch.setenv("OSM_SAFETY_SCORE_MODE", "uniform")
+    monkeypatch.setenv("OSM_MIN_SEGMENT_LENGTH_M", "1")
+    raw_path = tmp_path / "stairs.json"
+    processed_path = tmp_path / "stairs.geojson"
+    raw_path.write_text(
+        json.dumps(
+            {
+                "elements": [
+                    {"type": "node", "id": 1, "lat": 37.46, "lon": 126.68},
+                    {"type": "node", "id": 2, "lat": 37.461, "lon": 126.68},
+                    {"type": "node", "id": 3, "lat": 37.462, "lon": 126.68},
+                    {
+                        "type": "way",
+                        "id": 100,
+                        "nodes": [1, 2],
+                        "tags": {
+                            "highway": "steps",
+                            "step_count": "18",
+                            "incline": "up",
+                        },
+                    },
+                    {
+                        "type": "way",
+                        "id": 200,
+                        "nodes": [2, 3],
+                        "tags": {"highway": "footway"},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    preprocess_osm_roads(raw_path, processed_path)
+    stairs, footway = read_road_features(processed_path)
+
+    assert stairs["properties"]["highway"] == "steps"
+    assert stairs["properties"]["is_steps"] is True
+    assert stairs["properties"]["step_count"] == "18"
+    assert stairs["properties"]["incline"] == "up"
+    assert stairs["properties"]["ramp"] is None
+    assert stairs["properties"]["wheelchair"] is None
+    assert stairs["properties"]["handrail"] is None
+    assert footway["properties"]["highway"] == "footway"
+    assert footway["properties"]["is_steps"] is False
+    assert footway["properties"]["step_count"] is None
+    assert footway["properties"]["incline"] is None

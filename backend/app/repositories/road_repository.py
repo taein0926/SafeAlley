@@ -43,6 +43,13 @@ class RoutingRoadSegment:
     target_x: float
     target_y: float
     coordinates: tuple[tuple[float, float], ...]
+    highway: str | None = None
+    is_steps: bool = False
+    step_count: str | None = None
+    incline: str | None = None
+    ramp: str | None = None
+    wheelchair: str | None = None
+    handrail: str | None = None
 
 
 class RoadRepositoryError(RuntimeError):
@@ -94,6 +101,21 @@ def list_road_segments(
             cctv_score::double precision AS cctv_score,
             population_score::double precision AS population_score,
             safety_score::double precision AS safety_score,
+            properties->>'highway' AS highway,
+            COALESCE(
+                (properties->>'is_steps')::boolean,
+                properties->>'highway' = 'steps',
+                FALSE
+            ) AS is_steps,
+            COALESCE(properties->>'step_count', properties->'osm_tags'->>'step_count')
+                AS step_count,
+            COALESCE(properties->>'incline', properties->'osm_tags'->>'incline')
+                AS incline,
+            COALESCE(properties->>'ramp', properties->'osm_tags'->>'ramp') AS ramp,
+            COALESCE(properties->>'wheelchair', properties->'osm_tags'->>'wheelchair')
+                AS wheelchair,
+            COALESCE(properties->>'handrail', properties->'osm_tags'->>'handrail')
+                AS handrail,
             ST_AsGeoJSON(ST_Transform(geom, 4326), 6)::json AS geometry
         FROM road_segments
         {conditions}
@@ -189,6 +211,21 @@ def list_routing_road_segments(
             cctv_score,
             population_score,
             safety_score,
+            properties->>'highway' AS highway,
+            COALESCE(
+                (properties->>'is_steps')::boolean,
+                properties->>'highway' = 'steps',
+                FALSE
+            ) AS is_steps,
+            COALESCE(properties->>'step_count', properties->'osm_tags'->>'step_count')
+                AS step_count,
+            COALESCE(properties->>'incline', properties->'osm_tags'->>'incline')
+                AS incline,
+            COALESCE(properties->>'ramp', properties->'osm_tags'->>'ramp') AS ramp,
+            COALESCE(properties->>'wheelchair', properties->'osm_tags'->>'wheelchair')
+                AS wheelchair,
+            COALESCE(properties->>'handrail', properties->'osm_tags'->>'handrail')
+                AS handrail,
             ST_X(ST_StartPoint(geom)) AS source_x,
             ST_Y(ST_StartPoint(geom)) AS source_y,
             ST_X(ST_EndPoint(geom)) AS target_x,
@@ -229,6 +266,13 @@ def list_routing_road_segments(
                 (float(coordinate[0]), float(coordinate[1]))
                 for coordinate in row["geometry"]["coordinates"]
             ),
+            highway=row["highway"],
+            is_steps=bool(row["is_steps"]),
+            step_count=row["step_count"],
+            incline=row["incline"],
+            ramp=row["ramp"],
+            wheelchair=row["wheelchair"],
+            handrail=row["handrail"],
         )
         for row in rows
     ]

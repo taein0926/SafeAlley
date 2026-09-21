@@ -59,6 +59,13 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
                     coordinates=segment.coordinates,
+                    highway=segment.highway,
+                    is_steps=segment.is_steps,
+                    step_count=segment.step_count,
+                    incline=segment.incline,
+                    ramp=segment.ramp,
+                    wheelchair=segment.wheelchair,
+                    handrail=segment.handrail,
                 )
             )
         if segment.reverse_allowed:
@@ -75,6 +82,13 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
                     coordinates=tuple(reversed(segment.coordinates)),
+                    highway=segment.highway,
+                    is_steps=segment.is_steps,
+                    step_count=segment.step_count,
+                    incline=segment.incline,
+                    ramp=segment.ramp,
+                    wheelchair=segment.wheelchair,
+                    handrail=segment.handrail,
                 )
             )
 
@@ -141,9 +155,11 @@ def _route_feature(
                 else None
             ),
             "total_cost": round(result.total_cost, 2),
+            "stairs_segment_count": sum(edge.is_steps for edge in result.edges),
             "cost_weights": {
                 "distance": policy.distance_weight,
                 "risk": policy.risk_weight,
+                "stairs": policy.stairs_weight,
             },
             "start_node_id": start_node.node_id,
             "end_node_id": end_node.node_id,
@@ -161,11 +177,22 @@ def _route_feature(
                     "cctv_score": round(edge.cctv_score, 2),
                     "population_score": round(edge.population_score, 2),
                     "safety_score": round(edge.safety_score, 2),
+                    "highway": edge.highway,
+                    "is_steps": edge.is_steps,
+                    "step_count": edge.step_count,
+                    "incline": edge.incline,
+                    "ramp": edge.ramp,
+                    "wheelchair": edge.wheelchair,
+                    "handrail": edge.handrail,
                     "distance_factor": round(
                         policy.breakdown(edge).distance_factor,
                         2,
                     ),
                     "risk_factor": round(policy.breakdown(edge).risk_factor, 2),
+                    "stairs_penalty": round(
+                        policy.breakdown(edge).stairs_penalty,
+                        2,
+                    ),
                     "traversal_cost": round(policy.edge_cost(edge), 2),
                 }
                 for edge in result.edges
@@ -181,6 +208,7 @@ def _get_route(
     end_latitude: float,
     route_type: Literal["shortest", "safe"],
     source: str | None = None,
+    stairs_weight: float = 0.0,
 ) -> dict[str, object]:
     start_node = find_nearest_road_node(
         start_longitude,
@@ -205,11 +233,16 @@ def _get_route(
     graph = _build_graph(segments)
     settings = get_settings()
     policy = (
-        SafetyCostPolicy(distance_weight=1.0, risk_weight=0.0)
+        SafetyCostPolicy(
+            distance_weight=1.0,
+            risk_weight=0.0,
+            stairs_weight=stairs_weight,
+        )
         if route_type == "shortest"
         else SafetyCostPolicy(
             distance_weight=settings.safe_route_distance_weight,
             risk_weight=settings.safe_route_risk_weight,
+            stairs_weight=stairs_weight,
         )
     )
     try:
@@ -232,6 +265,7 @@ def get_shortest_route(
     end_longitude: float,
     end_latitude: float,
     source: str | None = None,
+    stairs_weight: float = 0.0,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -240,6 +274,7 @@ def get_shortest_route(
         end_latitude,
         route_type="shortest",
         source=source,
+        stairs_weight=stairs_weight,
     )
 
 
@@ -249,6 +284,7 @@ def get_safe_route(
     end_longitude: float,
     end_latitude: float,
     source: str | None = None,
+    stairs_weight: float = 0.0,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -257,4 +293,5 @@ def get_safe_route(
         end_latitude,
         route_type="safe",
         source=source,
+        stairs_weight=stairs_weight,
     )

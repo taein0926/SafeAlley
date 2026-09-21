@@ -27,6 +27,7 @@ def _run_route(
             end_longitude=request.end.longitude,
             end_latitude=request.end.latitude,
             source=request.source,
+            stairs_weight=request.stairs_weight,
         )
     except SnapDistanceExceededError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -17,3 +17,8 @@ def test_roads_can_be_filtered_to_test_fixture() -> None:
         feature["properties"]["source"] == "test-fixture"
         for feature in collection["features"]
     )
+    assert collection["features"][0]["properties"]["highway"] == "steps"
+    assert collection["features"][0]["properties"]["is_steps"] is True
+    assert collection["features"][0]["properties"]["incline"] == "up"
+    assert collection["features"][2]["properties"]["highway"] == "footway"
+    assert collection["features"][2]["properties"]["is_steps"] is False

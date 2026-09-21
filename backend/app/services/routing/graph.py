@@ -21,6 +21,13 @@ class GraphEdge:
     population_score: float
     safety_score: float
     coordinates: tuple[tuple[float, float], ...]
+    highway: str | None = None
+    is_steps: bool = False
+    step_count: str | None = None
+    incline: str | None = None
+    ramp: str | None = None
+    wheelchair: str | None = None
+    handrail: str | None = None
 
 
 @dataclass

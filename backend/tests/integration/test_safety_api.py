@@ -26,6 +26,9 @@ def test_safety_road_api_returns_analysis_geojson() -> None:
     assert feature["properties"]["streetlight_score"] == 82.0
     assert feature["properties"]["cctv_score"] == 68.0
     assert feature["properties"]["help_point_score"] == 74.0
+    assert feature["properties"]["highway"] == "steps"
+    assert feature["properties"]["is_steps"] is True
+    assert feature["properties"]["incline"] == "up"
 
 
 def test_streetlight_api_returns_epsg4326_points() -> None:
