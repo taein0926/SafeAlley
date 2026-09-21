@@ -5,6 +5,7 @@ import {
   type RoadMapStatus,
 } from "./components/CesiumRoadMap";
 import { isNightDepartureTime } from "./nightMode";
+import { initialRouteType } from "./initialRouteType";
 import type { RouteCandidate, RouteQueryResponse, RouteType } from "./types";
 
 type HealthResponse = {
@@ -56,7 +57,7 @@ function metric(candidate: RouteCandidate, key: string): number | null {
 function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [roads, setRoads] = useState<RoadMapStatus>({ kind: "loading" });
-  const [query, setQuery] = useState("밤 10시에 주안역에서 인천사랑병원까지 CCTV와 도움시설 접근성이 좋은 길로 안내해줘");
+  const [query, setQuery] = useState("밤 10시에 주안역에서 더나눔병원까지 CCTV와 가로등을 고려하면서 너무 멀리 돌아가지 않는 도보 경로로 안내해줘");
   const [routeSearch, setRouteSearch] = useState<RouteSearchState>({ kind: "idle" });
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
   const [selectionMessage, setSelectionMessage] = useState("");
@@ -120,7 +121,7 @@ function App() {
       }
       const result = data as RouteQueryResponse;
       setRouteSearch({ kind: "ready", data: result });
-      setSelectedRouteType(result.result.selected_route_type);
+      setSelectedRouteType(initialRouteType(result.result.candidates));
     } catch (error) {
       setRouteSearch({
         kind: "error",
@@ -191,13 +192,13 @@ function App() {
             {routeSearch.kind === "ready" && routeSearch.data.result.recommendation_status === "field_review_required" && (
               <p className="route-review-warning" role="status">
                 모든 후보에 현장 확인이 필요한 대로 구간이 있어 최종 추천을 보류했습니다.
-                지도에는 자동 표시하지 않습니다. 후보를 누르면 검토용으로 볼 수 있습니다.
+                기본 표시된 후보도 검토용이며, 안전한 경로로 확정된 것은 아닙니다.
               </p>
             )}
             {routeSearch.kind === "ready" && routeSearch.data.result.recommendation_status === "no_supported_preferences" && (
               <p className="route-review-warning" role="status">
                 요청 조건을 검증할 수 없어 추천을 보류했습니다.
-                후보를 누르면 검토용 경로를 볼 수 있습니다.
+                기본 표시된 후보는 검토용이며, 안전한 경로로 확정된 것은 아닙니다.
               </p>
             )}
             {routeSearch.kind === "ready" && routeSearch.data.resolved_origin && routeSearch.data.resolved_destination && (
