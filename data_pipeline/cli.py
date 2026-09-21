@@ -13,6 +13,7 @@ from loaders.postgis import load_road_segments
 from loaders.streetlights import load_streetlights
 from loaders.cctvs import load_cctvs
 from loaders.help_points import load_help_points
+from loaders.demo_places import load_demo_places
 from loaders.elevation import load_road_slopes
 from loaders.public_crosswalks import load_public_crosswalks
 from loaders.crosswalk_links import link_public_crosswalks
@@ -296,6 +297,7 @@ def main() -> None:
             "run-cctvs",
             "run-cctv-csv",
             "load-help-points",
+            "load-demo-places",
             "analyze-safety-components",
             "run-safety-components",
             "calculate-road-slopes",
@@ -372,6 +374,8 @@ def main() -> None:
         run_cctv_csv_pipeline(arguments)
     elif arguments.command == "load-help-points":
         load_help_point_file(arguments)
+    elif arguments.command == "load-demo-places":
+        print(f"Upserted {load_demo_places()} demo places")
     elif arguments.command == "analyze-safety-components":
         analyze_safety_components(arguments)
     elif arguments.command == "run-safety-components":

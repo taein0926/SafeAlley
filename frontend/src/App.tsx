@@ -57,7 +57,7 @@ function metric(candidate: RouteCandidate, key: string): number | null {
 function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [roads, setRoads] = useState<RoadMapStatus>({ kind: "loading" });
-  const [query, setQuery] = useState("밤 10시에 주안역에서 더나눔병원까지 CCTV와 가로등을 고려하면서 너무 멀리 돌아가지 않는 도보 경로로 안내해줘");
+  const [query, setQuery] = useState("밤 10시에 주안역에서 그린빌라트까지 CCTV와 가로등을 고려하면서 너무 멀리 돌아가지 않는 도보 경로로 안내해줘");
   const [routeSearch, setRouteSearch] = useState<RouteSearchState>({ kind: "idle" });
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
   const [selectionMessage, setSelectionMessage] = useState("");
