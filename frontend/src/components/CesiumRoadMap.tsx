@@ -33,6 +33,7 @@ export type RoadMapStatus =
 
 type CesiumRoadMapProps = {
   onStatusChange: (status: RoadMapStatus) => void;
+  nightMode: boolean;
   routeCandidates: RouteCandidate[];
   selectedRouteType: RouteType | null;
 };
@@ -209,11 +210,13 @@ const routeColors: Record<RouteType, Color> = {
 
 export function CesiumRoadMap({
   onStatusChange,
+  nightMode,
   routeCandidates,
   selectedRouteType,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
+  const baseLayerRef = useRef<ImageryLayer | null>(null);
   const roadDataSourceRef = useRef<GeoJsonDataSource | null>(null);
   const routeEntityIdsRef = useRef<string[]>([]);
   const lastRouteSignatureRef = useRef("");
@@ -250,11 +253,12 @@ export function CesiumRoadMap({
         true,
       ),
     });
+    const baseLayer = new ImageryLayer(osmImagery);
     let viewer: Viewer;
     try {
       viewer = new Viewer(containerRef.current, {
         animation: false,
-        baseLayer: new ImageryLayer(osmImagery),
+        baseLayer,
         baseLayerPicker: false,
         fullscreenButton: false,
         geocoder: false,
@@ -267,6 +271,7 @@ export function CesiumRoadMap({
         timeline: false,
       });
       viewerRef.current = viewer;
+      baseLayerRef.current = baseLayer;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "알 수 없는 오류";
       const message = `Cesium 초기화에 실패했습니다: ${detail}`;
@@ -535,9 +540,27 @@ export function CesiumRoadMap({
       removeRenderErrorListener();
       viewerRef.current = null;
       roadDataSourceRef.current = null;
+      baseLayerRef.current = null;
       if (!viewer.isDestroyed()) viewer.destroy();
     };
   }, [onStatusChange]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const baseLayer = baseLayerRef.current;
+    if (viewer === null || viewer.isDestroyed() || baseLayer === null) return;
+
+    // Dim only the basemap; route lines and safety markers stay readable.
+    baseLayer.brightness = nightMode ? 0.42 : 1;
+    baseLayer.saturation = nightMode ? 0.7 : 1;
+    viewer.scene.backgroundColor = Color.fromCssColorString(
+      nightMode ? "#030a15" : "#071a2b",
+    );
+    viewer.scene.globe.baseColor = Color.fromCssColorString(
+      nightMode ? "#091925" : "#173944",
+    );
+    viewer.scene.requestRender();
+  }, [nightMode]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -608,7 +631,12 @@ export function CesiumRoadMap({
   }, [routeCandidates, selectedRouteType]);
 
   return (
-    <div ref={containerRef} className="cesium-map" aria-label="보행 가능 도로 지도">
+    <div
+      ref={containerRef}
+      className="cesium-map"
+      data-map-mode={nightMode ? "night" : "day"}
+      aria-label={nightMode ? "야간 보행 가능 도로 지도" : "보행 가능 도로 지도"}
+    >
       {renderingError !== null && (
         <div className="map-rendering-error" role="alert">
           <strong>3D 지도를 표시할 수 없습니다</strong>

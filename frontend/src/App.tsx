@@ -4,6 +4,7 @@ import {
   CesiumRoadMap,
   type RoadMapStatus,
 } from "./components/CesiumRoadMap";
+import { isNightDepartureTime } from "./nightMode";
 import type { RouteCandidate, RouteQueryResponse, RouteType } from "./types";
 
 type HealthResponse = {
@@ -91,6 +92,8 @@ function App() {
   const componentDataReady =
     roads.kind === "ready" && roads.cctvCount > 0 && roads.helpPointCount > 0;
   const routeCandidates = routeSearch.kind === "ready" ? routeSearch.data.result.candidates : [];
+  const nightMode = routeSearch.kind === "ready"
+    && isNightDepartureTime(routeSearch.data.interpretation.departure_time);
   const selectedCandidate = routeCandidates.find(
     (candidate) => candidate.route_type === selectedRouteType,
   );
@@ -153,6 +156,7 @@ function App() {
     <main className="app-shell">
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
+        nightMode={nightMode}
         routeCandidates={routeCandidates}
         selectedRouteType={selectedRouteType}
       />
