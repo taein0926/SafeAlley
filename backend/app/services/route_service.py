@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 from app.core.config import get_settings
@@ -24,6 +25,39 @@ class SnapDistanceExceededError(RuntimeError):
 
 class RouteNotFoundError(RuntimeError):
     """Raised when the snapped graph nodes are disconnected."""
+
+
+@dataclass(frozen=True)
+class RoutingContext:
+    start_node: NearestRoadNode
+    end_node: NearestRoadNode
+    graph: RoadGraph
+
+
+def prepare_routing_context(
+    start_longitude: float,
+    start_latitude: float,
+    end_longitude: float,
+    end_latitude: float,
+    source: str | None = None,
+) -> RoutingContext:
+    """Snapshot one road graph for all route profiles in a single request."""
+    start_node = find_nearest_road_node(
+        start_longitude, start_latitude, source=source,
+    )
+    end_node = find_nearest_road_node(
+        end_longitude, end_latitude, source=source,
+    )
+    if start_node is None or end_node is None:
+        raise RoutingDataNotFoundError("The road graph is empty")
+
+    _validate_snap_distance(start_node, "start")
+    _validate_snap_distance(end_node, "end")
+
+    segments = list_routing_road_segments(source=source)
+    if not segments:
+        raise RoutingDataNotFoundError("The road graph is empty")
+    return RoutingContext(start_node, end_node, _build_graph(segments))
 
 
 def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
@@ -251,28 +285,14 @@ def _get_route(
     route_type: Literal["shortest", "balanced", "safe"],
     source: str | None = None,
     penalized_segment_ids: set[int] | None = None,
+    routing_context: RoutingContext | None = None,
 ) -> dict[str, object]:
-    start_node = find_nearest_road_node(
-        start_longitude,
-        start_latitude,
-        source=source,
+    context = routing_context or prepare_routing_context(
+        start_longitude, start_latitude, end_longitude, end_latitude, source,
     )
-    end_node = find_nearest_road_node(
-        end_longitude,
-        end_latitude,
-        source=source,
-    )
-    if start_node is None or end_node is None:
-        raise RoutingDataNotFoundError("The road graph is empty")
-
-    _validate_snap_distance(start_node, "start")
-    _validate_snap_distance(end_node, "end")
-
-    segments = list_routing_road_segments(source=source)
-    if not segments:
-        raise RoutingDataNotFoundError("The road graph is empty")
-
-    graph = _build_graph(segments)
+    start_node = context.start_node
+    end_node = context.end_node
+    graph = context.graph
     settings = get_settings()
     if route_type == "shortest":
         policy = SafetyCostPolicy(distance_weight=1.0, risk_weight=0.0)
@@ -317,6 +337,7 @@ def get_shortest_route(
     end_longitude: float,
     end_latitude: float,
     source: str | None = None,
+    routing_context: RoutingContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -325,6 +346,7 @@ def get_shortest_route(
         end_latitude,
         route_type="shortest",
         source=source,
+        routing_context=routing_context,
     )
 
 
@@ -334,6 +356,7 @@ def get_safe_route(
     end_longitude: float,
     end_latitude: float,
     source: str | None = None,
+    routing_context: RoutingContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -342,6 +365,7 @@ def get_safe_route(
         end_latitude,
         route_type="safe",
         source=source,
+        routing_context=routing_context,
     )
 
 
@@ -352,6 +376,7 @@ def get_balanced_route(
     end_latitude: float,
     source: str | None = None,
     penalized_segment_ids: set[int] | None = None,
+    routing_context: RoutingContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -361,4 +386,5 @@ def get_balanced_route(
         route_type="balanced",
         source=source,
         penalized_segment_ids=penalized_segment_ids,
+        routing_context=routing_context,
     )

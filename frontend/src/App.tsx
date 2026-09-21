@@ -271,9 +271,13 @@ function App() {
             </dd>
           </div>
           <div>
-            <dt>Road GeoJSON</dt>
+            <dt>화면 내 안전도 도로</dt>
             <dd>
-              {roads.kind === "ready" && `${roads.roadCount}개 segment · EPSG:4326`}
+              {roads.kind === "ready" && (
+                roads.roadCount > 0
+                  ? `${roads.roadCount}개 · EPSG:4326`
+                  : "지도를 확대하면 표시"
+              )}
               {roads.kind === "loading" && "불러오는 중"}
               {roads.kind === "error" && roads.message}
             </dd>

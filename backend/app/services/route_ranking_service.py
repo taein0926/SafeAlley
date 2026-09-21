@@ -10,6 +10,7 @@ from app.services.route_service import (
     get_balanced_route,
     get_safe_route,
     get_shortest_route,
+    prepare_routing_context,
 )
 from app.repositories.personalization_repository import save_recommendation
 from app.services.personalization_service import learned_preferences_for_ranking
@@ -166,8 +167,9 @@ def generate_route_candidates(
     """Generate route alternatives independently from preference scoring."""
 
     route_arguments = _route_arguments(arguments)
-    shortest_route = get_shortest_route(**route_arguments)
-    safe_route = get_safe_route(**route_arguments)
+    context = prepare_routing_context(**route_arguments)
+    shortest_route = get_shortest_route(**route_arguments, routing_context=context)
+    safe_route = get_safe_route(**route_arguments, routing_context=context)
     used_segment_ids = {
         int(segment["id"])
         for route in (shortest_route, safe_route)
@@ -176,6 +178,7 @@ def generate_route_candidates(
     balanced_route = get_balanced_route(
         **route_arguments,
         penalized_segment_ids=used_segment_ids,
+        routing_context=context,
     )
     routes = [shortest_route, balanced_route, safe_route]
     return [

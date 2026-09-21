@@ -10,6 +10,11 @@ from app.services import route_ranking_service
 def balanced_route_candidate(monkeypatch) -> None:
     monkeypatch.setattr(
         route_ranking_service,
+        "prepare_routing_context",
+        lambda **_: object(),
+    )
+    monkeypatch.setattr(
+        route_ranking_service,
         "get_balanced_route",
         lambda **_: _route("balanced", 115, 55),
     )
@@ -64,6 +69,33 @@ def _arguments(
             "departure_time": departure_time,
         }
     )
+
+
+def test_three_candidates_share_one_routing_context(monkeypatch) -> None:
+    contexts: list[object] = []
+    seen: list[object] = []
+
+    def prepare(**_) -> object:
+        context = object()
+        contexts.append(context)
+        return context
+
+    def route(route_type: str):
+        def build(**kwargs):
+            seen.append(kwargs["routing_context"])
+            return _route(route_type, 100, 50)
+        return build
+
+    monkeypatch.setattr(route_ranking_service, "prepare_routing_context", prepare)
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", route("shortest"))
+    monkeypatch.setattr(route_ranking_service, "get_balanced_route", route("balanced"))
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", route("safe"))
+
+    candidates = route_ranking_service.generate_route_candidates(_arguments([]))
+
+    assert len(candidates) == 3
+    assert len(contexts) == 1
+    assert seen == [contexts[0], contexts[0], contexts[0]]
 
 
 def test_ranking_combines_registered_metrics(monkeypatch) -> None:

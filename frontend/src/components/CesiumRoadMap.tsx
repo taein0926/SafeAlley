@@ -9,6 +9,7 @@ import {
   ImageryLayer,
   Ion,
   JulianDate,
+  Math as CesiumMath,
   OpenStreetMapImageryProvider,
   PointPrimitiveCollection,
   Rectangle,
@@ -16,6 +17,12 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
+import {
+  roadBboxQuery,
+  roadRequestBounds,
+  viewportIsInside,
+  type RoadViewport,
+} from "../roadViewport";
 import type { RouteCandidate, RouteType } from "../types";
 
 export type RoadMapStatus =
@@ -218,6 +225,8 @@ export function CesiumRoadMap({
   const viewerRef = useRef<Viewer | null>(null);
   const baseLayerRef = useRef<ImageryLayer | null>(null);
   const roadDataSourceRef = useRef<GeoJsonDataSource | null>(null);
+  const routeCandidatesRef = useRef(routeCandidates);
+  routeCandidatesRef.current = routeCandidates;
   const routeEntityIdsRef = useRef<string[]>([]);
   const lastRouteSignatureRef = useRef("");
   const [renderingError, setRenderingError] = useState<string | null>(null);
@@ -298,9 +307,11 @@ export function CesiumRoadMap({
     >(
       url: string,
       label: string,
+      signal?: AbortSignal,
     ): Promise<T> {
       const response = await fetch(url, {
         headers: { Accept: "application/geo+json, application/json" },
+        signal,
       });
       if (!response.ok) throw new Error(`${label} API가 HTTP ${response.status}를 반환했습니다.`);
       const collection = (await response.json()) as T;
@@ -312,6 +323,111 @@ export function CesiumRoadMap({
       }
       return collection;
     }
+
+    let roadRequestController: AbortController | null = null;
+    let roadLoadTimer: ReturnType<typeof setTimeout> | null = null;
+    let roadLoadSerial = 0;
+    let loadedRoadBounds: RoadViewport | null = null;
+    let pendingRoadBounds: RoadViewport | null = null;
+    let layerCounts: Omit<Extract<RoadMapStatus, { kind: "ready" }>, "kind" | "roadCount"> | null = null;
+
+    function publishRoadCount(count: number) {
+      if (layerCounts !== null && !cancelled) {
+        onStatusChange({ kind: "ready", ...layerCounts, roadCount: count });
+      }
+    }
+
+    function removeRoadLayer() {
+      if (roadDataSourceRef.current !== null && !viewer.isDestroyed()) {
+        viewer.dataSources.remove(roadDataSourceRef.current);
+        roadDataSourceRef.current = null;
+        viewer.scene.requestRender();
+      }
+      loadedRoadBounds = null;
+      publishRoadCount(0);
+    }
+
+    async function refreshVisibleRoads() {
+      if (cancelled || renderingFailed || viewer.isDestroyed()) return;
+      const rectangle = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+      if (rectangle === undefined) return;
+      const view: RoadViewport = {
+        west: CesiumMath.toDegrees(rectangle.west),
+        south: CesiumMath.toDegrees(rectangle.south),
+        east: CesiumMath.toDegrees(rectangle.east),
+        north: CesiumMath.toDegrees(rectangle.north),
+      };
+      const bounds = roadRequestBounds(view);
+      if (bounds === null || routeCandidatesRef.current.length > 0) {
+        roadLoadSerial += 1;
+        roadRequestController?.abort();
+        roadRequestController = null;
+        pendingRoadBounds = null;
+        removeRoadLayer();
+        return;
+      }
+      if (loadedRoadBounds !== null && viewportIsInside(view, loadedRoadBounds)) return;
+      if (pendingRoadBounds !== null && viewportIsInside(view, pendingRoadBounds)) return;
+
+      const serial = ++roadLoadSerial;
+      roadRequestController?.abort();
+      const controller = new AbortController();
+      roadRequestController = controller;
+      pendingRoadBounds = bounds;
+      try {
+        const roads = await loadGeoJson<RoadFeatureCollection>(
+          "/api/safety/roads?source=osm&bbox=" + roadBboxQuery(bounds),
+          "안전도 도로",
+          controller.signal,
+        );
+        if (cancelled || renderingFailed || serial !== roadLoadSerial) return;
+        const roadDataSource = await GeoJsonDataSource.load(
+          roads as Parameters<typeof GeoJsonDataSource.load>[0],
+          { clampToGround: false },
+        );
+        if (cancelled || renderingFailed || serial !== roadLoadSerial) {
+          return;
+        }
+        roadDataSource.name = "Visible walkable road segments";
+        const now = JulianDate.now();
+        for (const entity of roadDataSource.entities.values) {
+          if (!entity.polyline) continue;
+          const properties = entity.properties?.getValue(now) as Record<string, unknown> | undefined;
+          entity.name = String(properties?.name ?? "종합 안전도 분석 구간");
+          entity.description = new ConstantProperty(roadDescription(properties ?? {}));
+          entity.polyline.width = new ConstantProperty(5);
+          entity.polyline.material = new ColorMaterialProperty(
+            colorForSafetyScore(Number(properties?.safety_score ?? 50)),
+          );
+        }
+        await viewer.dataSources.add(roadDataSource);
+        if (cancelled || serial !== roadLoadSerial) {
+          viewer.dataSources.remove(roadDataSource);
+          return;
+        }
+        if (roadDataSourceRef.current !== null) {
+          viewer.dataSources.remove(roadDataSourceRef.current);
+        }
+        roadDataSourceRef.current = roadDataSource;
+        loadedRoadBounds = bounds;
+        publishRoadCount(roads.metadata.count);
+        viewer.scene.requestRender();
+      } catch (error) {
+        if (controller.signal.aborted || cancelled) return;
+        const message = error instanceof Error ? error.message : "알 수 없는 도로 로딩 오류";
+        setRenderingError(message);
+        onStatusChange({ kind: "error", message });
+      } finally {
+        if (serial === roadLoadSerial) pendingRoadBounds = null;
+      }
+    }
+
+    function scheduleRoadRefresh() {
+      if (roadLoadTimer !== null) clearTimeout(roadLoadTimer);
+      roadLoadTimer = setTimeout(() => void refreshVisibleRoads(), 250);
+    }
+
+    const removeMoveEndListener = viewer.camera.moveEnd.addEventListener(scheduleRoadRefresh);
 
     async function loadMapLayers() {
       onStatusChange({ kind: "loading" });
@@ -344,8 +460,7 @@ export function CesiumRoadMap({
               "AI 안전시설",
             )
           : Promise.resolve(emptyPoints);
-        const [roads, buildings, streetlights, cctvs, helpPoints] = await Promise.all([
-          loadGeoJson<RoadFeatureCollection>("/api/safety/roads?source=osm", "안전도 도로"),
+        const [buildings, streetlights, cctvs, helpPoints] = await Promise.all([
           loadGeoJson<BuildingFeatureCollection>(
             `/api/buildings?source=${encodeURIComponent(buildingSource)}`,
             "건물",
@@ -384,31 +499,8 @@ export function CesiumRoadMap({
           }
         }
 
-        const roadDataSource = await GeoJsonDataSource.load(
-          roads as Parameters<typeof GeoJsonDataSource.load>[0],
-          { clampToGround: false },
-        );
-        roadDataSource.name = "Walkable road segments";
-        roadDataSourceRef.current = roadDataSource;
-
-        for (const entity of roadDataSource.entities.values) {
-          if (!entity.polyline) continue;
-
-          const properties = entity.properties?.getValue(now) as
-            | Record<string, unknown>
-            | undefined;
-          const safetyScore = Number(properties?.safety_score ?? 50);
-          entity.name = String(properties?.name ?? "종합 안전도 분석 구간");
-          entity.description = new ConstantProperty(roadDescription(properties ?? {}));
-          entity.polyline.width = new ConstantProperty(5);
-          entity.polyline.material = new ColorMaterialProperty(
-            colorForSafetyScore(safetyScore),
-          );
-        }
-
         if (cancelled || renderingFailed) return;
         await viewer.dataSources.add(buildingDataSource);
-        await viewer.dataSources.add(roadDataSource);
         const streetlightPrimitives = new PointPrimitiveCollection();
         for (const feature of streetlights.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
@@ -498,33 +590,20 @@ export function CesiumRoadMap({
         }
         viewer.scene.primitives.add(helpPointPrimitives);
         if (renderingFailed) return;
-        if (roads.features.length > 0) {
-          const coordinates = roads.features.flatMap(
-            (feature) => feature.geometry.coordinates,
-          );
-          const longitudes = coordinates.map(([longitude]) => longitude);
-          const latitudes = coordinates.map(([, latitude]) => latitude);
-          const padding = 0.0015;
-
-          viewer.camera.flyTo({
-            duration: 0,
-            destination: Rectangle.fromDegrees(
-              Math.min(...longitudes) - padding,
-              Math.min(...latitudes) - padding,
-              Math.max(...longitudes) + padding,
-              Math.max(...latitudes) + padding,
-            ),
-          });
-        }
-        onStatusChange({
-          kind: "ready",
-          roadCount: roads.metadata.count,
+        // Start near the demo's Juan Station; load only visible detailed road segments.
+        viewer.camera.flyTo({
+          duration: 0,
+          destination: Rectangle.fromDegrees(126.676, 37.459, 126.685, 37.467),
+        });
+        layerCounts = {
           buildingCount: buildings.metadata.count,
           streetlightCount: streetlights.metadata.count,
           cctvCount: cctvs.metadata.count,
           cctvRecordCount: cctvs.metadata.record_count ?? cctvs.metadata.count,
           helpPointCount: helpPoints.metadata.count,
-        });
+        };
+        publishRoadCount(0);
+        scheduleRoadRefresh();
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "알 수 없는 지도 오류";
@@ -537,6 +616,10 @@ export function CesiumRoadMap({
 
     return () => {
       cancelled = true;
+      roadLoadSerial += 1;
+      roadRequestController?.abort();
+      if (roadLoadTimer !== null) clearTimeout(roadLoadTimer);
+      removeMoveEndListener();
       removeRenderErrorListener();
       viewerRef.current = null;
       roadDataSourceRef.current = null;
