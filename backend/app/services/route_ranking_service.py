@@ -164,23 +164,26 @@ def _semantic_tie_break_score(
 def generate_route_candidates(
     arguments: RouteOptimizationArguments,
 ) -> list[dict[str, object]]:
-    """Generate route alternatives independently from preference scoring."""
+    """Return only distinct paths produced by the three cost profiles."""
 
     route_arguments = _route_arguments(arguments)
     context = prepare_routing_context(**route_arguments)
     shortest_route = get_shortest_route(**route_arguments, routing_context=context)
+    balanced_route = get_balanced_route(**route_arguments, routing_context=context)
     safe_route = get_safe_route(**route_arguments, routing_context=context)
-    used_segment_ids = {
-        int(segment["id"])
-        for route in (shortest_route, safe_route)
-        for segment in route["properties"].get("road_segments", [])
-    }
-    balanced_route = get_balanced_route(
-        **route_arguments,
-        penalized_segment_ids=used_segment_ids,
-        routing_context=context,
-    )
-    routes = [shortest_route, balanced_route, safe_route]
+    # Preserve the meaningful endpoint profiles when the balanced path overlaps.
+    routes = [shortest_route, safe_route, balanced_route]
+    distinct_routes: list[dict[str, object]] = []
+    seen_paths: set[tuple[tuple[float, ...], ...]] = set()
+    for route in routes:
+        coordinates = route["geometry"]["coordinates"]
+        path = tuple(tuple(point) for point in coordinates)
+        if path in seen_paths:
+            continue
+        seen_paths.add(path)
+        distinct_routes.append(route)
+    route_order = {"shortest": 0, "balanced": 1, "safe": 2}
+    distinct_routes.sort(key=lambda route: route_order[route["properties"]["route_type"]])
     return [
         {
             "route_type": route["properties"]["route_type"],
@@ -188,7 +191,7 @@ def generate_route_candidates(
             "metrics": calculate_route_metrics(route),
             "route": route,
         }
-        for route in routes
+        for route in distinct_routes
     ]
 
 

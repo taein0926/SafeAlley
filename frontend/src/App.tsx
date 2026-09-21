@@ -164,7 +164,7 @@ function App() {
       <aside className="map-panel">
         <p className="eyebrow">MICHUHOL-GU · AI SAFETY ROUTING</p>
         <h1>SafeAlley</h1>
-        <p className="description">원하는 이동 조건을 말하면 세 가지 경로를 비교해 보여줍니다.</p>
+        <p className="description">원하는 이동 조건에 맞는 경로를 찾아 보여줍니다.</p>
 
         <form className="route-form" onSubmit={searchRoutes}>
           <label htmlFor="route-query">어떤 길을 원하세요?</label>
@@ -176,7 +176,7 @@ function App() {
             required
           />
           <button className="search-button" type="submit" disabled={routeSearch.kind === "loading"}>
-            {routeSearch.kind === "loading" ? "AI가 경로를 분석하는 중…" : "3개 경로 찾기"}
+            {routeSearch.kind === "loading" ? "AI가 경로를 분석하는 중…" : "경로 찾기"}
           </button>
         </form>
 
@@ -191,7 +191,13 @@ function App() {
             {routeSearch.kind === "ready" && routeSearch.data.result.recommendation_status === "field_review_required" && (
               <p className="route-review-warning" role="status">
                 모든 후보에 현장 확인이 필요한 대로 구간이 있어 최종 추천을 보류했습니다.
-                후보를 눌러 검토용 경로를 볼 수 있습니다.
+                지도에는 자동 표시하지 않습니다. 후보를 누르면 검토용으로 볼 수 있습니다.
+              </p>
+            )}
+            {routeSearch.kind === "ready" && routeSearch.data.result.recommendation_status === "no_supported_preferences" && (
+              <p className="route-review-warning" role="status">
+                요청 조건을 검증할 수 없어 추천을 보류했습니다.
+                후보를 누르면 검토용 경로를 볼 수 있습니다.
               </p>
             )}
             {routeSearch.kind === "ready" && routeSearch.data.resolved_origin && routeSearch.data.resolved_destination && (

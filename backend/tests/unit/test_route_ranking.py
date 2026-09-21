@@ -21,9 +21,13 @@ def balanced_route_candidate(monkeypatch) -> None:
 
 
 def _route(route_type: str, distance: float, score: float) -> dict[str, object]:
+    latitude_offset = {"shortest": 0.0, "balanced": 0.0002, "safe": 0.0004}[route_type]
     return {
         "type": "Feature",
-        "geometry": {"type": "LineString", "coordinates": [[126.6, 37.4], [126.7, 37.5]]},
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[126.6, 37.4], [126.7, 37.5 + latitude_offset]],
+        },
         "properties": {
             "route_type": route_type,
             "crs": "EPSG:4326",
@@ -74,6 +78,7 @@ def _arguments(
 def test_three_candidates_share_one_routing_context(monkeypatch) -> None:
     contexts: list[object] = []
     seen: list[object] = []
+    balanced_arguments: list[dict[str, object]] = []
 
     def prepare(**_) -> object:
         context = object()
@@ -83,6 +88,8 @@ def test_three_candidates_share_one_routing_context(monkeypatch) -> None:
     def route(route_type: str):
         def build(**kwargs):
             seen.append(kwargs["routing_context"])
+            if route_type == "balanced":
+                balanced_arguments.append(kwargs)
             return _route(route_type, 100, 50)
         return build
 
@@ -96,6 +103,35 @@ def test_three_candidates_share_one_routing_context(monkeypatch) -> None:
     assert len(candidates) == 3
     assert len(contexts) == 1
     assert seen == [contexts[0], contexts[0], contexts[0]]
+    assert "penalized_segment_ids" not in balanced_arguments[0]
+
+
+def test_identical_paths_are_returned_only_once(monkeypatch) -> None:
+    shortest = _route("shortest", 100, 50)
+    balanced = _route("balanced", 120, 60)
+    safe = _route("safe", 100, 50)
+    safe["geometry"] = shortest["geometry"]
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_balanced_route", lambda **_: balanced)
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: safe)
+
+    candidates = route_ranking_service.generate_route_candidates(_arguments([]))
+
+    assert [candidate["route_type"] for candidate in candidates] == ["shortest", "balanced"]
+
+
+def test_safe_label_survives_when_balanced_path_is_identical(monkeypatch) -> None:
+    shortest = _route("shortest", 100, 50)
+    balanced = _route("balanced", 120, 80)
+    safe = _route("safe", 120, 80)
+    balanced["geometry"] = safe["geometry"]
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_balanced_route", lambda **_: balanced)
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: safe)
+
+    candidates = route_ranking_service.generate_route_candidates(_arguments([]))
+
+    assert [candidate["route_type"] for candidate in candidates] == ["shortest", "safe"]
 
 
 def test_ranking_combines_registered_metrics(monkeypatch) -> None:

@@ -166,7 +166,7 @@ Content-Type: application/json
 
 ### 사용자 선택 기반 경로 개인화
 
-`rank_routes`는 빠른 길(`shortest`), 기존 경로와 겹침을 줄인 균형 길(`balanced`), 안전 길(`safe`) 후보를 생성합니다. `user_id`가 있는 요청은 후보의 지표 요약을 서버에 저장하고 `recommendation_id`를 반환합니다. 사용자가 경로를 선택하면 다음 API로 명시적인 선택을 기록합니다.
+`rank_routes`는 거리 우선(`shortest`), 거리·안전 균형(`balanced`), 안전 우선(`safe`) 비용으로 각각 계산합니다. 같은 선이 나온 후보는 합쳐 실제로 구별되는 1~3개만 반환하며, 다른 길을 억지로 만들기 위한 우회 벌점은 주지 않습니다. 현장 미검증으로 추천을 보류하면 지도에 경로를 자동 표시하지 않고 사용자가 후보를 눌렀을 때만 검토용으로 보여줍니다. `user_id`가 있는 요청은 후보의 지표 요약을 서버에 저장하고 `recommendation_id`를 반환합니다. 사용자가 경로를 선택하면 다음 API로 명시적인 선택을 기록합니다.
 
 ```http
 POST /api/agent/route-selections

@@ -658,7 +658,7 @@ export function CesiumRoadMap({
 
     const visibleCandidates = selectedRouteType
       ? routeCandidates.filter((candidate) => candidate.route_type === selectedRouteType)
-      : routeCandidates;
+      : [];
 
     for (const candidate of visibleCandidates) {
       const selected = candidate.route_type === selectedRouteType;
@@ -672,7 +672,7 @@ export function CesiumRoadMap({
         name: `${candidate.route_type} 경로 후보 외곽선`,
         polyline: {
           positions,
-          width: selected ? 18 : 10,
+          width: selected ? 8 : 5,
           material: selected
             ? Color.WHITE.withAlpha(0.98)
             : Color.fromCssColorString("#07111d").withAlpha(0.9),
@@ -684,7 +684,7 @@ export function CesiumRoadMap({
         name: `${candidate.route_type} 경로 후보`,
         polyline: {
           positions,
-          width: selected ? 12 : 6,
+          width: selected ? 5 : 3,
           material: routeColors[candidate.route_type].withAlpha(selected ? 1 : 0.92),
           clampToGround: false,
         },
@@ -693,8 +693,12 @@ export function CesiumRoadMap({
     }
 
     const signature = visibleCandidates
-      .map((candidate) => `${candidate.route_type}:${candidate.route.geometry.coordinates.length}`)
+      .map((candidate) => [
+        candidate.route_type,
+        ...candidate.route.geometry.coordinates.flat(),
+      ].join(":"))
       .join("|");
+    if (visibleCandidates.length === 0) lastRouteSignatureRef.current = "";
     if (visibleCandidates.length > 0 && signature !== lastRouteSignatureRef.current) {
       const coordinates = visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates);
       const longitudes = coordinates.map(([longitude]) => longitude);

@@ -34,7 +34,9 @@ def test_agent_ranks_routes_from_structured_output() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["selected_route_type"] == "safe"
-    assert len(payload["candidates"]) == 3
+    assert [item["route_type"] for item in payload["candidates"]] == [
+        "shortest", "safe",
+    ]
     assert payload["unsupported_preferences"] == []
 
 
@@ -186,7 +188,9 @@ def test_natural_language_query_resolves_place_names(monkeypatch) -> None:
     payload = response.json()
     assert payload["resolved_origin"]["name"] == "주안역"
     assert payload["resolved_destination"]["name"] == "인천사랑병원"
-    assert len(payload["result"]["candidates"]) == 3
+    assert [item["route_type"] for item in payload["result"]["candidates"]] == [
+        "shortest", "safe",
+    ]
 
 
 def test_route_selection_updates_server_side_preferences() -> None:
@@ -206,7 +210,9 @@ def test_route_selection_updates_server_side_preferences() -> None:
     assert recommendation.status_code == 200
     payload = recommendation.json()
     assert payload["recommendation_id"] is not None
-    assert len(payload["candidates"]) == 3
+    assert [item["route_type"] for item in payload["candidates"]] == [
+        "shortest", "safe",
+    ]
 
     selection = client.post(
         "/api/agent/route-selections",
