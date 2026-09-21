@@ -46,9 +46,17 @@ def test_cctv_api_returns_only_safety_points_in_epsg4326() -> None:
     assert response.status_code == 200
     collection = response.json()
     assert collection["metadata"]["count"] == 1
+    assert collection["metadata"]["record_count"] == 2
+    assert collection["metadata"]["coordinate_quality_counts"] == {
+        "source_approximate": 2
+    }
+    assert collection["metadata"]["position_semantics"] == "coordinate_cells"
     assert collection["metadata"]["crs"] == "EPSG:4326"
     feature = collection["features"][0]
     assert feature["properties"]["purpose"] == "방범"
+    assert feature["properties"]["location_record_count"] == 2
+    assert feature["properties"]["camera_count"] == 3
+    assert feature["properties"]["coordinate_quality"] == "source_approximate"
     longitude, latitude = feature["geometry"]["coordinates"]
     assert abs(longitude - 126.6801) < 0.00001
     assert abs(latitude - 37.4611) < 0.00001

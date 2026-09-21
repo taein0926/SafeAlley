@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.api import agent as agent_api
 from app.main import app
 from app.schemas.agent import ParsedRouteIntent
+from tests.integration.conftest import TEST_USER_ID
 
 
 client = TestClient(app)
@@ -33,11 +34,11 @@ def test_agent_ranks_routes_from_structured_output() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["selected_route_type"] == "safe"
-    assert len(payload["candidates"]) == 2
+    assert len(payload["candidates"]) == 3
     assert payload["unsupported_preferences"] == []
 
 
-def test_agent_reports_metrics_that_have_no_registered_data() -> None:
+def test_agent_reports_registered_metrics_that_have_no_source_data() -> None:
     response = client.post(
         "/api/agent/execute",
         json={
@@ -48,7 +49,7 @@ def test_agent_reports_metrics_that_have_no_registered_data() -> None:
                 "source": "test-fixture",
                 "preferences": [
                     {
-                        "factor": "crosswalk_count",
+                        "factor": "max_slope_percent",
                         "direction": "minimize",
                         "weight": 1,
                     }
@@ -60,7 +61,7 @@ def test_agent_reports_metrics_that_have_no_registered_data() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["selected_route"] is None
-    assert payload["unsupported_preferences"][0]["factor"] == "crosswalk_count"
+    assert payload["unsupported_preferences"][0]["factor"] == "max_slope_percent"
 
 
 def test_agent_rejects_unregistered_tools_and_extra_fields() -> None:
@@ -134,3 +135,124 @@ def test_natural_language_query_does_not_fallback_when_llm_fails(monkeypatch) ->
 
     assert response.status_code == 502
     assert response.json()["detail"] == "invalid local model output"
+
+
+def test_natural_language_query_resolves_place_names(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_api,
+        "parse_route_intent",
+        lambda _: ParsedRouteIntent.model_validate(
+            {
+                "origin_name": "주안역",
+                "destination_name": "인천사랑병원",
+                "departure_time": "22:00:00",
+                "profile": "pedestrian",
+                "preferences": [
+                    {"factor": "cctv_score", "direction": "maximize", "weight": 1}
+                ],
+            }
+        ),
+    )
+
+    places = {
+        "주안역": {
+            "name": "주안역",
+            "category": "subway_station",
+            "address": None,
+            "source": "test",
+            "latitude": 37.4608,
+            "longitude": 126.6790,
+        },
+        "인천사랑병원": {
+            "name": "인천사랑병원",
+            "category": "hospital",
+            "address": None,
+            "source": "test",
+            "latitude": 37.4608,
+            "longitude": 126.6830,
+        },
+    }
+    monkeypatch.setattr(agent_api, "resolve_place", lambda name: places[name])
+
+    response = client.post(
+        "/api/agent/query",
+        json={
+            "query": "밤 10시에 주안역에서 인천사랑병원까지 CCTV가 많은 길로 안내해줘",
+            "source": "test-fixture",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolved_origin"]["name"] == "주안역"
+    assert payload["resolved_destination"]["name"] == "인천사랑병원"
+    assert len(payload["result"]["candidates"]) == 3
+
+
+def test_route_selection_updates_server_side_preferences() -> None:
+    recommendation = client.post(
+        "/api/agent/execute",
+        json={
+            "tool": "rank_routes",
+            "arguments": {
+                "origin": {"latitude": 37.4608, "longitude": 126.6790},
+                "destination": {"latitude": 37.4608, "longitude": 126.6830},
+                "source": "test-fixture",
+                "user_id": TEST_USER_ID,
+            },
+        },
+    )
+
+    assert recommendation.status_code == 200
+    payload = recommendation.json()
+    assert payload["recommendation_id"] is not None
+    assert len(payload["candidates"]) == 3
+
+    selection = client.post(
+        "/api/agent/route-selections",
+        json={
+            "recommendation_id": payload["recommendation_id"],
+            "user_id": TEST_USER_ID,
+            "selected_route_type": "safe",
+        },
+    )
+
+    assert selection.status_code == 200
+    learned = selection.json()["preferences"]
+    assert {item["factor"] for item in learned} == {
+        "distance_m",
+        "safety_score",
+        "streetlight_score",
+        "cctv_score",
+        "crosswalk_count",
+        "stairs_distance_m",
+        "sidewalk_coverage_percent",
+    }
+    assert all(item["observations"] == 1 for item in learned)
+
+
+def test_route_selection_rejects_another_user() -> None:
+    recommendation = client.post(
+        "/api/agent/execute",
+        json={
+            "tool": "rank_routes",
+            "arguments": {
+                "origin": {"latitude": 37.4608, "longitude": 126.6790},
+                "destination": {"latitude": 37.4608, "longitude": 126.6830},
+                "source": "test-fixture",
+                "user_id": TEST_USER_ID,
+            },
+        },
+    ).json()
+
+    response = client.post(
+        "/api/agent/route-selections",
+        json={
+            "recommendation_id": recommendation["recommendation_id"],
+            "user_id": "another-user",
+            "selected_route_type": "safe",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "does not belong" in response.json()["detail"]

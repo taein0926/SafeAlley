@@ -21,6 +21,14 @@ class GraphEdge:
     population_score: float
     safety_score: float
     coordinates: tuple[tuple[float, float], ...]
+    streetlight_data_available: bool = True
+    walkability_factor: float = 1.0
+    crossing_node_ids: tuple[int, ...] = ()
+    is_steps: bool = False
+    sidewalk_confirmed: bool = False
+    incline_percent: float | None = None
+    walkability_class: str | None = None
+    field_status: str = "unverified"
 
 
 @dataclass

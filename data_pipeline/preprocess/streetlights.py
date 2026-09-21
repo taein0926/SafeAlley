@@ -121,3 +121,66 @@ def preprocess_streetlights(
         encoding="utf-8",
     )
     return document["metadata"]
+
+
+def preprocess_osm_streetlights(
+    input_path: Path,
+    output_path: Path,
+) -> dict[str, Any]:
+    try:
+        elements = json.loads(input_path.read_text(encoding="utf-8"))["elements"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise StreetlightPreprocessError(
+            f"Cannot read OSM streetlights: {input_path}"
+        ) from exc
+
+    features = []
+    for element in elements:
+        if element.get("type") != "node":
+            continue
+        longitude = float(element["lon"])
+        latitude = float(element["lat"])
+        source_id = f"osm-node-{element['id']}"
+        properties = {
+            "source": "osm-street-lamp",
+            "source_id": source_id,
+            "pole_name": None,
+            "cabinet_name": None,
+            "label_no": None,
+            "longitude": longitude,
+            "latitude": latitude,
+            "source_dataset": "OpenStreetMap highway=street_lamp",
+            "osm_tags": element.get("tags", {}),
+            "license": "ODbL-1.0",
+        }
+        features.append(
+            {
+                "type": "Feature",
+                "id": source_id,
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [longitude, latitude],
+                },
+                "properties": properties,
+            }
+        )
+    if not features:
+        raise StreetlightPreprocessError(
+            "OSM returned no mapped street_lamp nodes for the configured area"
+        )
+    document = {
+        "type": "FeatureCollection",
+        "features": features,
+        "metadata": {
+            "count": len(features),
+            "crs": "EPSG:4326",
+            "source": "osm-street-lamp",
+            "source_dataset": "OpenStreetMap highway=street_lamp",
+            "license": "ODbL-1.0",
+        },
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return document["metadata"]

@@ -8,6 +8,7 @@ TEST_BUILDING_SOURCE = "test-building-fixture"
 TEST_STREETLIGHT_SOURCE = "test-streetlight-fixture"
 TEST_CCTV_SOURCE = "test-cctv-fixture"
 TEST_HELP_POINT_SOURCE = "test-help-point-fixture"
+TEST_USER_ID = "test-route-user"
 
 TEST_ROADS = (
     ("test-road-001", "짧고 낮은 길 1", 9001, 9002, 10, "LINESTRING(126.679 37.4608, 126.681 37.4608)"),
@@ -21,6 +22,18 @@ TEST_ROADS = (
 def isolated_test_road_graph():
     with connect_database() as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM route_selection_events WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM route_recommendations WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM user_route_preferences WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
             cursor.execute("DELETE FROM road_segments WHERE source = %s", (TEST_SOURCE,))
             cursor.execute(
                 "DELETE FROM buildings WHERE source = %s",
@@ -44,10 +57,11 @@ def isolated_test_road_graph():
                     INSERT INTO road_segments (
                         source, source_id, name, source_node_id, target_node_id,
                         geom, length_m, streetlight_score, cctv_score,
-                        population_score, safety_score
+                        population_score, safety_score, properties
                     )
                     SELECT
-                        %s, %s, %s, %s, %s, geom, ST_Length(geom), %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, geom, ST_Length(geom), %s, %s, %s, %s,
+                        '{"safety_data_status":"streetlight-test-v1"}'::jsonb
                     FROM transformed
                     """,
                     (
@@ -131,12 +145,29 @@ def isolated_test_road_graph():
                 INSERT INTO cctvs (
                     source, source_id, management_agency, road_address,
                     purpose, camera_count, longitude, latitude, geom,
-                    is_safety_cctv
+                    is_safety_cctv, coordinate_quality, coordinate_source,
+                    longitude_precision_digits, latitude_precision_digits
                 ) VALUES (
                     %s, 'cctv-001', '테스트 기관', '인천광역시 미추홀구',
                     '방범', 2, 126.6801, 37.4611,
                     ST_Transform(ST_SetSRID(ST_MakePoint(126.6801, 37.4611), 4326), 5179),
-                    TRUE
+                    TRUE, 'source_approximate', 'official_source', 4, 4
+                )
+                """,
+                (TEST_CCTV_SOURCE,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO cctvs (
+                    source, source_id, management_agency, road_address,
+                    purpose, camera_count, longitude, latitude, geom,
+                    is_safety_cctv, coordinate_quality, coordinate_source,
+                    longitude_precision_digits, latitude_precision_digits
+                ) VALUES (
+                    %s, 'cctv-002', '테스트 기관', '인천광역시 미추홀구',
+                    '방범', 1, 126.6801, 37.4611,
+                    ST_Transform(ST_SetSRID(ST_MakePoint(126.6801, 37.4611), 4326), 5179),
+                    TRUE, 'source_approximate', 'official_source', 4, 4
                 )
                 """,
                 (TEST_CCTV_SOURCE,),
@@ -158,6 +189,18 @@ def isolated_test_road_graph():
 
     with connect_database() as connection:
         with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM route_selection_events WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM route_recommendations WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
+            cursor.execute(
+                "DELETE FROM user_route_preferences WHERE user_id = %s",
+                (TEST_USER_ID,),
+            )
             cursor.execute(
                 "DELETE FROM streetlights WHERE source = %s",
                 (TEST_STREETLIGHT_SOURCE,),

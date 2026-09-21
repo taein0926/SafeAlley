@@ -5,20 +5,40 @@ from pathlib import Path
 
 from analysis.streetlight_safety import run_streetlight_safety_analysis
 from analysis.safety_components import run_safety_component_analysis
+from analysis.road_quality import audit_road_network
 from collectors.cctvs import collect_cctvs
-from collectors.osm import collect_osm_roads
+from collectors.osm import collect_osm_roads, collect_osm_streetlights
 from loaders.buildings import load_buildings
 from loaders.postgis import load_road_segments
 from loaders.streetlights import load_streetlights
 from loaders.cctvs import load_cctvs
 from loaders.help_points import load_help_points
+from loaders.elevation import load_road_slopes
+from loaders.public_crosswalks import load_public_crosswalks
+from loaders.crosswalk_links import link_public_crosswalks
 from preprocess.buildings import preprocess_buildings
 from preprocess.osm_roads import preprocess_osm_roads
+from preprocess.elevation import calculate_road_slopes
+from preprocess.public_crosswalks import preprocess_incheon_crosswalks
+from preprocess.public_streetlights import preprocess_incheon_streetlights
 from preprocess.roads import read_road_features
-from preprocess.streetlights import preprocess_streetlights
+from preprocess.streetlights import preprocess_osm_streetlights, preprocess_streetlights
 
 
 RAW_OSM_PATH = Path(__file__).parent / "raw" / "osm" / "michuhol_roads.json"
+PROCESSED_ELEVATION_PATH = (
+    Path(__file__).parent / "processed" / "elevation" / "road_slopes.json"
+)
+RAW_PUBLIC_CROSSWALKS_PATH = (
+    Path(__file__).parent / "raw" / "public_pedestrian"
+    / "incheon_road_facilities_3d_poi_20221031.zip"
+)
+PROCESSED_PUBLIC_CROSSWALKS_PATH = (
+    Path(__file__).parent / "processed" / "public_pedestrian" / "crosswalks.geojson"
+)
+PROCESSED_PUBLIC_STREETLIGHTS_PATH = (
+    Path(__file__).parent / "processed" / "public_pedestrian" / "streetlights.geojson"
+)
 PROCESSED_OSM_PATH = (
     Path(__file__).parent / "processed" / "osm" / "road_segments.geojson"
 )
@@ -35,6 +55,12 @@ PROCESSED_STREETLIGHTS_PATH = (
     Path(__file__).parent / "processed" / "streetlights" / "streetlights.geojson"
 )
 RAW_CCTVS_PATH = Path(__file__).parent / "raw" / "cctvs" / "michuhol_cctvs.json"
+RAW_NATIONAL_CCTVS_PATH = (
+    Path(__file__).parent / "raw" / "cctvs" / "national_cctv.csv"
+)
+RAW_OSM_STREETLIGHTS_PATH = (
+    Path(__file__).parent / "raw" / "streetlights" / "osm_streetlights.json"
+)
 PROCESSED_CCTVS_PATH = (
     Path(__file__).parent / "processed" / "cctvs" / "michuhol_cctvs.json"
 )
@@ -149,6 +175,23 @@ def run_streetlight_pipeline(arguments: argparse.Namespace) -> None:
     analyze_streetlights(arguments)
 
 
+def run_osm_streetlight_pipeline(arguments: argparse.Namespace) -> None:
+    count = collect_osm_streetlights(RAW_OSM_STREETLIGHTS_PATH)
+    print(f"Collected {count} OSM street_lamp nodes")
+    stats = preprocess_osm_streetlights(
+        RAW_OSM_STREETLIGHTS_PATH,
+        PROCESSED_STREETLIGHTS_PATH,
+    )
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    loaded = load_streetlights(
+        PROCESSED_STREETLIGHTS_PATH,
+        replace_source="osm-street-lamp",
+    )
+    print(f"Replaced osm-street-lamp streetlights with {loaded} PostGIS rows")
+    arguments.source = "osm-street-lamp"
+    analyze_streetlights(arguments)
+
+
 def collect_cctv_file() -> None:
     print(json.dumps(collect_cctvs(RAW_CCTVS_PATH), ensure_ascii=False, indent=2))
 
@@ -183,6 +226,26 @@ def run_cctv_pipeline() -> None:
     collect_cctv_file()
     preprocess_cctv_file()
     load_cctv_file()
+
+
+def run_cctv_csv_pipeline(arguments: argparse.Namespace) -> None:
+    from preprocess.cctvs import preprocess_cctv_csv
+
+    purposes = _safety_cctv_purposes() or {"생활방범", "어린이보호"}
+    stats = preprocess_cctv_csv(
+        Path(arguments.input) if arguments.input else RAW_NATIONAL_CCTVS_PATH,
+        PROCESSED_CCTVS_PATH,
+        district_name=arguments.district_name,
+        safety_purposes=purposes,
+        source=arguments.cctv_source,
+        encoding=arguments.source_encoding or "cp949",
+    )
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    count = load_cctvs(
+        PROCESSED_CCTVS_PATH,
+        replace_source=arguments.cctv_source,
+    )
+    print(f"Replaced {arguments.cctv_source} CCTV records with {count} PostGIS rows")
 
 
 def load_help_point_file(arguments: argparse.Namespace) -> None:
@@ -226,17 +289,28 @@ def main() -> None:
             "load-streetlights",
             "analyze-streetlights",
             "run-streetlight-safety",
+            "run-osm-streetlights",
             "collect-cctvs",
             "preprocess-cctvs",
             "load-cctvs",
             "run-cctvs",
+            "run-cctv-csv",
             "load-help-points",
             "analyze-safety-components",
             "run-safety-components",
+            "calculate-road-slopes",
+            "load-road-slopes",
+            "audit-road-network",
+            "preprocess-public-crosswalks",
+            "load-public-crosswalks",
+            "link-public-crosswalks",
+            "preprocess-public-streetlights",
+            "load-public-streetlights",
         ],
         help="One-time pipeline command to execute",
     )
     parser.add_argument("--input", help="Source SHP, GeoJSON, or GPKG inside raw/")
+    parser.add_argument("--district-name", default="미추홀구")
     parser.add_argument("--boundary", help="Optional Michuhol-gu polygon file")
     parser.add_argument("--district-field", help="Source attribute used to filter Michuhol-gu")
     parser.add_argument("--district-value", default="미추홀구")
@@ -255,6 +329,11 @@ def main() -> None:
     parser.add_argument(
         "--source-dataset",
     )
+    parser.add_argument("--source-url", help="Authoritative DEM dataset page URL")
+    parser.add_argument("--source-date", help="DEM reference date")
+    parser.add_argument("--source-license", help="DEM reuse license")
+    parser.add_argument("--field-audit-output", help="Optional GeoJSON for on-site road checks")
+    parser.add_argument("--crosswalk-audit-output", help="Optional GeoJSON of route-near crosswalk review candidates")
     arguments = parser.parse_args()
 
     if arguments.command == "collect-osm":
@@ -279,6 +358,8 @@ def main() -> None:
         analyze_streetlights(arguments)
     elif arguments.command == "run-streetlight-safety":
         run_streetlight_pipeline(arguments)
+    elif arguments.command == "run-osm-streetlights":
+        run_osm_streetlight_pipeline(arguments)
     elif arguments.command == "collect-cctvs":
         collect_cctv_file()
     elif arguments.command == "preprocess-cctvs":
@@ -287,12 +368,61 @@ def main() -> None:
         load_cctv_file()
     elif arguments.command == "run-cctvs":
         run_cctv_pipeline()
+    elif arguments.command == "run-cctv-csv":
+        run_cctv_csv_pipeline(arguments)
     elif arguments.command == "load-help-points":
         load_help_point_file(arguments)
     elif arguments.command == "analyze-safety-components":
         analyze_safety_components(arguments)
     elif arguments.command == "run-safety-components":
         run_safety_components(arguments)
+    elif arguments.command == "calculate-road-slopes":
+        if not arguments.input:
+            parser.error("calculate-road-slopes requires --input GeoTIFF")
+        stats = calculate_road_slopes(
+            PROCESSED_OSM_PATH,
+            Path(arguments.input),
+            PROCESSED_ELEVATION_PATH,
+            source_name=arguments.source_dataset or "",
+            source_url=arguments.source_url or "",
+            source_date=arguments.source_date or "",
+            license_name=arguments.source_license or "",
+        )
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+    elif arguments.command == "load-road-slopes":
+        print(f"Updated {load_road_slopes(PROCESSED_ELEVATION_PATH)} road grades")
+    elif arguments.command == "audit-road-network":
+        report = audit_road_network(
+            PROCESSED_OSM_PATH,
+            Path(__file__).parent / "config" / "pedestrian_route_cases.json",
+            Path(arguments.field_audit_output) if arguments.field_audit_output else None,
+            PROCESSED_PUBLIC_CROSSWALKS_PATH if arguments.crosswalk_audit_output else None,
+            Path(arguments.crosswalk_audit_output) if arguments.crosswalk_audit_output else None,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        if report["passed"] != len(report["cases"]):
+            raise SystemExit(1)
+    elif arguments.command == "preprocess-public-crosswalks":
+        stats = preprocess_incheon_crosswalks(
+            Path(arguments.input) if arguments.input else RAW_PUBLIC_CROSSWALKS_PATH,
+            PROCESSED_PUBLIC_CROSSWALKS_PATH,
+        )
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+    elif arguments.command == "load-public-crosswalks":
+        print(f"Loaded {load_public_crosswalks(PROCESSED_PUBLIC_CROSSWALKS_PATH)} official crosswalk POIs")
+    elif arguments.command == "link-public-crosswalks":
+        print(json.dumps(link_public_crosswalks(), ensure_ascii=False, indent=2))
+    elif arguments.command == "preprocess-public-streetlights":
+        stats = preprocess_incheon_streetlights(
+            Path(arguments.input) if arguments.input else RAW_PUBLIC_CROSSWALKS_PATH,
+            PROCESSED_PUBLIC_STREETLIGHTS_PATH,
+        )
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+    elif arguments.command == "load-public-streetlights":
+        count = load_streetlights(
+            PROCESSED_PUBLIC_STREETLIGHTS_PATH, replace_source="incheon-road-poi-2022"
+        )
+        print(f"Loaded {count} official streetlight POIs")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 # Data Pipeline
 
+보행 경사, 인천시 공식 횡단보도 POI, 경로망 검증 절차는 [보행 데이터·품질 문서](../docs/pedestrian-data-quality.md)를 참고합니다.
+
 외부 공간 데이터의 수집, 전처리, 좌표계 변환 및 PostGIS 적재를 담당할 독립 배치 영역입니다.
 
 Phase 5에서는 OpenStreetMap의 미추홀구 보행 가능 도로를 수집·정제·적재합니다.
@@ -144,4 +146,16 @@ docker compose --profile tools run --rm pipeline analyze-safety-components
 
 validation은 Point geometry의 `[longitude, latitude]`를 source of truth로 사용합니다. 좌표 누락·비 Point·비수치·범위 오류 Feature는 이유와 식별자를 출력하고 제외하며 나머지 pipeline은 계속됩니다. properties는 JSONB로 보존합니다.
 
-`analyze-safety-components`는 CCTV 최근접 거리·30m 개수/밀도·5m 표본 공백 대리값과 Help Point 최근접 거리를 EPSG:5179에서 계산합니다. 결과는 `road_safety_segments`의 component/raw metric에 독립 저장되고, 종합 점수는 기본 `0.4 * streetlight + 0.4 * cctv + 0.2 * help_point`입니다. 이 값들은 공식 안전등급이나 CCTV 촬영범위를 뜻하지 않습니다.
+`analyze-safety-components`는 CCTV 최근접 거리·30m 개수/밀도·5m 표본 공백 대리값과 Help Point 최근접 거리를 EPSG:5179에서 계산합니다. 동일 좌표의 CCTV는 하나의 관측 위치로 집계해 저정밀 원본의 중복이 밀도 점수를 부풀리지 않게 합니다. 결과는 `road_safety_segments`의 component/raw metric에 독립 저장되고, 종합 점수는 기본 `0.4 * streetlight + 0.4 * cctv + 0.2 * help_point`입니다. 이 값들은 공식 안전등급이나 CCTV 촬영범위를 뜻하지 않습니다.
+
+행정안전부 전국 CCTV 표준 CSV를 직접 내려받은 경우에는 API 키 없이 다음 명령을 사용합니다. CP949 원본에서 미추홀구를 선별하고 `생활방범`, `어린이보호`만 분석 대상으로 표시합니다.
+
+```bash
+docker compose --profile tools run --rm pipeline run-cctv-csv \
+  --input /pipeline/raw/cctvs/national_cctv.csv \
+  --district-name 미추홀구 \
+  --cctv-source mois-cctv-standard \
+  --source-encoding cp949
+```
+
+현재 미추홀구 표준 CSV의 3,176건은 모두 경도 소수점 2자리·위도 3자리 수준의 `source_approximate` 좌표다. 방범·어린이보호 3,100건은 231개 고유 좌표 셀로 반환된다. `coordinate_quality`, `coordinate_source`, 위·경도 정밀도 자릿수를 DB에 함께 저장한다. 지도는 이 값을 정확한 점으로 찍지 않고 반올림 범위 셀로 표시한다. 주소 지오코딩 결과를 적용할 때도 원본 좌표를 덮어 없애지 말고, 결과 출처와 매칭 주소를 남긴 뒤 별도 검증을 거쳐야 한다.

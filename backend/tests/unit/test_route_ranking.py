@@ -1,8 +1,18 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.agent import RouteOptimizationArguments, RoutePreference
 from app.services import route_ranking_service
+
+
+@pytest.fixture(autouse=True)
+def balanced_route_candidate(monkeypatch) -> None:
+    monkeypatch.setattr(
+        route_ranking_service,
+        "get_balanced_route",
+        lambda **_: _route("balanced", 115, 55),
+    )
 
 
 def _route(route_type: str, distance: float, score: float) -> dict[str, object]:
@@ -137,6 +147,40 @@ def test_registered_metric_without_candidate_data_is_not_scored() -> None:
     assert all(candidate["preference_score"] is None for candidate in candidates)
 
 
+def test_avoid_stairs_is_a_hard_constraint() -> None:
+    candidates = [
+        {"route_type": "shortest", "preference_score": None,
+         "metrics": {"distance_m": 100, "stairs_distance_m": 20},
+         "route": _route("shortest", 100, 50)},
+        {"route_type": "safe", "preference_score": None,
+         "metrics": {"distance_m": 150, "stairs_distance_m": 0},
+         "route": _route("safe", 150, 50)},
+    ]
+    selected, unsupported = route_ranking_service.rank_generated_candidates(
+        candidates,
+        [RoutePreference(factor="stairs_distance_m", direction="avoid"),
+         RoutePreference(factor="distance_m", direction="minimize")],
+    )
+    assert unsupported == []
+    assert selected["route_type"] == "safe"
+    assert candidates[0]["preference_score"] is None
+
+
+def test_no_step_free_candidate_does_not_masquerade_as_step_free() -> None:
+    candidates = [
+        {"route_type": "shortest", "preference_score": None,
+         "metrics": {"stairs_distance_m": 10},
+         "route": _route("shortest", 100, 50)},
+    ]
+    selected, unsupported = route_ranking_service.rank_generated_candidates(
+        candidates,
+        [RoutePreference(factor="stairs_distance_m", direction="avoid")],
+    )
+    assert selected is None
+    assert unsupported[0].factor == "stairs_distance_m"
+    assert "hard avoidance" in unsupported[0].reason
+
+
 def test_unvalidated_population_metric_is_not_exposed(monkeypatch) -> None:
     monkeypatch.setattr(
         route_ranking_service,
@@ -215,4 +259,43 @@ def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> 
     assert response.status_code == 200
     payload = response.json()
     assert payload["selected_route_type"] == "safe"
-    assert len(payload["candidates"]) == 2
+    assert len(payload["candidates"]) == 3
+
+
+def test_unverified_major_road_candidates_are_not_final_recommendations(monkeypatch) -> None:
+    def unverified_route(route_type: str, distance: float, score: float):
+        route = _route(route_type, distance, score)
+        route["properties"]["unverified_major_road_count"] = 1
+        return route
+
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route",
+                        lambda **_: unverified_route("shortest", 100, 20))
+    monkeypatch.setattr(route_ranking_service, "get_balanced_route",
+                        lambda **_: unverified_route("balanced", 115, 55))
+    monkeypatch.setattr(route_ranking_service, "get_safe_route",
+                        lambda **_: unverified_route("safe", 130, 90))
+
+    result = route_ranking_service.rank_route_candidates(_arguments([]))
+
+    assert result["selected_route_type"] is None
+    assert result["selected_route"] is None
+    assert result["recommendation_status"] == "field_review_required"
+    assert len(result["candidates"]) == 3
+
+
+def test_reviewed_candidate_can_be_selected_over_unverified_higher_score() -> None:
+    reviewed = _route("shortest", 120, 40)
+    unverified = _route("safe", 100, 90)
+    unverified["properties"]["unverified_major_road_count"] = 1
+    candidates = [
+        {"route_type": "shortest", "preference_score": None,
+         "metrics": {"safety_score": 40.0}, "route": reviewed},
+        {"route_type": "safe", "preference_score": None,
+         "metrics": {"safety_score": 90.0}, "route": unverified},
+    ]
+    selected, unsupported = route_ranking_service.rank_generated_candidates(
+        candidates, [RoutePreference(factor="safety_score", direction="maximize")],
+    )
+    assert unsupported == []
+    assert selected["route_type"] == "shortest"
+    assert candidates[1]["preference_score"] is None

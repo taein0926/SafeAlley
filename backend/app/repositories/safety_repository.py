@@ -160,15 +160,37 @@ def list_cctvs(
     else:
         conditions = "WHERE " + " AND ".join(extra_conditions)
     query = f"""
+        WITH selected AS (
+            SELECT *
+            FROM cctvs
+            {conditions}
+        )
         SELECT
-            id, source, source_id, management_agency, road_address,
-            parcel_address, purpose, camera_count, camera_pixels,
-            direction_info, retention_days, installed_at, agency_phone,
-            data_reference_date, is_safety_cctv,
+            MIN(id) AS id,
+            source,
+            MIN(source_id) AS source_id,
+            MIN(management_agency) AS management_agency,
+            MIN(road_address) AS road_address,
+            MIN(parcel_address) AS parcel_address,
+            CASE WHEN COUNT(DISTINCT purpose) = 1 THEN MIN(purpose)
+                 ELSE '복합 목적' END AS purpose,
+            SUM(COALESCE(camera_count, 1))::integer AS camera_count,
+            MAX(camera_pixels) AS camera_pixels,
+            MIN(direction_info) AS direction_info,
+            MAX(retention_days) AS retention_days,
+            MIN(installed_at) AS installed_at,
+            MIN(agency_phone) AS agency_phone,
+            MAX(data_reference_date) AS data_reference_date,
+            BOOL_OR(is_safety_cctv) AS is_safety_cctv,
+            coordinate_quality,
+            coordinate_source,
+            MIN(longitude_precision_digits) AS longitude_precision_digits,
+            MIN(latitude_precision_digits) AS latitude_precision_digits,
+            COUNT(*)::integer AS location_record_count,
             ST_AsGeoJSON(ST_Transform(geom, 4326), 7)::json AS geometry
-        FROM cctvs
-        {conditions}
-        ORDER BY id
+        FROM selected
+        GROUP BY source, coordinate_quality, coordinate_source, geom
+        ORDER BY MIN(id)
     """
     try:
         with connect_database() as connection:

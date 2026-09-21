@@ -28,6 +28,11 @@ def _average_safety(route: RoutePayload) -> float | None:
     return None if value is None else float(value)
 
 
+def _property_number(route: RoutePayload, field: str) -> float | None:
+    value = _properties(route).get(field)
+    return None if value is None else float(value)
+
+
 def _segment_weighted_average(
     route: RoutePayload,
     field: str,
@@ -41,6 +46,10 @@ def _segment_weighted_average(
     for segment in segments:
         if not isinstance(segment, dict):
             continue
+        if field == "streetlight_score" and not segment.get(
+            "streetlight_data_available", True
+        ):
+            return None
         distance_value = segment.get("distance_m")
         metric_value = segment.get(field)
         if distance_value is None or metric_value is None:
@@ -68,6 +77,22 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cctv_score": MetricDefinition(
         description="Distance-weighted safety CCTV score",
         extractor=lambda route: _segment_weighted_average(route, "cctv_score"),
+    ),
+    "crosswalk_count": MetricDefinition(
+        description="Unique OSM crossing nodes traversed by the route",
+        extractor=lambda route: _property_number(route, "total_crosswalk_count"),
+    ),
+    "stairs_distance_m": MetricDefinition(
+        description="Distance travelled on OSM highway=steps segments",
+        extractor=lambda route: _property_number(route, "stairs_distance_m"),
+    ),
+    "sidewalk_coverage_percent": MetricDefinition(
+        description="Route distance on confirmed sidewalk or pedestrian space",
+        extractor=lambda route: _property_number(route, "sidewalk_coverage_percent"),
+    ),
+    "max_slope_percent": MetricDefinition(
+        description="Maximum explicit OSM incline percentage on the route",
+        extractor=lambda route: _property_number(route, "max_slope_percent"),
     ),
 }
 

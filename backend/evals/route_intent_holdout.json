@@ -1,0 +1,12 @@
+[
+  {"query":"밤 10시에 주안역에서 인천사랑병원까지 계단은 피하고 CCTV가 많은 길로 가고 싶어","origin":"주안역","destination":"인천사랑병원","time":"22:00:00","preferences":{"stairs_distance_m":"avoid","cctv_score":"maximize"}},
+  {"query":"주안역에서 현대유비스병원까지 최단거리보다 횡단보도가 적고 보행공간이 많은 쪽으로 안내해줘","origin":"주안역","destination":"현대유비스병원","preferences":{"crosswalk_count":"minimize","sidewalk_coverage_percent":"maximize"}},
+  {"query":"인천사랑병원에서 주안역까지 계단 없이 경사가 완만한 길을 찾아줘","origin":"인천사랑병원","destination":"주안역","preferences":{"stairs_distance_m":"avoid","max_slope_percent":"minimize"}},
+  {"query":"오전 6시 30분에 주안역에서 더나눔병원까지 가로등이 밝고 거리가 짧은 길을 알려줘","origin":"주안역","destination":"더나눔병원","time":"06:30:00","preferences":{"streetlight_score":"maximize","distance_m":"minimize"}},
+  {"query":"주안역에서 인천사랑병원까지 횡단보도는 적게, 계단은 피하고, 보행로가 확인된 구간은 많이 지나가게 해줘","origin":"주안역","destination":"인천사랑병원","preferences":{"crosswalk_count":"minimize","stairs_distance_m":"avoid","sidewalk_coverage_percent":"maximize"}},
+  {"query":"밤 11시 주안역에서 인천사랑병원까지 CCTV와 가로등이 많은 길인데 너무 멀리 돌아가지는 않게 해줘","origin":"주안역","destination":"인천사랑병원","time":"23:00:00","preferences":{"cctv_score":"maximize","streetlight_score":"maximize","distance_m":"minimize"}},
+  {"query":"주안역에서 인천사랑병원까지 계단이 없는 길만 추천해줘","origin":"주안역","destination":"인천사랑병원","preferences":{"stairs_distance_m":"avoid"}},
+  {"query":"주안역에서 더나눔병원까지 경찰서에 가깝고 횡단보도가 적은 길을 알려줘","origin":"주안역","destination":"더나눔병원","preferences":{"police_accessibility":"maximize","crosswalk_count":"minimize"}},
+  {"query":"주안역에서 현대유비스병원까지 평지는 우선하고 CCTV가 많은 길을 찾아줘","origin":"주안역","destination":"현대유비스병원","preferences":{"max_slope_percent":"minimize","cctv_score":"maximize"}},
+  {"query":"주안역에서 인천사랑병원까지 최단거리로 안내하되 계단은 피하고 싶어","origin":"주안역","destination":"인천사랑병원","preferences":{"distance_m":"minimize","stairs_distance_m":"avoid"}}
+]

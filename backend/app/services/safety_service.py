@@ -62,10 +62,23 @@ def get_cctv_feature_collection(
     *,
     safety_only: bool,
 ) -> dict[str, object]:
-    return _feature_collection(
-        list_cctvs(parse_bbox(bbox_value), source=source, safety_only=safety_only),
-        source=source,
-    )
+    rows = list_cctvs(parse_bbox(bbox_value), source=source, safety_only=safety_only)
+    collection = _feature_collection(rows, source=source)
+    quality_counts: dict[str, int] = {}
+    for row in rows:
+        quality = str(row.get("coordinate_quality") or "unknown")
+        quality_counts[quality] = quality_counts.get(quality, 0) + int(
+            row.get("location_record_count") or 1
+        )
+    collection["metadata"].update({
+        "record_count": sum(
+            int(row.get("location_record_count") or 1) for row in rows
+        ),
+        "coordinate_quality_counts": quality_counts,
+        "position_semantics": "coordinate_cells"
+            if quality_counts.get("source_approximate", 0) else "point_locations",
+    })
+    return collection
 
 
 def get_help_point_feature_collection(

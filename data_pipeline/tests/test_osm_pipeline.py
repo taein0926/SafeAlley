@@ -1,7 +1,13 @@
 import json
 
 from collectors.osm import build_overpass_query
-from preprocess.osm_roads import preprocess_osm_roads, safety_score_for_segment
+from preprocess.osm_roads import (
+    _incline_percent,
+    _is_walkable,
+    _walkability_factor,
+    preprocess_osm_roads,
+    safety_score_for_segment,
+)
 from preprocess.roads import read_road_features
 
 
@@ -12,6 +18,7 @@ def test_overpass_query_filters_michuhol_administrative_area() -> None:
     assert '["admin_level"="6"]' in query
     assert '["name"="미추홀구"]' in query
     assert 'way["highway"](area.searchArea)' in query
+    assert 'node["highway"="crossing"](area.searchArea)' in query
 
 
 def test_preprocess_builds_walkable_graph_edges(tmp_path, monkeypatch) -> None:
@@ -93,3 +100,54 @@ def test_demo_safety_scores_are_stable_and_cover_all_color_bands() -> None:
     assert any(score <= 54 for score in first_scores)
     assert any(55 <= score <= 74 for score in first_scores)
     assert any(score >= 75 for score in first_scores)
+
+
+def test_major_vehicle_road_is_retained_as_penalized_fallback() -> None:
+    assert _is_walkable({"highway": "secondary"})
+    assert _is_walkable({"highway": "secondary_link", "sidewalk": "no"})
+    assert _is_walkable({"highway": "secondary", "sidewalk": "both"})
+    assert _is_walkable({"highway": "primary", "sidewalk:left": "yes"})
+    assert _is_walkable({"highway": "secondary_link", "foot": "designated"})
+    assert _walkability_factor({"highway": "secondary"}) == (
+        "major_road_fallback",
+        4.0,
+    )
+    assert _walkability_factor({"highway": "secondary", "sidewalk": "both"}) == (
+        "major_road_with_sidewalk",
+        1.5,
+    )
+
+
+def test_local_and_pedestrian_roads_remain_walkable() -> None:
+    assert _is_walkable({"highway": "footway"})
+    assert _is_walkable({"highway": "pedestrian"})
+    assert _is_walkable({"highway": "residential"})
+    assert _is_walkable({"highway": "service"})
+    assert not _is_walkable({"highway": "motorway"})
+    assert _walkability_factor({"highway": "footway"}) == (
+        "pedestrian_only",
+        1.0,
+    )
+
+
+def test_incline_tags_are_normalized_to_percent() -> None:
+    assert _incline_percent("12%") == 12
+    assert round(_incline_percent("10°") or 0, 2) == 17.63
+    assert _incline_percent("up") is None
+
+
+def test_crossing_way_is_counted_once_across_its_edges(tmp_path) -> None:
+    raw = tmp_path / "raw.json"
+    output = tmp_path / "roads.geojson"
+    raw.write_text(json.dumps({"elements": [
+        {"type": "node", "id": 1, "lon": 126.68, "lat": 37.46},
+        {"type": "node", "id": 2, "lon": 126.6801, "lat": 37.46},
+        {"type": "node", "id": 3, "lon": 126.6802, "lat": 37.46},
+        {"type": "way", "id": 100, "nodes": [1, 2, 3],
+         "tags": {"highway": "footway", "footway": "crossing"}},
+    ]}), encoding="utf-8")
+    preprocess_osm_roads(raw, output)
+    features = read_road_features(output)
+    assert [feature["properties"]["crossing_node_ids"] for feature in features] == [
+        [-100], [-100],
+    ]

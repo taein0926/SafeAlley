@@ -67,13 +67,17 @@ def run_safety_component_analysis(
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
-                SELECT count(*) AS count
+                SELECT
+                    count(*) AS record_count,
+                    count(DISTINCT ST_AsBinary(geom)) AS location_count
                 FROM cctvs
                 WHERE source = %s AND is_safety_cctv AND geom IS NOT NULL
                 """,
                 (cctv_source,),
             )
-            safety_cctv_count = int(cursor.fetchone()["count"])
+            cctv_counts = cursor.fetchone()
+            safety_cctv_record_count = int(cctv_counts["record_count"])
+            safety_cctv_count = int(cctv_counts["location_count"])
             cursor.execute(
                 "SELECT count(*) AS count FROM help_points WHERE source = %s",
                 (help_point_source,),
@@ -99,7 +103,29 @@ def run_safety_component_analysis(
                     "No valid AI-ready help points are available"
                 )
             if segment_count == 0:
-                raise SafetyComponentAnalysisError("No road safety segments are available")
+                cursor.execute(
+                    """
+                    INSERT INTO road_safety_segments (
+                        road_id, segment_index, length_m, geom,
+                        nearest_light_distance_m, nearby_light_count,
+                        light_density, dark_gap_proxy_m, distance_score,
+                        density_score, gap_score, streetlight_score,
+                        safety_score, analysis_version
+                    )
+                    SELECT
+                        id, 0, length_m, geom,
+                        0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 'cctv-help-bootstrap-v1'
+                    FROM road_segments
+                    WHERE source = %s
+                    """,
+                    (road_source,),
+                )
+                segment_count = cursor.rowcount
+                if segment_count == 0:
+                    raise SafetyComponentAnalysisError(
+                        "No road segments are available for safety analysis"
+                    )
 
             cursor.execute(
                 """
@@ -127,15 +153,19 @@ def run_safety_component_analysis(
             )
             cursor.execute(
                 """
-                WITH counts AS (
-                    SELECT analysis.id, count(cctv.id)::integer AS cctv_count
+                WITH cctv_locations AS (
+                    SELECT DISTINCT geom
+                    FROM cctvs
+                    WHERE source = %s
+                      AND is_safety_cctv
+                      AND geom IS NOT NULL
+                ),
+                counts AS (
+                    SELECT analysis.id, count(cctv.geom)::integer AS cctv_count
                     FROM road_safety_segments analysis
                     JOIN road_segments road ON road.id = analysis.road_id
-                    LEFT JOIN cctvs cctv
-                      ON cctv.source = %s
-                     AND cctv.is_safety_cctv
-                     AND cctv.geom IS NOT NULL
-                     AND ST_DWithin(analysis.geom, cctv.geom, %s)
+                    LEFT JOIN cctv_locations cctv
+                      ON ST_DWithin(analysis.geom, cctv.geom, %s)
                     WHERE road.source = %s
                     GROUP BY analysis.id
                 )
@@ -375,13 +405,20 @@ def run_safety_component_analysis(
                     safety_score = ROUND(scores.safety_score::numeric, 2),
                     properties = jsonb_set(
                         properties, '{safety_data_status}',
-                        '"streetlight-cctv-help-relative-v1"'::jsonb, true
+                        to_jsonb(%s::text), true
                     ),
                     updated_at = NOW()
                 FROM scores
                 WHERE road.id = scores.road_id
                 """,
-                (road_source,),
+                (
+                    road_source,
+                    (
+                        "streetlight-cctv-help-relative-v1"
+                        if config.safety_streetlight_weight > 0
+                        else "cctv-help-relative-v1"
+                    ),
+                ),
             )
 
             cursor.execute(
@@ -443,7 +480,8 @@ def run_safety_component_analysis(
 
     return {
         "segment_count": segment_count,
-        "safety_cctv_count": safety_cctv_count,
+        "safety_cctv_count": safety_cctv_record_count,
+        "safety_cctv_location_count": safety_cctv_count,
         "help_point_count": help_point_count,
         "validation": validation,
         "config": config.__dict__,

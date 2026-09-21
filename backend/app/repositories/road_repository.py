@@ -38,11 +38,19 @@ class RoutingRoadSegment:
     cctv_score: float
     population_score: float
     safety_score: float
+    streetlight_data_available: bool
     source_x: float
     source_y: float
     target_x: float
     target_y: float
     coordinates: tuple[tuple[float, float], ...]
+    walkability_factor: float
+    crossing_node_ids: tuple[int, ...]
+    is_steps: bool
+    sidewalk_confirmed: bool
+    incline_percent: float | None
+    walkability_class: str | None = None
+    field_status: str = "unverified"
 
 
 class RoadRepositoryError(RuntimeError):
@@ -189,6 +197,21 @@ def list_routing_road_segments(
             cctv_score,
             population_score,
             safety_score,
+            COALESCE(properties->>'safety_data_status', '') LIKE 'streetlight-%%'
+                AS streetlight_data_available,
+            COALESCE((properties->>'walkability_factor')::double precision, 1.0)
+                AS walkability_factor,
+            COALESCE(properties->'crossing_node_ids', '[]'::jsonb)
+                AS crossing_node_ids,
+            COALESCE((properties->>'is_steps')::boolean, false) AS is_steps,
+            COALESCE((properties->>'sidewalk_confirmed')::boolean, false)
+                AS sidewalk_confirmed,
+            properties->>'walkability_class' AS walkability_class,
+            COALESCE(properties->>'field_status', 'unverified') AS field_status,
+            COALESCE(
+                (properties->>'dem_incline_percent')::double precision,
+                (properties->>'incline_percent')::double precision
+            ) AS incline_percent,
             ST_X(ST_StartPoint(geom)) AS source_x,
             ST_Y(ST_StartPoint(geom)) AS source_y,
             ST_X(ST_EndPoint(geom)) AS target_x,
@@ -221,6 +244,18 @@ def list_routing_road_segments(
             cctv_score=float(row["cctv_score"]),
             population_score=float(row["population_score"]),
             safety_score=float(row["safety_score"]),
+            streetlight_data_available=bool(row["streetlight_data_available"]),
+            walkability_factor=float(row["walkability_factor"]),
+            crossing_node_ids=tuple(int(value) for value in row["crossing_node_ids"]),
+            is_steps=bool(row["is_steps"]),
+            sidewalk_confirmed=bool(row["sidewalk_confirmed"]),
+            walkability_class=row["walkability_class"],
+            field_status=row["field_status"],
+            incline_percent=(
+                float(row["incline_percent"])
+                if row["incline_percent"] is not None
+                else None
+            ),
             source_x=float(row["source_x"]),
             source_y=float(row["source_y"]),
             target_x=float(row["target_x"]),
