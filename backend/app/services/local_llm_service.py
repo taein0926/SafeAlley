@@ -1,6 +1,10 @@
 import json
+import logging
 import re
+from collections import OrderedDict
 from datetime import time
+from threading import Lock
+from time import monotonic
 
 import httpx
 from pydantic import ValidationError
@@ -17,46 +21,38 @@ class LocalLLMOutputError(RuntimeError):
     """Raised when the model response does not satisfy the structured schema."""
 
 
-SYSTEM_PROMPT = """한국어 보행 경로 요청을 제공된 스키마의 JSON으로 구조화한다.
-JSON 외의 설명을 출력하지 않는다. 좌표, SQL, Tool 이름을 만들지 않는다.
-
-규칙:
-- 출발 장소는 origin_name, 도착 장소는 destination_name에 사용자가 말한 이름 그대로 넣는다.
-- 장소가 문장에 없을 때만 해당 장소명은 null이다. 장소를 추측하거나 만들지 않는다.
-- profile은 항상 \"pedestrian\"이다.
-- 문장에 시각이 있으면 반드시 departure_time에 24시간제로 넣는다.
-  밤 10시는 \"22:00:00\", 오전 6시 30분은 \"06:30:00\"이다.
-  날짜가 없는 현지 시각이므로 Z나 시간대 오프셋을 붙이지 않는다.
-  시각이 없을 때만 null이다. 시간은 preference가 아니며 departure_time을
-  factor에 절대 넣지 않는다.
-- 사용자가 말한 모든 경로 조건을 preferences에 보존하고 다른 조건으로 바꾸지 않는다.
-- 검증된 factor 매핑은 다음과 같다.
-  거리/최단거리=distance_m, 안전=safety_score,
-  가로등/조명=streetlight_score, CCTV=cctv_score.
-- 아직 지원되지 않는 조건도 버리지 말고 snake_case factor로 보존한다.
-  횡단보도 수=crosswalk_count, 계단=stairs_distance_m,
-  보도/보행공간=sidewalk_coverage_percent, 경사=max_slope_percent,
-  경찰서/도움시설 접근성=police_accessibility.
-  평지/완만한 길/오르막이 적은 길=max_slope_percent(minimize)이다.
-  flatness 같은 새 factor를 만들지 않는다.
-- 적게/낮게/짧게는 minimize, 많게/밝게/안전하게는 maximize,
-  피하라/없는 길/없이/안 지나는 길은 avoid이다.
-  "계단이 적은 길"은 minimize이고 "계단 없이"는 avoid이다.
-- 서로 다른 시설·지표가 한 문장에 나오면 각각 바로 인접한 수식어로 방향을 정한다.
-  "횡단보도는 적고 CCTV가 많은"은 횡단보도 minimize, CCTV maximize이다.
-- weight는 0.1부터 100까지의 상대 중요도다. 중요도를 따로 말하지 않으면 1이다.
-- 사용자가 요청하지 않은 조건은 만들지 않는다.
-
-예시:
-사용자: 밤 10시에 주안역에서 인천사랑병원까지 CCTV가 많은 길로 안내해줘
-출력: {"origin_name":"주안역","destination_name":"인천사랑병원","departure_time":"22:00:00","profile":"pedestrian","preferences":[{"factor":"cctv_score","direction":"maximize","weight":1}]}
-사용자: 가장 짧은 길로 안내해줘
-출력: {"origin_name":null,"destination_name":null,"departure_time":null,"profile":"pedestrian","preferences":[{"factor":"distance_m","direction":"minimize","weight":1}]}
-사용자: 밤 10시에 주안역에서 인천사랑병원까지 계단 없이 가로등과 CCTV가 많은 길로 안내해줘
-출력: {"origin_name":"주안역","destination_name":"인천사랑병원","departure_time":"22:00:00","profile":"pedestrian","preferences":[{"factor":"stairs_distance_m","direction":"avoid","weight":1},{"factor":"streetlight_score","direction":"maximize","weight":1},{"factor":"cctv_score","direction":"maximize","weight":1}]}
-사용자: 횡단보도는 되도록 적고 CCTV가 많은 길로 안내해줘
-출력: {"origin_name":null,"destination_name":null,"departure_time":null,"profile":"pedestrian","preferences":[{"factor":"crosswalk_count","direction":"minimize","weight":1},{"factor":"cctv_score","direction":"maximize","weight":1}]}
+SYSTEM_PROMPT = """한국어 보행 요청을 JSON으로만 추출한다. 좌표/SQL/도구를 만들지 않는다.
+사용자가 말한 출발지=origin_name, 도착지=destination_name. 장소를 추측하지 않는다.
+시각=departure_time(HH:MM:SS, 시간대 없음). 밤 10시=22:00:00, 오전 6시30분=06:30:00.
+시각이 없으면 departure_time은 반드시 null이다. 00:00:00이나 현재 시각을 만들어 넣지 않는다.
+조건은 preferences의 factor/direction으로 모두 보존한다. 요청하지 않은 조건은 만들지 않는다.
+factor: 최단/거리=distance_m, 안전=safety_score, 조명/가로등=streetlight_score,
+CCTV=cctv_score, 횡단보도=crosswalk_count, 계단=stairs_distance_m,
+교차로=intersection_distance_m, 보도=sidewalk_coverage_percent,
+경사/평지/완만한 길=max_slope_percent, 경찰서 접근성=police_accessibility.
+미지원 조건도 snake_case factor로 보존한다. flatness는 쓰지 않는다.
+direction: 적게/짧게/평지=minimize, 많게/밝게/안전하게=maximize, 없이/피해/없는 길=avoid.
+각 조건에 인접한 수식어를 적용: 횡단보도는 적고 CCTV가 많은=각각 minimize, maximize.
+계단 적게=minimize, 계단 없이=avoid. 시간/장소/profile은 factor가 아니다.
+중요도가 명시된 경우만 weight(0.1~100)를 출력한다. 기본값 1은 생략한다.
+profile은 서버가 pedestrian으로 채우므로 생략한다. 문장에 없는 장소는 null이다.
+공백/설명 없이 최소 JSON을 출력하되 명시된 조건은 절대 생략하지 않는다.
+예: 밤 10시에 주안역에서 인천사랑병원까지 계단 없이 CCTV가 많은 길
+{"origin_name":"주안역","destination_name":"인천사랑병원","departure_time":"22:00:00","preferences":[{"factor":"stairs_distance_m","direction":"avoid"},{"factor":"cctv_score","direction":"maximize"}]}
+예: 주안역에서 인천사랑병원까지 최단 경로
+{"origin_name":"주안역","destination_name":"인천사랑병원","departure_time":null,"preferences":[{"factor":"distance_m","direction":"minimize"}]}
 """
+
+
+logger = logging.getLogger(__name__)
+_INTENT_CACHE_MAX_SIZE = 128
+_intent_cache: OrderedDict[tuple[str, str, str, str], tuple[float, str]] = OrderedDict()
+_intent_cache_lock = Lock()
+
+
+def clear_intent_cache() -> None:
+    with _intent_cache_lock:
+        _intent_cache.clear()
 
 
 EXPLICIT_TIME_PATTERN = re.compile(
@@ -158,10 +154,41 @@ def _request_ollama(payload: dict[str, object]) -> dict[str, object]:
 
 def parse_route_intent(query: str) -> ParsedRouteIntent:
     settings = get_settings()
+    query = query.strip()
+    key = (settings.ollama_base_url, settings.ollama_model, SYSTEM_PROMPT, query)
+    if settings.ollama_intent_cache_seconds > 0:
+        with _intent_cache_lock:
+            now = monotonic()
+            for expired in [k for k, (until, _) in _intent_cache.items() if until <= now]:
+                del _intent_cache[expired]
+            cached = _intent_cache.get(key)
+            if cached is not None:
+                _intent_cache.move_to_end(key)
+                logger.info("route_intent cache_hit=true")
+                # Deserialize a fresh value: downstream code must not mutate the cache.
+                return ParsedRouteIntent.model_validate_json(cached[1])
+    started = monotonic()
+    intent = _parse_route_intent_uncached(query)
+    if settings.ollama_intent_cache_seconds > 0:
+        with _intent_cache_lock:
+            _intent_cache[key] = (
+                monotonic() + settings.ollama_intent_cache_seconds,
+                intent.model_dump_json(),
+            )
+            _intent_cache.move_to_end(key)
+            while len(_intent_cache) > _INTENT_CACHE_MAX_SIZE:
+                _intent_cache.popitem(last=False)
+    logger.info("route_intent cache_hit=false seconds=%.3f", monotonic() - started)
+    return intent
+
+
+def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
+    settings = get_settings()
     payload: dict[str, object] = {
         "model": settings.ollama_model,
         "stream": False,
         "think": False,
+        "keep_alive": settings.ollama_keep_alive,
         "format": ParsedRouteIntent.model_json_schema(),
         "options": {"temperature": 0},
         "messages": [

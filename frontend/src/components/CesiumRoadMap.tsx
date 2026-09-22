@@ -1,4 +1,5 @@
 import {
+  BillboardCollection,
   Cartesian3,
   Cartesian2,
   Cartographic,
@@ -15,6 +16,7 @@ import {
   Ion,
   JulianDate,
   Math as CesiumMath,
+  NearFarScalar,
   OpenStreetMapImageryProvider,
   PointPrimitiveCollection,
   Rectangle,
@@ -28,6 +30,7 @@ import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport }
 import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
 import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
+import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -292,7 +295,8 @@ export function CesiumRoadMap({
   const baseLayerRef = useRef<ImageryLayer | null>(null);
   const routeCandidatesRef = useRef(routeCandidates);
   const refreshRoadsRef = useRef<(() => void) | null>(null);
-  const streetlightPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
+  const streetlightPrimitivesRef = useRef<BillboardCollection | null>(null);
+  const nightModeRef = useRef(nightMode);
   const cctvPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
   const helpPointPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
   const cctvCellEntityIdsRef = useRef<string[]>([]);
@@ -322,6 +326,7 @@ export function CesiumRoadMap({
         const entity = viewer.entities.getById(id);
         if (entity) entity.show = facilityVisibility.cctvs;
       }
+      viewer.scene.requestRender();
     }
   }, [facilityVisibility]);
 
@@ -771,7 +776,8 @@ export function CesiumRoadMap({
         ]);
 
         if (cancelled || renderingFailed) return;
-        const streetlightPrimitives = new PointPrimitiveCollection();
+        const streetlightPrimitives = new BillboardCollection({ scene: viewer.scene });
+        const lightSize = mapLighting(nightModeRef.current).lightSize;
         streetlightPrimitives.show = facilityVisibilityRef.current.streetlights;
         for (const feature of streetlights.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
@@ -783,14 +789,18 @@ export function CesiumRoadMap({
               ["관리번호", feature.properties.management_id ?? feature.id],
               ["주소", feature.properties.road_address ?? feature.properties.parcel_address],
               ["광원", feature.properties.light_type],
+              ["표시 안내", "빛 번짐은 위치 강조용이며 실제 조도·점등 상태가 아닙니다."],
               ["출처", feature.properties.source_dataset ?? feature.properties.source],
             ]),
           });
           streetlightPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 2),
-            pixelSize: 3,
-            color: Color.fromCssColorString("#fff4a8").withAlpha(0.72),
-            outlineWidth: 0,
+            image: STREETLIGHT_GLOW_IMAGE,
+            width: lightSize,
+            height: lightSize,
+            scaleByDistance: new NearFarScalar(250, 1, 12000, 0.3),
+            distanceDisplayCondition: new DistanceDisplayCondition(0, 18000),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: streetlightEntity,
           });
         }
@@ -1055,13 +1065,24 @@ export function CesiumRoadMap({
   }, [onStatusChange, onBuildingStatusChange]);
 
   useEffect(() => {
+    nightModeRef.current = nightMode;
     const viewer = viewerRef.current;
     const baseLayer = baseLayerRef.current;
     if (!viewer || viewer.isDestroyed() || !baseLayer) return;
-    baseLayer.brightness = nightMode ? 0.42 : 1;
-    baseLayer.saturation = nightMode ? 0.7 : 1;
-    viewer.scene.backgroundColor = Color.fromCssColorString(nightMode ? "#030a15" : "#071a2b");
-    viewer.scene.globe.baseColor = Color.fromCssColorString(nightMode ? "#091925" : "#173944");
+    const lighting = mapLighting(nightMode);
+    baseLayer.brightness = lighting.brightness;
+    baseLayer.saturation = lighting.saturation;
+    baseLayer.contrast = lighting.contrast;
+    viewer.scene.backgroundColor = Color.fromCssColorString(lighting.background);
+    viewer.scene.globe.baseColor = Color.fromCssColorString(lighting.ground);
+    const lights = streetlightPrimitivesRef.current;
+    if (lights) {
+      for (let index = 0; index < lights.length; index++) {
+        const light = lights.get(index);
+        light.width = lighting.lightSize;
+        light.height = lighting.lightSize;
+      }
+    }
     viewer.scene.requestRender();
   }, [nightMode]);
 

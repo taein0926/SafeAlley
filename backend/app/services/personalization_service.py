@@ -14,6 +14,7 @@ LEARNABLE_DIRECTIONS = {
     "cctv_score": "maximize",
     "crosswalk_count": "minimize",
     "stairs_distance_m": "minimize",
+    "intersection_distance_m": "minimize",
     "sidewalk_coverage_percent": "maximize",
     "max_slope_percent": "minimize",
 }
@@ -61,7 +62,10 @@ def learn_from_selection(
     existing = get_learned_preferences(user_id)
     updates: dict[str, float] = {}
 
-    for factor in METRIC_REGISTRY:
+    # New display metrics are not automatically learnable preferences.
+    for factor in LEARNABLE_DIRECTIONS:
+        if factor not in METRIC_REGISTRY:
+            continue
         values = [
             float(candidate["metrics"][factor])
             for candidate in candidates

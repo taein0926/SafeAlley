@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 from app.core.config import get_settings
@@ -289,17 +289,23 @@ def _route_feature(
     }
 
 
-def _get_route(
+@dataclass(frozen=True)
+class PreparedRoute:
+    """Read-only graph and snapped endpoints, shared only within one search."""
+
+    graph: RoadGraph
+    start_node: NearestRoadNode
+    end_node: NearestRoadNode
+    intersection_data_available: bool
+
+
+def prepare_route(
     start_longitude: float,
     start_latitude: float,
     end_longitude: float,
     end_latitude: float,
-    route_type: Literal["shortest", "balanced", "safe"],
     source: str | None = None,
-    stairs_weight: float = 0.0,
-    penalized_segment_ids: set[int] | None = None,
-    intersection_weight: float = 0.0,
-) -> dict[str, object]:
+) -> PreparedRoute:
     start_node = find_nearest_road_node(
         start_longitude,
         start_latitude,
@@ -320,7 +326,31 @@ def _get_route(
     if not segments:
         raise RoutingDataNotFoundError("The road graph is empty")
 
-    graph = _build_graph(segments)
+    return PreparedRoute(
+        graph=_build_graph(segments), start_node=start_node, end_node=end_node,
+        intersection_data_available=any(
+            segment.pedestrian_reference_version == "pedestrian-reference-v1"
+            for segment in segments
+        ),
+    )
+
+
+def _get_route(
+    start_longitude: float,
+    start_latitude: float,
+    end_longitude: float,
+    end_latitude: float,
+    route_type: Literal["shortest", "balanced", "safe"],
+    source: str | None = None,
+    stairs_weight: float = 0.0,
+    penalized_segment_ids: set[int] | None = None,
+    intersection_weight: float = 0.0,
+    prepared: PreparedRoute | None = None,
+) -> dict[str, object]:
+    context = prepared or prepare_route(
+        start_longitude, start_latitude, end_longitude, end_latitude, source,
+    )
+    graph, start_node, end_node = context.graph, context.start_node, context.end_node
     settings = get_settings()
     if route_type == "shortest":
         policy = SafetyCostPolicy(
@@ -378,9 +408,7 @@ def _get_route(
         raise RouteNotFoundError(str(exc)) from exc
 
     feature = _route_feature(result, start_node, end_node, route_type, policy)
-    feature["properties"]["intersection_data_available"] = any(
-        segment.pedestrian_reference_version == "pedestrian-reference-v1" for segment in segments
-    )
+    feature["properties"]["intersection_data_available"] = context.intersection_data_available
     if bounded is not None:
         feature["properties"].update({
             "intersection_baseline_distance_m": round(bounded.baseline_distance_m, 2),
@@ -398,6 +426,7 @@ def get_shortest_route(
     source: str | None = None,
     stairs_weight: float = 0.0,
     intersection_weight: float = 0.0,
+    prepared: PreparedRoute | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -405,6 +434,7 @@ def get_shortest_route(
         end_longitude,
         end_latitude,
         route_type="shortest",
+        prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
         intersection_weight=intersection_weight,
@@ -419,6 +449,7 @@ def get_safe_route(
     source: str | None = None,
     stairs_weight: float = 0.0,
     intersection_weight: float = 0.0,
+    prepared: PreparedRoute | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -426,6 +457,7 @@ def get_safe_route(
         end_longitude,
         end_latitude,
         route_type="safe",
+        prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
         intersection_weight=intersection_weight,
@@ -441,6 +473,7 @@ def get_balanced_route(
     stairs_weight: float = 0.0,
     penalized_segment_ids: set[int] | None = None,
     intersection_weight: float = 0.0,
+    prepared: PreparedRoute | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -448,6 +481,7 @@ def get_balanced_route(
         end_longitude,
         end_latitude,
         route_type="balanced",
+        prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
         penalized_segment_ids=penalized_segment_ids,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isNightDepartureTime } from "./nightMode";
+import { PreferenceSlider } from "./components/PreferenceSlider";
 import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE } from "./bridgeMarkers";
 
@@ -434,9 +435,9 @@ function App() {
                   </span>
                   <small>경로 검색을 누르면 선택한 시간의 지도 테마와 야간 추천 기준을 적용합니다.</small>
                 </label>
-                <label><span>안전도 <output>{safetyWeight}</output></span><input aria-label="안전도" type="range" min="0" max="100" value={safetyWeight} onChange={(event) => setSafetyWeight(Number(event.target.value))} /></label>
-                <label><span>계단 회피 <output>{stairsWeight}</output></span><input aria-label="계단 회피" type="range" min="0" max="100" value={stairsWeight} onChange={(event) => setStairsWeight(Number(event.target.value))} /></label>
-                <label><span>교차로 회피 <output>{intersectionWeight}</output></span><input aria-label="교차로 회피" type="range" min="0" max="100" value={intersectionWeight} onChange={(event) => setIntersectionWeight(Number(event.target.value))} /><small>높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다.</small></label>
+                <PreferenceSlider label="안전도" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 안전도 우선으로 경로를 추천합니다." />
+                <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} description="높을수록 계단을 더 피하도록 반영합니다. 계단 없는 경로를 보장하지는 않습니다." />
+                <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} description="높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다." />
               </div>
             )}
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
@@ -507,6 +508,7 @@ function App() {
         <p>Backend: {health.kind === "ready" ? "연결됨" : health.kind === "error" ? health.message : "확인 중"}</p>
         <p>지도 레이어: {roads.kind === "ready" ? `화면 주변 조회 도로 ${roads.roadCount.toLocaleString()}개 · EPSG:4326` : roads.kind === "error" ? roads.message : "불러오는 중"}</p>
         <p>전체 안전도 도로는 검색 전 자동 표시하지 않습니다.</p>
+        <p>가로등의 밝은 원과 빛 번짐은 위치 강조용이며 실제 조도·점등 상태를 의미하지 않습니다.</p>
         <p><img src={STAIRS_MARKER_IMAGE} alt="계단 아이콘" width="18" height="18" style={{ verticalAlign: "middle" }} />은 OSM에 등록된 계단 위치입니다.</p>
         <p><img src={CONNECTED_BRIDGE_IMAGE} alt="경로망 연결 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 육교·경로망 연결 / <img src={REFERENCE_BRIDGE_IMAGE} alt="참조 위치 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 참조 위치만 표시</p>
         <p>건물: {buildings.kind === "loading" ? "새 구역 로딩 중" : buildings.kind === "zoom-in" ? "확대하면 상세 건물 표시" : buildings.kind === "error" ? "조회 실패 · 지도 이동 시 재시도" : `화면 주변 ${buildings.count.toLocaleString()}개`} · 캐시 {(buildings.cachedCount ?? 0).toLocaleString()}개</p>

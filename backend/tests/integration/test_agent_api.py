@@ -9,6 +9,32 @@ from tests.integration.conftest import TEST_USER_ID
 client = TestClient(app)
 
 
+def test_selection_saves_intersection_preference_without_server_error():
+    from uuid import uuid4
+    from app.db.connection import connect_database
+    from app.repositories.personalization_repository import save_recommendation
+
+    user = f"test-intersection-{uuid4()}"
+    try:
+        recommendation = save_recommendation(user, [
+            {"route_type": name, "metrics": {"intersection_distance_m": exposure}}
+            for name, exposure in [("shortest", 100), ("balanced", 50), ("safe", 0)]
+        ])
+        response = client.post("/api/agent/route-selections", json={
+            "recommendation_id": recommendation, "user_id": user,
+            "selected_route_type": "safe",
+        })
+        assert response.status_code == 200
+        learned = {p["factor"]: p for p in response.json()["preferences"]}
+        assert learned["intersection_distance_m"]["observations"] == 1
+        assert learned["intersection_distance_m"]["weight"] > 0.5
+    finally:
+        with connect_database() as connection:
+            connection.execute("DELETE FROM route_selection_events WHERE user_id = %s", (user,))
+            connection.execute("DELETE FROM route_recommendations WHERE user_id = %s", (user,))
+            connection.execute("DELETE FROM user_route_preferences WHERE user_id = %s", (user,))
+
+
 def test_agent_ranks_routes_from_structured_output() -> None:
     response = client.post(
         "/api/agent/execute",

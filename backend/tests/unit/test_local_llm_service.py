@@ -4,6 +4,78 @@ from app.services import local_llm_service
 from app.services.local_llm_service import LocalLLMOutputError
 
 
+@pytest.fixture(autouse=True)
+def isolated_intent_cache():
+    local_llm_service.clear_intent_cache()
+    yield
+    local_llm_service.clear_intent_cache()
+
+
+def test_cached_intents_are_isolated_and_queries_are_not_conflated(monkeypatch):
+    calls = []
+    def request(payload):
+        calls.append(payload)
+        return {"message": {"content": '{"preferences":[{"factor":"distance_m","direction":"minimize"}]}'}}
+    monkeypatch.setattr(local_llm_service, "_request_ollama", request)
+    first = local_llm_service.parse_route_intent("최단 길")
+    first.preferences.clear()
+    second = local_llm_service.parse_route_intent("  최단 길  ")
+    assert len(second.preferences) == 1
+    assert second.profile == "pedestrian"
+    assert second.preferences[0].weight == 1
+    assert len(calls) == 1
+    local_llm_service.parse_route_intent("다른 길")
+    assert len(calls) == 2
+    assert calls[0]["keep_alive"] == "10m"
+
+
+def test_intent_cache_expires_and_respects_model_and_disable(monkeypatch):
+    from app.core.config import Settings
+    settings = Settings(ollama_intent_cache_seconds=10)
+    monkeypatch.setattr(local_llm_service, "get_settings", lambda: settings)
+    clock = [0.0]
+    monkeypatch.setattr(local_llm_service, "monotonic", lambda: clock[0])
+    calls = []
+    def request(payload):
+        calls.append(payload)
+        return {"message": {"content": '{}'}}
+    monkeypatch.setattr(local_llm_service, "_request_ollama", request)
+    local_llm_service.parse_route_intent("길 안내")
+    local_llm_service.parse_route_intent("길 안내")
+    assert len(calls) == 1
+    clock[0] = 11
+    local_llm_service.parse_route_intent("길 안내")
+    assert len(calls) == 2
+    settings.ollama_model = "another-model"
+    local_llm_service.parse_route_intent("길 안내")
+    assert len(calls) == 3
+    settings.ollama_intent_cache_seconds = 0
+    local_llm_service.parse_route_intent("길 안내")
+    local_llm_service.parse_route_intent("길 안내")
+    assert len(calls) == 5
+
+
+def test_invalid_intent_is_not_cached(monkeypatch):
+    calls = []
+    def request(payload):
+        calls.append(payload)
+        return {"message": {"content": 'invalid'}}
+    monkeypatch.setattr(local_llm_service, "_request_ollama", request)
+    for _ in range(2):
+        with pytest.raises(LocalLLMOutputError):
+            local_llm_service.parse_route_intent("길 안내")
+    assert len(calls) == 4
+
+
+def test_intent_cache_is_bounded(monkeypatch):
+    monkeypatch.setattr(local_llm_service, "_INTENT_CACHE_MAX_SIZE", 2)
+    monkeypatch.setattr(local_llm_service, "_request_ollama", lambda _: {"message": {"content": '{}'}})
+    for query in ["a", "b", "c"]:
+        local_llm_service.parse_route_intent(query)
+    assert len(local_llm_service._intent_cache) == 2
+    assert {key[-1] for key in local_llm_service._intent_cache} == {"b", "c"}
+
+
 def test_local_llm_parses_structured_route_intent(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

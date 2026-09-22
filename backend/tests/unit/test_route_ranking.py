@@ -8,6 +8,7 @@ from app.services import route_ranking_service
 
 @pytest.fixture(autouse=True)
 def balanced_route_candidate(monkeypatch) -> None:
+    monkeypatch.setattr(route_ranking_service, "prepare_route", lambda **_: None)
     monkeypatch.setattr(
         route_ranking_service,
         "get_balanced_route",

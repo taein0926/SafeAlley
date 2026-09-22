@@ -220,6 +220,14 @@ textarea { font: inherit; }
 .route-criteria label > span { display: flex; justify-content: space-between; color: #a8c1bc; font-size: 0.86rem; }
 .route-criteria output { color: #4fe0ae; font-weight: 800; }
 .route-criteria input[type="range"] { width: 100%; accent-color: #4fe0ae; }
+.preference-slider { display: grid; gap: 6px; }
+.route-criteria .preference-slider-heading { display: flex; align-items: center; justify-content: space-between; color: #a8c1bc; font-size: 0.86rem; }
+.preference-slider input[type="range"] { margin: 4px 0; cursor: pointer; }
+.preference-slider input[type="range"]:focus-visible { outline: 2px solid #4fe0ae; outline-offset: 4px; border-radius: 8px; }
+.preference-slider-ticks { display: grid; grid-template-columns: repeat(3, 1fr); font-size: 0.76rem; color: #9cb8b2; }
+.preference-slider-ticks span:nth-child(2) { text-align: center; }
+.preference-slider-ticks span:last-child { text-align: right; }
+.preference-slider-ticks [data-selected="true"] { color: #4fe0ae; font-weight: 800; }
 .route-criteria .departure-time-control { display: flex; gap: 8px; }
 .departure-time-control input {
   min-width: 0;
