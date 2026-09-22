@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  CCTV_MARKER_IMAGE, POLICE_MARKER_IMAGE, FIRE_STATION_MARKER_IMAGE,
+  HOSPITAL_MARKER_IMAGE, GENERIC_HELP_MARKER_IMAGE, helpPointMarkerImage,
+} from "./facilityMarkers.ts";
+
+test("each facility category selects its own shared icon", () => {
+  assert.equal(helpPointMarkerImage("police"), POLICE_MARKER_IMAGE);
+  assert.equal(helpPointMarkerImage("fire_station"), FIRE_STATION_MARKER_IMAGE);
+  assert.equal(helpPointMarkerImage("emergency_medical"), HOSPITAL_MARKER_IMAGE);
+  for (const category of [null, undefined, "unknown", {}, "__proto__"]) {
+    assert.equal(helpPointMarkerImage(category), GENERIC_HELP_MARKER_IMAGE);
+  }
+});
+
+test("fire stations display white 119 digits on the red badge", () => {
+  const svg = decodeURIComponent(FIRE_STATION_MARKER_IMAGE.split(",")[1]);
+  assert.match(svg, /fill="#b63038"/);
+  assert.match(svg, /aria-label="119"/);
+  assert.match(svg, /stroke="white"/);
+  assert.doesNotMatch(svg, /<text|<circle/);
+});
+
+test("markers are distinct, self-contained SVG pictograms without font or network dependencies", () => {
+  const images = [CCTV_MARKER_IMAGE, POLICE_MARKER_IMAGE, FIRE_STATION_MARKER_IMAGE,
+    HOSPITAL_MARKER_IMAGE, GENERIC_HELP_MARKER_IMAGE];
+  assert.equal(new Set(images).size, images.length);
+  for (const image of images) {
+    assert.ok(image.startsWith("data:image/svg+xml,"));
+    const svg = decodeURIComponent(image.split(",")[1]);
+    assert.match(svg, /viewBox="0 0 44 44"/);
+    assert.match(svg, /<path /);
+    assert.ok(svg.endsWith("</svg>"));
+    assert.doesNotMatch(svg, /<text|<image|<script|<filter|<animate|href=/);
+  }
+});

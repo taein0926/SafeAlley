@@ -18,7 +18,6 @@ import {
   Math as CesiumMath,
   NearFarScalar,
   OpenStreetMapImageryProvider,
-  PointPrimitiveCollection,
   Rectangle,
   ScreenSpaceEventType,
   Viewer,
@@ -31,6 +30,7 @@ import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../bu
 import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
+import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -225,13 +225,6 @@ function pointDescription(
   });
 }
 
-function colorForHelpPoint(category: unknown): Color {
-  if (category === "police") return Color.fromCssColorString("#4b8dff");
-  if (category === "fire_station") return Color.fromCssColorString("#ff5b5b");
-  if (category === "emergency_medical") return Color.fromCssColorString("#46df88");
-  return Color.fromCssColorString("#c78cff");
-}
-
 function webGlCapabilityError(): string | null {
   const canvas = document.createElement("canvas");
   const context = (
@@ -297,8 +290,8 @@ export function CesiumRoadMap({
   const refreshRoadsRef = useRef<(() => void) | null>(null);
   const streetlightPrimitivesRef = useRef<BillboardCollection | null>(null);
   const nightModeRef = useRef(nightMode);
-  const cctvPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
-  const helpPointPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
+  const cctvPrimitivesRef = useRef<BillboardCollection | null>(null);
+  const helpPointPrimitivesRef = useRef<BillboardCollection | null>(null);
   const cctvCellEntityIdsRef = useRef<string[]>([]);
   const buildingSelectionsRef = useRef<WeakMap<Entity, Omit<BuildingMapSelection, "latitude" | "longitude">>>(new WeakMap());
   const mapInfoRef = useRef<WeakMap<Entity, MapInfoSelection>>(new WeakMap());
@@ -806,7 +799,7 @@ export function CesiumRoadMap({
         }
         viewer.scene.primitives.add(streetlightPrimitives);
         streetlightPrimitivesRef.current = streetlightPrimitives;
-        const cctvPrimitives = new PointPrimitiveCollection();
+        const cctvPrimitives = new BillboardCollection({ scene: viewer.scene });
         cctvPrimitives.show = facilityVisibilityRef.current.cctvs;
         for (const feature of cctvs.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
@@ -871,14 +864,14 @@ export function CesiumRoadMap({
               if (info) mapInfoRef.current.set(cellEntity, info);
             }
             cctvCellEntityIdsRef.current.push(cellId);
-            continue;
           }
           cctvPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 3),
-            pixelSize: 6,
-            color: Color.fromCssColorString("#38dce8").withAlpha(0.9),
-            outlineColor: Color.fromCssColorString("#d8fcff"),
-            outlineWidth: 1,
+            image: CCTV_MARKER_IMAGE,
+            width: 24,
+            height: 24,
+            scaleByDistance: new NearFarScalar(250, 1, 12000, 0.45),
+            distanceDisplayCondition: new DistanceDisplayCondition(0, 18000),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: description,
           });
@@ -886,7 +879,7 @@ export function CesiumRoadMap({
         viewer.scene.primitives.add(cctvPrimitives);
         cctvPrimitivesRef.current = cctvPrimitives;
 
-        const helpPointPrimitives = new PointPrimitiveCollection();
+        const helpPointPrimitives = new BillboardCollection({ scene: viewer.scene });
         helpPointPrimitives.show = facilityVisibilityRef.current.helpPoints;
         for (const feature of helpPoints.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
@@ -919,10 +912,11 @@ export function CesiumRoadMap({
           });
           helpPointPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 4),
-            pixelSize: 9,
-            color: colorForHelpPoint(feature.properties.category).withAlpha(0.94),
-            outlineColor: Color.WHITE,
-            outlineWidth: 1,
+            image: helpPointMarkerImage(feature.properties.category),
+            width: 32,
+            height: 32,
+            scaleByDistance: new NearFarScalar(250, 1, 12000, 0.7),
+            distanceDisplayCondition: new DistanceDisplayCondition(0, 18000),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: helpPointEntity,
           });
