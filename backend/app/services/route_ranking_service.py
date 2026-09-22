@@ -212,6 +212,78 @@ def _route_identity(candidate: dict[str, object]) -> tuple[object, ...]:
     return tuple(tuple(point) for point in route["geometry"]["coordinates"])
 
 
+def _secondary_condition_sentence(
+    preference: RoutePreference,
+    selected: dict[str, object],
+    comparison: dict[str, object],
+) -> str | None:
+    factor = preference.factor
+    chosen = selected["metrics"].get(factor)
+    other = comparison["metrics"].get(factor)
+    if chosen is None or other is None:
+        return None
+    difference = float(chosen) - float(other)
+    if factor == "stairs_distance_m" and preference.direction == "avoid":
+        if float(chosen) == 0 and float(other) == 0:
+            return "두 경로 모두 지도에 기록된 계단 구간은 0m예요."
+        return "선택한 길의 지도상 계단 구간은 0m예요."
+    if factor == "crosswalk_count":
+        if difference == 0:
+            return "두 경로의 지도상 횡단보도 수는 같아요."
+        direction = "적어요" if difference < 0 else "많아요"
+        return f"지도에 기록된 횡단보도는 다른 길보다 {abs(difference):.0f}개 {direction}"
+    if factor == "sidewalk_coverage_percent":
+        if abs(difference) < 0.5:
+            return "확인된 보행공간 비율은 두 경로가 거의 같아요."
+        direction = "높아요" if difference > 0 else "낮아요"
+        return f"확인된 보행공간 비율은 다른 길보다 {abs(difference):.0f}%p {direction}"
+    if factor in PROXY_FACTORS:
+        if abs(difference) <= 1:
+            return None
+        subject = {
+            "cctv_score": "CCTV",
+            "streetlight_score": "가로등",
+            "safety_score": "안전 관련 시설",
+        }[factor]
+        relation = "이 길 주변에 더 잘 분포해요" if difference > 0 else "다른 길 주변에 더 잘 분포해요"
+        return f"{subject}는 {relation}."
+    return None
+
+
+def _metric_evidence_note(
+    preference: RoutePreference,
+    selected: dict[str, object],
+    comparison: dict[str, object],
+) -> str | None:
+    factor = preference.factor
+    chosen = selected["metrics"].get(factor)
+    other = comparison["metrics"].get(factor)
+    if chosen is None or other is None:
+        return None
+    chosen_value, other_value = float(chosen), float(other)
+    if factor == "distance_m":
+        if abs(chosen_value - other_value) < 10:
+            return (
+                f"거리: 추천 경로 {chosen_value:.1f}m, "
+                f"비교 경로 {other_value:.1f}m."
+            )
+        return (
+            f"거리: 추천 경로 {_distance_text(chosen_value)}, "
+            f"비교 경로 {_distance_text(other_value)}."
+        )
+    if factor == "stairs_distance_m":
+        return f"지도상 계단 구간: 추천 경로 {chosen_value:.0f}m, 비교 경로 {other_value:.0f}m."
+    if factor == "crosswalk_count":
+        return f"OSM 횡단보도 기록: 추천 경로 {chosen_value:.0f}개, 비교 경로 {other_value:.0f}개."
+    if factor == "sidewalk_coverage_percent":
+        return f"확인된 보행공간 비율: 추천 경로 {chosen_value:.0f}%, 비교 경로 {other_value:.0f}%."
+    if factor in PROXY_FACTORS:
+        label = METRIC_NAMES[factor]
+        relation = "높습니다" if chosen_value > other_value else "낮습니다" if chosen_value < other_value else "같습니다"
+        return f"{label}: 추천 경로의 상대 지표가 비교 경로보다 {relation}." if chosen_value != other_value else f"{label}: 두 경로의 상대 지표가 같습니다."
+    return None
+
+
 def _recommendation_explanation(
     selected: dict[str, object] | None,
     candidates: list[dict[str, object]],
@@ -256,7 +328,14 @@ def _recommendation_explanation(
             )
         ]
         if eligible:
-            comparison = min(eligible, key=lambda item: float(item["metrics"]["distance_m"]))
+            comparison = max(
+                eligible,
+                key=lambda item: (
+                    float(item["preference_score"])
+                    if item["preference_score"] is not None else float("-inf"),
+                    -float(item["metrics"]["distance_m"]),
+                ),
+            )
             difference = float(comparison["metrics"]["distance_m"]) - distance
             compared = [selected, *eligible]
             primary_values = {
@@ -284,6 +363,11 @@ def _recommendation_explanation(
             elif primary.factor == "distance_m":
                 if difference > max(10, distance * 0.01):
                     summary += f" 비교한 다른 길보다 약 {difference:.0f}m 짧아요."
+                elif difference < -max(10, distance * 0.01):
+                    summary += (
+                        f" 비교한 다른 길보다 약 {-difference:.0f}m 더 걸리지만, "
+                        "다른 요청 조건도 함께 반영했어요."
+                    )
                 elif abs(difference) > 0.5:
                     summary += f" 다른 길과의 거리 차이는 약 {abs(difference):.0f}m로 거의 같아요."
             else:
@@ -291,36 +375,65 @@ def _recommendation_explanation(
                 other_value = comparison["metrics"].get(primary.factor)
                 if chosen_value is not None and other_value is not None:
                     change = float(chosen_value) - float(other_value)
-                    better = change > 1 if primary.direction == "maximize" else change < -1
+                    threshold = 0 if primary.factor == "crosswalk_count" else 1
+                    better = (
+                        change > threshold if primary.direction == "maximize"
+                        else change < -threshold
+                    )
                     if better:
                         if primary.factor in PROXY_SUBJECTS:
                             summary = (
                                 f"{PROXY_COMPARISONS[primary.factor]} "
                                 "이 길을 추천했어요."
                             )
-                            if difference < -10:
-                                summary += f" 대신 약 {-difference:.0f}m 더 걸어요."
+                        elif primary.factor == "crosswalk_count":
+                            direction = "적어" if change < 0 else "많아"
+                            summary = (
+                                f"지도에 기록된 횡단보도가 다른 길보다 "
+                                f"{abs(change):.0f}개 {direction} 이 길을 추천했어요."
+                            )
+                        elif primary.factor == "sidewalk_coverage_percent":
+                            direction = "높아" if change > 0 else "낮아"
+                            summary = (
+                                f"확인된 보행공간 비율이 다른 길보다 "
+                                f"{abs(change):.0f}%p {direction} 이 길을 추천했어요."
+                            )
                         else:
                             metric_name = METRIC_NAMES.get(primary.factor, "요청 조건")
                             direction = "높아요" if primary.direction == "maximize" else "낮아요"
                             advantage = f"다른 길보다 {metric_name} 값이 더 {direction}"
-                            if difference < -10:
-                                summary += f" 약 {-difference:.0f}m 더 걷지만, {advantage}"
-                            else:
-                                summary += f" {advantage}"
-        if (
-            eligible
-            and primary.factor != "stairs_distance_m"
-            and any(
-                item.factor == "stairs_distance_m" and item.direction == "avoid"
-                for item in supported
+                            summary += f" {advantage}"
+            if primary.factor != "distance_m":
+                if difference < -0.5:
+                    summary += f" 다른 길보다 약 {-difference:.0f}m 더 걸어요."
+                elif difference > 0.5 and len(primary_values) > 1:
+                    summary += f" 거리도 약 {difference:.0f}m 짧아요."
+            secondary = sorted(
+                (
+                    item for item in supported
+                    if item.factor not in {primary.factor, "distance_m"}
+                ),
+                key=lambda item: item.weight,
+                reverse=True,
             )
-            and all(
-                float(candidate["metrics"]["stairs_distance_m"]) == 0
-                for candidate in [selected, *eligible]
-            )
-        ):
-            summary += " 비교한 경로는 모두 지도 자료상 계단 구간이 없어요."
+            if secondary:
+                detail = _secondary_condition_sentence(secondary[0], selected, comparison)
+                if detail:
+                    summary += f" {detail}"
+            for item in supported:
+                evidence = _metric_evidence_note(item, selected, comparison)
+                if evidence:
+                    notes.append(evidence)
+        for item in supported:
+            value = selected["metrics"].get(item.factor)
+            if value != 0:
+                continue
+            if item.factor == "crosswalk_count":
+                notes.append("횡단보도 0개는 OSM에 기록된 지점이 없다는 뜻이며, 실제 부재를 확인한 것은 아닙니다.")
+            elif item.factor == "sidewalk_coverage_percent":
+                notes.append("보행공간 비율 0%는 지도에서 보행공간으로 확인된 구간이 없다는 뜻이며, 실제 보도가 없다는 뜻은 아닙니다.")
+            elif item.factor == "stairs_distance_m":
+                notes.append("계단 구간 0m는 지도에 기록된 계단이 없다는 뜻이며, 현장에 계단이 없음을 보장하지 않습니다.")
         if excluded:
             notes.append(
                 f"다른 길 {len(excluded)}개는 큰 도로의 보행로 정보가 없어 추천에서 뺐어요."
