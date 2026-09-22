@@ -25,6 +25,9 @@ build/
 .codex-build/
 .codex-finalizer/
 
+# Keep generated presentation/output files local only.
+/output/
+
 data_pipeline/raw/*
 !data_pipeline/raw/.gitkeep
 data_pipeline/processed/*
