@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { isNightDepartureTime } from "./nightMode";
 
 import {
   CesiumRoadMap,
@@ -277,6 +278,7 @@ function App() {
         origin,
         destination,
         model: null,
+        departureTime: null,
         result: await responseJson<AgentExecutionResponse>(response),
       });
     } catch (error) {
@@ -300,6 +302,7 @@ function App() {
         origin: data.resolved_origin,
         destination: data.resolved_destination,
         model: data.model,
+        departureTime: data.interpretation.departure_time,
         result: data.result,
       });
     } catch (error) {
@@ -344,6 +347,7 @@ function App() {
         onInvalidBuildingSelect={handleInvalidBuildingSelect}
         draftLocations={draftLocations}
         onMapInfoChange={setMapInfo}
+        nightMode={isNightDepartureTime(searchResult?.departureTime ?? null)}
       />
 
       <nav className="facility-controls" aria-label="시설 표시">
@@ -469,7 +473,7 @@ function App() {
       <details className="map-status">
         <summary>데이터 상태</summary>
         <p>Backend: {health.kind === "ready" ? "연결됨" : health.kind === "error" ? health.message : "확인 중"}</p>
-        <p>지도 레이어: {roads.kind === "ready" ? `도로 ${roads.roadCount.toLocaleString()}개 · EPSG:4326` : roads.kind === "error" ? roads.message : "불러오는 중"}</p>
+        <p>지도 레이어: {roads.kind === "ready" ? `화면 주변 조회 도로 ${roads.roadCount.toLocaleString()}개 · EPSG:4326` : roads.kind === "error" ? roads.message : "불러오는 중"}</p>
         <p>전체 안전도 도로는 검색 전 자동 표시하지 않습니다.</p>
       </details>
     </main>

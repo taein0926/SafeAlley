@@ -22,6 +22,7 @@ export type RouteSearchResult = {
   origin: ResolvedPlace | null;
   destination: ResolvedPlace | null;
   model: string | null;
+  departureTime: string | null;
   result: AgentExecutionResponse;
 };
 

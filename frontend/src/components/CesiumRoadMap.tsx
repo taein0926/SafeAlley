@@ -23,6 +23,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
 import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
+import { geometryBounds, roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
 
 export type RoadMapStatus =
   | { kind: "loading" }
@@ -47,6 +48,7 @@ type CesiumRoadMapProps = {
   onInvalidBuildingSelect: () => void;
   draftLocations: DraftMapLocation[];
   onMapInfoChange: (selection: MapInfoSelection | null) => void;
+  nightMode: boolean;
 };
 
 export type FacilityVisibility = {
@@ -165,14 +167,6 @@ type BuildingFeatureCollection = {
   metadata: FeatureCollectionMetadata;
 };
 
-function colorForSafetyScore(score: number): Color {
-  if (score >= 80) return Color.fromCssColorString("#28e0a3");
-  if (score >= 60) return Color.fromCssColorString("#8edb57");
-  if (score >= 40) return Color.fromCssColorString("#ffd166");
-  if (score >= 20) return Color.fromCssColorString("#ff9f43");
-  return Color.fromCssColorString("#ff5c70");
-}
-
 function escapeHtml(value: unknown): string {
   return String(value ?? "-")
     .replaceAll("&", "&amp;")
@@ -198,29 +192,6 @@ function buildingDescription(properties: Record<string, unknown>): string {
       ([label, value]) =>
         `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`,
     )
-    .join("")}</tbody></table>`;
-}
-
-function roadDescription(properties: Record<string, unknown>): string {
-  const rows = [
-    ["종합 안전도", properties.safety_score],
-    ["가로등 점수", properties.streetlight_score],
-    ["방범 CCTV 점수", properties.cctv_score],
-    ["안전시설 점수", properties.help_point_score],
-    ["가장 가까운 가로등", `${properties.nearest_light_distance_m ?? "-"}m`],
-    ["주변 가로등 수", properties.nearby_light_count],
-    ["가로등 밀도", properties.light_density],
-    ["어두운 구간 대리값", `${properties.dark_gap_proxy_m ?? "-"}m`],
-    ["가장 가까운 CCTV", `${properties.nearest_cctv_distance_m ?? "-"}m`],
-    ["주변 CCTV 수", properties.nearby_cctv_count],
-    ["CCTV 밀도", properties.cctv_density],
-    ["CCTV 공백 대리값", `${properties.cctv_gap_proxy_m ?? "-"}m`],
-    ["가장 가까운 안전시설", `${properties.nearest_help_point_distance_m ?? "-"}m`],
-    ["최근접 안전시설 유형", properties.nearest_help_point_category],
-    ["도로명", properties.name],
-  ];
-  return `<table class="cesium-infoBox-defaultTable"><tbody>${rows
-    .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
     .join("")}</tbody></table>`;
 }
 
@@ -302,10 +273,13 @@ export function CesiumRoadMap({
   onInvalidBuildingSelect,
   draftLocations,
   onMapInfoChange,
+  nightMode,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
-  const roadDataSourceRef = useRef<GeoJsonDataSource | null>(null);
+  const baseLayerRef = useRef<ImageryLayer | null>(null);
+  const routeCandidatesRef = useRef(routeCandidates);
+  const refreshRoadsRef = useRef<(() => void) | null>(null);
   const streetlightPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
   const cctvPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
   const helpPointPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
@@ -366,6 +340,14 @@ export function CesiumRoadMap({
 
     let cancelled = false;
     let renderingFailed = false;
+    const layerController = new AbortController();
+    let roadController: AbortController | null = null;
+    let roadTimer: ReturnType<typeof setTimeout> | undefined;
+    let roadRequestSerial = 0;
+    let loadedRoadBounds: RoadViewport | null = null;
+    let loadedRoadCount = 0;
+    let pendingRoadBounds: RoadViewport | null = null;
+    let layerStatus: Extract<RoadMapStatus, { kind: "ready" }> | null = null;
     const osmImagery = new OpenStreetMapImageryProvider({
       url: osmTileUrl,
       maximumLevel: 19,
@@ -374,11 +356,12 @@ export function CesiumRoadMap({
         true,
       ),
     });
+    const baseLayer = new ImageryLayer(osmImagery);
     let viewer: Viewer;
     try {
       viewer = new Viewer(containerRef.current, {
         animation: false,
-        baseLayer: new ImageryLayer(osmImagery),
+        baseLayer,
         baseLayerPicker: false,
         fullscreenButton: false,
         geocoder: false,
@@ -391,6 +374,7 @@ export function CesiumRoadMap({
         timeline: false,
       });
       viewerRef.current = viewer;
+      baseLayerRef.current = baseLayer;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "알 수 없는 오류";
       const message = `Cesium 초기화에 실패했습니다: ${detail}`;
@@ -455,9 +439,11 @@ export function CesiumRoadMap({
     >(
       url: string,
       label: string,
+      signal: AbortSignal = layerController.signal,
     ): Promise<T> {
       const response = await fetch(url, {
         headers: { Accept: "application/geo+json, application/json" },
+        signal,
       });
       if (!response.ok) throw new Error(`${label} API가 HTTP ${response.status}를 반환했습니다.`);
       const collection = (await response.json()) as T;
@@ -469,6 +455,72 @@ export function CesiumRoadMap({
       }
       return collection;
     }
+
+    function publishRoadCount(count: number) {
+      if (!layerStatus || cancelled || renderingFailed) return;
+      layerStatus = { ...layerStatus, roadCount: count };
+      onStatusChange(layerStatus);
+    }
+
+    async function refreshVisibleRoads() {
+      if (cancelled || renderingFailed || !layerStatus || viewer.isDestroyed()) return;
+      const rectangle = viewer.camera.computeViewRectangle();
+      const view = rectangle ? {
+        west: CesiumMath.toDegrees(rectangle.west),
+        south: CesiumMath.toDegrees(rectangle.south),
+        east: CesiumMath.toDegrees(rectangle.east),
+        north: CesiumMath.toDegrees(rectangle.north),
+      } : null;
+      const bounds = view ? roadRequestBounds(view) : null;
+      if (!bounds || routeCandidatesRef.current.length > 0) {
+        ++roadRequestSerial;
+        roadController?.abort();
+        pendingRoadBounds = null;
+        loadedRoadBounds = null;
+        publishRoadCount(0);
+        return;
+      }
+      if (view && pendingRoadBounds && viewportIsInside(view, pendingRoadBounds)) return;
+      // Cancel an obsolete in-flight request even when returning to cached bounds.
+      ++roadRequestSerial;
+      roadController?.abort();
+      pendingRoadBounds = null;
+      if (view && loadedRoadBounds && viewportIsInside(view, loadedRoadBounds)) {
+        publishRoadCount(loadedRoadCount);
+        return;
+      }
+      const serial = roadRequestSerial;
+      const controller = new AbortController();
+      roadController = controller;
+      pendingRoadBounds = bounds;
+      publishRoadCount(0);
+      try {
+        const roads = await loadGeoJson<RoadFeatureCollection>(
+          `/api/safety/roads?source=osm&bbox=${roadBboxQuery(bounds)}`,
+          "화면 주변 안전도 도로",
+          controller.signal,
+        );
+        if (cancelled || renderingFailed || serial !== roadRequestSerial) return;
+        loadedRoadBounds = bounds;
+        loadedRoadCount = roads.metadata.count;
+        // Main hides the analysis layer: do not allocate hidden Cesium entities.
+        publishRoadCount(roads.metadata.count);
+      } catch (error) {
+        if (cancelled || serial !== roadRequestSerial || controller.signal.aborted) return;
+        loadedRoadBounds = null;
+        // Optional analysis data must not disable route search or facility layers.
+        console.warn("화면 주변 도로 조회 실패", error);
+      } finally {
+        if (serial === roadRequestSerial) pendingRoadBounds = null;
+      }
+    }
+
+    function scheduleRoadRefresh() {
+      clearTimeout(roadTimer);
+      roadTimer = setTimeout(() => void refreshVisibleRoads(), 250);
+    }
+    refreshRoadsRef.current = scheduleRoadRefresh;
+    const removeCameraListener = viewer.camera.moveEnd.addEventListener(scheduleRoadRefresh);
 
     async function loadMapLayers() {
       onStatusChange({ kind: "loading" });
@@ -486,8 +538,7 @@ export function CesiumRoadMap({
           "/api/help-points?source=ai-ready-help-points",
           "AI 안전시설",
         );
-        const [roads, buildings, streetlights, cctvs, helpPoints] = await Promise.all([
-          loadGeoJson<RoadFeatureCollection>("/api/safety/roads?source=osm", "안전도 도로"),
+        const [buildings, streetlights, cctvs, helpPoints] = await Promise.all([
           loadGeoJson<BuildingFeatureCollection>(
             `/api/buildings?source=${encodeURIComponent(buildingSource)}`,
             "건물",
@@ -546,34 +597,9 @@ export function CesiumRoadMap({
           }
         }
 
-        const roadDataSource = await GeoJsonDataSource.load(
-          roads as Parameters<typeof GeoJsonDataSource.load>[0],
-          { clampToGround: false },
-        );
-        roadDataSource.name = "Walkable road segments";
-        // Keep the full safety analysis layer available for a future layer control,
-        // but do not confuse it with the route selected by the user.
-        roadDataSource.show = false;
-        roadDataSourceRef.current = roadDataSource;
-
-        for (const entity of roadDataSource.entities.values) {
-          if (!entity.polyline) continue;
-
-          const properties = entity.properties?.getValue(now) as
-            | Record<string, unknown>
-            | undefined;
-          const safetyScore = Number(properties?.safety_score ?? 50);
-          entity.name = String(properties?.name ?? "종합 안전도 분석 구간");
-          entity.description = new ConstantProperty(roadDescription(properties ?? {}));
-          entity.polyline.width = new ConstantProperty(5);
-          entity.polyline.material = new ColorMaterialProperty(
-            colorForSafetyScore(safetyScore),
-          );
-        }
-
         if (cancelled || renderingFailed) return;
         await viewer.dataSources.add(buildingDataSource);
-        await viewer.dataSources.add(roadDataSource);
+        if (cancelled || renderingFailed) return;
         const streetlightPrimitives = new PointPrimitiveCollection();
         streetlightPrimitives.show = facilityVisibilityRef.current.streetlights;
         for (const feature of streetlights.features) {
@@ -723,33 +749,31 @@ export function CesiumRoadMap({
         viewer.scene.primitives.add(helpPointPrimitives);
         helpPointPrimitivesRef.current = helpPointPrimitives;
         if (renderingFailed) return;
-        if (roads.features.length > 0) {
-          const coordinates = roads.features.flatMap(
-            (feature) => feature.geometry.coordinates,
-          );
-          const longitudes = coordinates.map(([longitude]) => longitude);
-          const latitudes = coordinates.map(([, latitude]) => latitude);
+        const extent = geometryBounds(buildings.features.map((feature) => feature.geometry.coordinates));
+        if (extent) {
           const padding = 0.0015;
 
           viewer.camera.flyTo({
             duration: 0,
             destination: Rectangle.fromDegrees(
-              Math.min(...longitudes) - padding,
-              Math.min(...latitudes) - padding,
-              Math.max(...longitudes) + padding,
-              Math.max(...latitudes) + padding,
+              extent.west - padding,
+              extent.south - padding,
+              extent.east + padding,
+              extent.north + padding,
             ),
           });
         }
-        onStatusChange({
+        layerStatus = {
           kind: "ready",
-          roadCount: roads.metadata.count,
+          roadCount: 0,
           buildingCount: buildings.metadata.count,
           streetlightCount: streetlights.metadata.count,
           cctvCount: cctvs.metadata.count,
           cctvRecordCount: cctvs.metadata.record_count ?? cctvs.metadata.count,
           helpPointCount: helpPoints.metadata.count,
-        });
+        };
+        onStatusChange(layerStatus);
+        scheduleRoadRefresh();
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "알 수 없는 지도 오류";
@@ -762,9 +786,14 @@ export function CesiumRoadMap({
 
     return () => {
       cancelled = true;
+      layerController.abort();
+      roadController?.abort();
+      clearTimeout(roadTimer);
+      removeCameraListener();
+      refreshRoadsRef.current = null;
       removeRenderErrorListener();
       viewerRef.current = null;
-      roadDataSourceRef.current = null;
+      baseLayerRef.current = null;
       streetlightPrimitivesRef.current = null;
       cctvPrimitivesRef.current = null;
       helpPointPrimitivesRef.current = null;
@@ -777,9 +806,23 @@ export function CesiumRoadMap({
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (viewer === null || viewer.isDestroyed()) return;
+    const baseLayer = baseLayerRef.current;
+    if (!viewer || viewer.isDestroyed() || !baseLayer) return;
+    baseLayer.brightness = nightMode ? 0.42 : 1;
+    baseLayer.saturation = nightMode ? 0.7 : 1;
+    viewer.scene.backgroundColor = Color.fromCssColorString(nightMode ? "#030a15" : "#071a2b");
+    viewer.scene.globe.baseColor = Color.fromCssColorString(nightMode ? "#091925" : "#173944");
+    viewer.scene.requestRender();
+  }, [nightMode]);
 
-    if (roadDataSourceRef.current !== null) roadDataSourceRef.current.show = false;
+  useEffect(() => {
+    routeCandidatesRef.current = routeCandidates;
+    refreshRoadsRef.current?.();
+  }, [routeCandidates]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (viewer === null || viewer.isDestroyed()) return;
 
     onMapInfoChangeRef.current(null);
     for (const id of routeEntityIdsRef.current) viewer.entities.removeById(id);
@@ -935,7 +978,8 @@ export function CesiumRoadMap({
     <div
       ref={containerRef}
       className={`cesium-map ${buildingSelectionMode ? "cesium-map--selecting" : ""}`}
-      aria-label="보행 가능 도로 지도"
+      data-map-mode={nightMode ? "night" : "day"}
+      aria-label={nightMode ? "야간 보행 가능 도로 지도" : "보행 가능 도로 지도"}
     >
       {renderingError !== null && (
         <div className="map-rendering-error" role="alert">
