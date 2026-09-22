@@ -22,9 +22,10 @@ def get_roads(
         max_length=32,
         description="Optional road data source, for example osm",
     ),
+    steps_only: bool = Query(default=False, description="Return only mapped stair segments"),
 ) -> dict[str, object]:
     try:
-        return get_road_feature_collection(bbox, source=source)
+        return get_road_feature_collection(bbox, source=source, steps_only=steps_only)
     except InvalidBoundingBoxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RoadRepositoryError as exc:

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isNightDepartureTime } from "./nightMode";
+import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
+import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE } from "./bridgeMarkers";
 
 import {
   CesiumRoadMap,
   type BuildingMapSelection,
+  type BuildingMapStatus,
   type BuildingSelectionMode,
   type DraftMapLocation,
   type FacilityVisibility,
@@ -13,6 +16,7 @@ import {
 import {
   buildDirectRouteToolCall,
   currentLocalTime,
+  estimatedWalkingMinutes,
   isValidDepartureTime,
   resolveDirectLocation,
   selectDisplayedCandidates,
@@ -91,6 +95,7 @@ function emptyDirectLocation(): DirectLocationInput {
 function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [roads, setRoads] = useState<RoadMapStatus>({ kind: "loading" });
+  const [buildings, setBuildings] = useState<BuildingMapStatus>({ kind: "loading", count: 0 });
   const [mode, setMode] = useState<SearchMode>("direct");
   const [originLocation, setOriginLocation] = useState<DirectLocationInput>(emptyDirectLocation);
   const [destinationLocation, setDestinationLocation] = useState<DirectLocationInput>(emptyDirectLocation);
@@ -104,6 +109,7 @@ function App() {
   const [criteriaOpen, setCriteriaOpen] = useState(false);
   const [safetyWeight, setSafetyWeight] = useState(0);
   const [stairsWeight, setStairsWeight] = useState(0);
+  const [intersectionWeight, setIntersectionWeight] = useState(0);
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState(
@@ -144,6 +150,7 @@ function App() {
   }, [buildingSelectionMode]);
 
   const handleRoadStatus = useCallback((status: RoadMapStatus) => setRoads(status), []);
+  const handleBuildingStatus = useCallback((status: BuildingMapStatus) => setBuildings(status), []);
   // Keep the empty collection stable so opening a map info panel does not
   // rerun the map's route cleanup effect before a search has been made.
   const routeCandidates = useMemo(
@@ -209,8 +216,8 @@ function App() {
     }
   }, [buildingSelectionMode]);
 
-  const handleInvalidBuildingSelect = useCallback(() => {
-    setMapSelectionNotice({ kind: "error", text: "건물을 선택해주세요" });
+  const handleInvalidBuildingSelect = useCallback((message?: string) => {
+    setMapSelectionNotice({ kind: "error", text: message ?? "건물을 선택해주세요" });
   }, []);
 
   function toggleBuildingSelection(target: Exclude<BuildingSelectionMode, null>) {
@@ -279,7 +286,7 @@ function App() {
         body: JSON.stringify(buildDirectRouteToolCall(
           origin,
           destination,
-          { safety: safetyWeight, stairs: stairsWeight },
+          { safety: safetyWeight, stairs: stairsWeight, intersection: intersectionWeight },
           userId,
           departureTime,
         )),
@@ -350,6 +357,7 @@ function App() {
     <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""}`}>
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
+        onBuildingStatusChange={handleBuildingStatus}
         routeCandidates={routeCandidates}
         selectedRouteType={selectedRouteType}
         facilityVisibility={facilityVisibility}
@@ -428,7 +436,7 @@ function App() {
                 </label>
                 <label><span>안전도 <output>{safetyWeight}</output></span><input aria-label="안전도" type="range" min="0" max="100" value={safetyWeight} onChange={(event) => setSafetyWeight(Number(event.target.value))} /></label>
                 <label><span>계단 회피 <output>{stairsWeight}</output></span><input aria-label="계단 회피" type="range" min="0" max="100" value={stairsWeight} onChange={(event) => setStairsWeight(Number(event.target.value))} /></label>
-                <label className="disabled-criterion"><span>경사도 회피 <output>미지원</output></span><input aria-label="경사도 회피" type="range" min="0" max="100" value="0" disabled /><small>경사 데이터가 충분하지 않아 경로 비용에 적용하지 않습니다.</small></label>
+                <label><span>교차로 회피 <output>{intersectionWeight}</output></span><input aria-label="교차로 회피" type="range" min="0" max="100" value={intersectionWeight} onChange={(event) => setIntersectionWeight(Number(event.target.value))} /><small>높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다.</small></label>
               </div>
             )}
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
@@ -457,14 +465,19 @@ function App() {
                   <span className="route-card-title"><strong>{label}</strong>{candidate.preference_score != null && <em>{candidate.preference_score.toFixed(0)}점</em>}</span>
                   <dl>
                     <div><dt>거리</dt><dd>{formatDistance(candidate.route.properties.total_distance_m)}</dd></div>
-                    <div><dt>총 비용</dt><dd>{candidate.route.properties.total_cost.toFixed(1)}</dd></div>
+                    <div><dt>예상 소요 시간</dt><dd>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "계산 불가" : `약 ${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</dd></div>
                     <div><dt>안전도</dt><dd>{safety == null ? "데이터 없음" : safety.toFixed(1)}</dd></div>
                     <div><dt>계단 구간</dt><dd>{candidate.route.properties.stairs_segment_count}개</dd></div>
+                    <div><dt>교차로 주변</dt><dd>{candidate.route.properties.intersection_data_available ? formatDistance(candidate.route.properties.intersection_distance_m ?? 0) : "데이터 미연결"}</dd></div>
+                    <div><dt>연결된 육교</dt><dd>{candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}</dd></div>
                   </dl>
                 </button>
               );
             })}
           </div>
+          <p className="selection-message">도보 4.5km/h 기준 · 신호 대기·계단 지연·개인 보행속도 미반영</p>
+          <p className="selection-message">교차로 주변 거리는 대표 좌표 반경 35m의 지상 구간 추정값입니다. 실제 횡단 횟수나 육교 접근성·엘리베이터 운행을 보장하지 않습니다.</p>
+          {selectedCandidate?.route.properties.intersection_detour_limited && <p className="selection-message">먼 우회를 막기 위해 교차로 회피를 일부 완화했습니다.</p>}
           {selectedCandidate?.route.properties.unverified_major_road_count ? (
             <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
           ) : null}
@@ -494,6 +507,9 @@ function App() {
         <p>Backend: {health.kind === "ready" ? "연결됨" : health.kind === "error" ? health.message : "확인 중"}</p>
         <p>지도 레이어: {roads.kind === "ready" ? `화면 주변 조회 도로 ${roads.roadCount.toLocaleString()}개 · EPSG:4326` : roads.kind === "error" ? roads.message : "불러오는 중"}</p>
         <p>전체 안전도 도로는 검색 전 자동 표시하지 않습니다.</p>
+        <p><img src={STAIRS_MARKER_IMAGE} alt="계단 아이콘" width="18" height="18" style={{ verticalAlign: "middle" }} />은 OSM에 등록된 계단 위치입니다.</p>
+        <p><img src={CONNECTED_BRIDGE_IMAGE} alt="경로망 연결 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 육교·경로망 연결 / <img src={REFERENCE_BRIDGE_IMAGE} alt="참조 위치 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 참조 위치만 표시</p>
+        <p>건물: {buildings.kind === "loading" ? "새 구역 로딩 중" : buildings.kind === "zoom-in" ? "확대하면 상세 건물 표시" : buildings.kind === "error" ? "조회 실패 · 지도 이동 시 재시도" : `화면 주변 ${buildings.count.toLocaleString()}개`} · 캐시 {(buildings.cachedCount ?? 0).toLocaleString()}개</p>
       </details>
     </main>
   );

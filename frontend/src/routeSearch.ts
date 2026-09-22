@@ -8,6 +8,7 @@ import type {
 export type DirectSearchWeights = {
   safety: number;
   stairs: number;
+  intersection?: number;
 };
 
 export type DirectLocationInput = {
@@ -37,6 +38,12 @@ export function sliderToUnit(value: number): number {
 
 export function currentLocalTime(now = new Date()): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+// Display-only estimate: 4.5 km/h, excluding traffic signals and individual walking pace.
+export function estimatedWalkingMinutes(distanceM: number): number | null {
+  if (!Number.isFinite(distanceM) || distanceM < 0) return null;
+  return Math.ceil(distanceM / 75);
 }
 
 export function isValidDepartureTime(value: string): boolean {
@@ -84,6 +91,10 @@ export function buildDirectRouteToolCall(
   if (safety > 0) {
     preferences.push({ factor: "safety_score", direction: "maximize", weight: safety });
   }
+  const intersection = sliderToUnit(weights.intersection ?? 0);
+  if (intersection > 0) {
+    preferences.push({ factor: "intersection_distance_m", direction: "minimize", weight: intersection * 100 });
+  }
 
   return {
     tool: "rank_routes",
@@ -95,6 +106,7 @@ export function buildDirectRouteToolCall(
       user_id: userId,
       departure_time: departureTime,
       stairs_weight: sliderToUnit(weights.stairs),
+      intersection_weight: intersection,
       preferences,
     },
   };

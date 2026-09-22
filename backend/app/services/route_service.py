@@ -12,6 +12,7 @@ from app.repositories.road_repository import (
 from app.services.routing.astar import PathNotFoundError, PathResult, find_path
 from app.services.routing.graph import GraphEdge, GraphNode, RoadGraph
 from app.services.routing.safety_cost import SafetyCostPolicy
+from app.services.routing.intersection import find_intersection_aware_path
 
 
 class RoutingDataNotFoundError(RuntimeError):
@@ -66,6 +67,10 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     walkability_class=segment.walkability_class,
                     field_status=segment.field_status,
                     coordinates=segment.coordinates,
+                    intersection_exposure_m=segment.intersection_exposure_m,
+                    grade_separated=segment.grade_separated,
+                    pedestrian_bridge_ids=segment.pedestrian_bridge_ids,
+                    pedestrian_reference_version=segment.pedestrian_reference_version,
                     highway=segment.highway,
                     is_steps=segment.is_steps,
                     step_count=segment.step_count,
@@ -96,6 +101,10 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     walkability_class=segment.walkability_class,
                     field_status=segment.field_status,
                     coordinates=tuple(reversed(segment.coordinates)),
+                    intersection_exposure_m=segment.intersection_exposure_m,
+                    grade_separated=segment.grade_separated,
+                    pedestrian_bridge_ids=segment.pedestrian_bridge_ids,
+                    pedestrian_reference_version=segment.pedestrian_reference_version,
                     highway=segment.highway,
                     is_steps=segment.is_steps,
                     step_count=segment.step_count,
@@ -196,6 +205,7 @@ def _route_feature(
                 "distance": policy.distance_weight,
                 "risk": policy.risk_weight,
                 "stairs": policy.stairs_weight,
+                "intersection": policy.intersection_weight,
             },
             "start_node_id": start_node.node_id,
             "end_node_id": end_node.node_id,
@@ -203,6 +213,13 @@ def _route_feature(
             "end_snap_distance_m": round(end_node.distance_m, 2),
             "total_crosswalk_count": len(crossing_node_ids),
             "stairs_distance_m": round(stairs_distance_m, 2),
+            "intersection_distance_m": round(sum(
+                min(edge.distance_m, max(0.0, edge.intersection_exposure_m))
+                for edge in result.edges if not edge.grade_separated
+            ), 2),
+            "pedestrian_bridge_count": len({
+                identity for edge in result.edges for identity in edge.pedestrian_bridge_ids
+            }),
             "sidewalk_coverage_percent": round(
                 sidewalk_distance_m / result.total_distance_m * 100, 2
             ) if result.total_distance_m else 0.0,
@@ -235,6 +252,10 @@ def _route_feature(
                     "coordinates": [list(coordinate) for coordinate in edge.coordinates],
                     "highway": edge.highway,
                     "is_steps": edge.is_steps,
+                    "intersection_exposure_m": round(edge.intersection_exposure_m, 2),
+                    "grade_separated": edge.grade_separated,
+                    "pedestrian_bridge_ids": list(edge.pedestrian_bridge_ids),
+                    "intersection_penalty": round(policy.breakdown(edge).intersection_penalty, 2),
                     "step_count": edge.step_count,
                     "incline": edge.incline,
                     "ramp": edge.ramp,
@@ -277,6 +298,7 @@ def _get_route(
     source: str | None = None,
     stairs_weight: float = 0.0,
     penalized_segment_ids: set[int] | None = None,
+    intersection_weight: float = 0.0,
 ) -> dict[str, object]:
     start_node = find_nearest_road_node(
         start_longitude,
@@ -318,7 +340,15 @@ def _get_route(
             risk_weight=settings.safe_route_risk_weight,
             stairs_weight=stairs_weight,
         )
-    penalized_segment_ids = penalized_segment_ids or set()
+    # Diversification penalties must not inflate the avoidance baseline/cap.
+    penalized_segment_ids = (penalized_segment_ids or set()) if intersection_weight == 0 else set()
+    policy = SafetyCostPolicy(
+        distance_weight=policy.distance_weight, risk_weight=policy.risk_weight,
+        stairs_weight=stairs_weight, intersection_weight=intersection_weight,
+    )
+
+    def extra_cost(edge: GraphEdge) -> float:
+        return edge.distance_m * max(0.0, edge.walkability_factor - 1.0)
 
     def route_cost(edge: GraphEdge) -> float:
         base_cost = (
@@ -330,17 +360,34 @@ def _get_route(
         return base_cost
 
     try:
-        result = find_path(
-            graph=graph,
-            start_node_id=start_node.node_id,
-            goal_node_id=end_node.node_id,
-            edge_cost=route_cost,
-            minimum_cost_per_meter=policy.distance_weight,
-        )
+        bounded = None
+        if intersection_weight > 0:
+            bounded = find_intersection_aware_path(
+                graph, start_node.node_id, end_node.node_id, policy, extra_cost,
+            )
+            result = bounded.path
+        else:
+            result = find_path(
+                graph=graph,
+                start_node_id=start_node.node_id,
+                goal_node_id=end_node.node_id,
+                edge_cost=route_cost,
+                minimum_cost_per_meter=policy.distance_weight,
+            )
     except PathNotFoundError as exc:
         raise RouteNotFoundError(str(exc)) from exc
 
-    return _route_feature(result, start_node, end_node, route_type, policy)
+    feature = _route_feature(result, start_node, end_node, route_type, policy)
+    feature["properties"]["intersection_data_available"] = any(
+        segment.pedestrian_reference_version == "pedestrian-reference-v1" for segment in segments
+    )
+    if bounded is not None:
+        feature["properties"].update({
+            "intersection_baseline_distance_m": round(bounded.baseline_distance_m, 2),
+            "intersection_distance_limit_m": round(bounded.distance_limit_m, 2),
+            "intersection_detour_limited": bounded.detour_limited,
+        })
+    return feature
 
 
 def get_shortest_route(
@@ -350,6 +397,7 @@ def get_shortest_route(
     end_latitude: float,
     source: str | None = None,
     stairs_weight: float = 0.0,
+    intersection_weight: float = 0.0,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -359,6 +407,7 @@ def get_shortest_route(
         route_type="shortest",
         source=source,
         stairs_weight=stairs_weight,
+        intersection_weight=intersection_weight,
     )
 
 
@@ -369,6 +418,7 @@ def get_safe_route(
     end_latitude: float,
     source: str | None = None,
     stairs_weight: float = 0.0,
+    intersection_weight: float = 0.0,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -378,6 +428,7 @@ def get_safe_route(
         route_type="safe",
         source=source,
         stairs_weight=stairs_weight,
+        intersection_weight=intersection_weight,
     )
 
 
@@ -389,6 +440,7 @@ def get_balanced_route(
     source: str | None = None,
     stairs_weight: float = 0.0,
     penalized_segment_ids: set[int] | None = None,
+    intersection_weight: float = 0.0,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -399,4 +451,5 @@ def get_balanced_route(
         source=source,
         stairs_weight=stairs_weight,
         penalized_segment_ids=penalized_segment_ids,
+        intersection_weight=intersection_weight,
     )

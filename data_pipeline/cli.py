@@ -16,6 +16,7 @@ from loaders.help_points import load_help_points
 from loaders.elevation import load_road_slopes
 from loaders.public_crosswalks import load_public_crosswalks
 from loaders.crosswalk_links import link_public_crosswalks
+from loaders.pedestrian_references import load_pedestrian_references
 from preprocess.buildings import preprocess_buildings
 from preprocess.osm_roads import preprocess_osm_roads
 from preprocess.elevation import calculate_road_slopes
@@ -311,6 +312,7 @@ def main() -> None:
             "preprocess-public-crosswalks",
             "load-public-crosswalks",
             "link-public-crosswalks",
+            "load-pedestrian-references",
             "preprocess-public-streetlights",
             "load-public-streetlights",
         ],
@@ -419,6 +421,9 @@ def main() -> None:
         print(f"Loaded {load_public_crosswalks(PROCESSED_PUBLIC_CROSSWALKS_PATH)} official crosswalk POIs")
     elif arguments.command == "link-public-crosswalks":
         print(json.dumps(link_public_crosswalks(), ensure_ascii=False, indent=2))
+    elif arguments.command == "load-pedestrian-references":
+        path = Path(arguments.input) if arguments.input else Path(__file__).parent / "raw" / "pedestrian_references" / "pedestrian_references.geojson"
+        print(json.dumps(load_pedestrian_references(path), ensure_ascii=False, indent=2))
     elif arguments.command == "preprocess-public-streetlights":
         stats = preprocess_incheon_streetlights(
             Path(arguments.input) if arguments.input else RAW_PUBLIC_CROSSWALKS_PATH,

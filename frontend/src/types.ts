@@ -38,6 +38,12 @@ export type RouteCandidate = {
       stairs_segment_count: number;
       total_crosswalk_count: number;
       stairs_distance_m: number;
+      intersection_distance_m?: number;
+      pedestrian_bridge_count?: number;
+      intersection_data_available?: boolean;
+      intersection_detour_limited?: boolean;
+      intersection_baseline_distance_m?: number | null;
+      intersection_distance_limit_m?: number | null;
       sidewalk_coverage_percent: number;
       max_slope_percent: number | null;
       slope_coverage_percent: number;

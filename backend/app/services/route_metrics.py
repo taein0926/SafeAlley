@@ -82,6 +82,11 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         description="Unique OSM crossing nodes traversed by the route",
         extractor=lambda route: _property_number(route, "total_crosswalk_count"),
     ),
+    "intersection_distance_m": MetricDefinition(
+        description="Ground-level distance near supplied intersection reference points, not a crossing count",
+        extractor=lambda route: _property_number(route, "intersection_distance_m")
+        if _properties(route).get("intersection_data_available") else None,
+    ),
     "stairs_distance_m": MetricDefinition(
         description="Distance travelled on OSM highway=steps segments",
         extractor=lambda route: _property_number(route, "stairs_distance_m"),

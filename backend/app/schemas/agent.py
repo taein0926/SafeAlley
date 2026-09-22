@@ -32,6 +32,7 @@ class RouteOptimizationArguments(BaseModel):
     source: str | None = Field(default=None, min_length=1, max_length=32)
     user_id: str | None = Field(default=None, min_length=1, max_length=128)
     stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     preferences: list[RoutePreference] = Field(default_factory=list, max_length=20)
 
     @field_validator("preferences")
@@ -114,6 +115,7 @@ class ParsedRouteIntent(BaseModel):
             "source",
             "user_id",
             "stairs_weight",
+            "intersection_weight",
         }
         invalid = reserved.intersection(factors)
         if invalid:

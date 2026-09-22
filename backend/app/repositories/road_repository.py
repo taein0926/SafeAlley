@@ -57,6 +57,10 @@ class RoutingRoadSegment:
     handrail: str | None = None
     walkability_class: str | None = None
     field_status: str = "unverified"
+    intersection_exposure_m: float = 0.0
+    grade_separated: bool = False
+    pedestrian_bridge_ids: tuple[str, ...] = ()
+    pedestrian_reference_version: str | None = None
 
 
 class RoadRepositoryError(RuntimeError):
@@ -66,9 +70,16 @@ class RoadRepositoryError(RuntimeError):
 def list_road_segments(
     bbox: BoundingBox | None = None,
     source: str | None = None,
+    steps_only: bool = False,
 ) -> list[dict[str, object]]:
     condition_parts: list[str] = []
     parameters: list[object] = []
+
+    if steps_only:
+        condition_parts.append(
+            "COALESCE((properties->>'is_steps')::boolean, "
+            "properties->>'highway' = 'steps', FALSE)"
+        )
 
     if bbox is not None:
         condition_parts.append(
@@ -242,6 +253,13 @@ def list_routing_road_segments(
             COALESCE((properties->>'sidewalk_confirmed')::boolean, false)
                 AS sidewalk_confirmed,
             properties->>'walkability_class' AS walkability_class,
+            COALESCE((properties->'pedestrian_reference'->>'intersection_exposure_m')::float, 0)
+                AS intersection_exposure_m,
+            COALESCE((properties->'pedestrian_reference'->>'grade_separated')::boolean, false)
+                AS grade_separated,
+            COALESCE(properties->'pedestrian_reference'->'bridge_ids', '[]'::jsonb)
+                AS pedestrian_bridge_ids,
+            properties->'pedestrian_reference'->>'version' AS pedestrian_reference_version,
             COALESCE(properties->>'field_status', 'unverified') AS field_status,
             COALESCE(
                 (properties->>'dem_incline_percent')::double precision,
@@ -286,6 +304,10 @@ def list_routing_road_segments(
             sidewalk_confirmed=bool(row["sidewalk_confirmed"]),
             walkability_class=row["walkability_class"],
             field_status=row["field_status"],
+            intersection_exposure_m=float(row["intersection_exposure_m"]),
+            grade_separated=bool(row["grade_separated"]),
+            pedestrian_bridge_ids=tuple(row["pedestrian_bridge_ids"]),
+            pedestrian_reference_version=row["pedestrian_reference_version"],
             incline_percent=(
                 float(row["incline_percent"])
                 if row["incline_percent"] is not None

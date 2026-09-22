@@ -36,8 +36,9 @@ def parse_bbox(value: str | None) -> BoundingBox | None:
 def get_road_feature_collection(
     bbox_value: str | None,
     source: str | None = None,
+    steps_only: bool = False,
 ) -> dict[str, object]:
-    roads = list_road_segments(parse_bbox(bbox_value), source=source)
+    roads = list_road_segments(parse_bbox(bbox_value), source=source, steps_only=steps_only)
     features = [
         {
             "type": "Feature",

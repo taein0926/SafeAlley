@@ -7,6 +7,7 @@ import {
   ColorMaterialProperty,
   ConstantProperty,
   Credit,
+  DistanceDisplayCondition,
   Entity,
   GeoJsonDataSource,
   HeightReference,
@@ -24,6 +25,15 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
 import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
 import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
+import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
+import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
+import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
+
+export type BuildingMapStatus = {
+  kind: "loading" | "ready" | "zoom-in" | "error";
+  count: number;
+  cachedCount?: number;
+};
 
 export type RoadMapStatus =
   | { kind: "loading" }
@@ -40,12 +50,13 @@ export type RoadMapStatus =
 
 type CesiumRoadMapProps = {
   onStatusChange: (status: RoadMapStatus) => void;
+  onBuildingStatusChange: (status: BuildingMapStatus) => void;
   routeCandidates: RouteCandidate[];
   selectedRouteType: RouteType | null;
   facilityVisibility: FacilityVisibility;
   buildingSelectionMode: BuildingSelectionMode;
   onBuildingSelect: (selection: BuildingMapSelection) => void;
-  onInvalidBuildingSelect: () => void;
+  onInvalidBuildingSelect: (message?: string) => void;
   draftLocations: DraftMapLocation[];
   onMapInfoChange: (selection: MapInfoSelection | null) => void;
   nightMode: boolean;
@@ -73,7 +84,7 @@ export type DraftMapLocation = {
 };
 
 export type MapInfoSelection = {
-  kind: "building" | "streetlight" | "cctv" | "help_point" | "route_segment";
+  kind: "building" | "streetlight" | "cctv" | "help_point" | "route_segment" | "stairs" | "bridge";
   title: string;
   rows: Array<{ label: string; value: string }>;
 };
@@ -265,6 +276,7 @@ function pickedWgs84Coordinate(
 
 export function CesiumRoadMap({
   onStatusChange,
+  onBuildingStatusChange,
   routeCandidates,
   selectedRouteType,
   facilityVisibility,
@@ -348,6 +360,12 @@ export function CesiumRoadMap({
     let loadedRoadCount = 0;
     let pendingRoadBounds: RoadViewport | null = null;
     let layerStatus: Extract<RoadMapStatus, { kind: "ready" }> | null = null;
+    const buildingRequests = new BuildingViewportRequests();
+    let buildingTimer: ReturnType<typeof setTimeout> | undefined;
+    const buildingDataSource = new GeoJsonDataSource("Cached buildings");
+    const buildingTiles = new Map<string, Set<string>>();
+    const buildingRecords = new Map<string, { entities: Entity[]; tiles: Set<string> }>();
+    let buildingStatus: BuildingMapStatus = { kind: "loading", count: 0 };
     const osmImagery = new OpenStreetMapImageryProvider({
       url: osmTileUrl,
       maximumLevel: 19,
@@ -415,13 +433,22 @@ export function CesiumRoadMap({
             onBuildingSelectRef.current({ ...building, ...coordinate });
             return;
           }
-          onInvalidBuildingSelectRef.current();
+          const message = buildingStatus.kind === "zoom-in"
+            ? "건물을 선택하려면 지도를 더 확대해주세요."
+            : buildingStatus.kind === "loading"
+              ? "화면 주변 건물을 불러오는 중입니다. 잠시 후 선택해주세요."
+              : buildingStatus.kind === "error"
+                ? "건물을 불러오지 못했습니다. 지도를 조금 이동해 다시 시도해주세요."
+                : undefined;
+          onInvalidBuildingSelectRef.current(message);
           return;
         }
         let selectedInfo: MapInfoSelection | null = null;
         let selectedPriority = -1;
         const priorities: Record<MapInfoSelection["kind"], number> = {
           route_segment: 5,
+          stairs: 4,
+          bridge: 4,
           cctv: 4,
           help_point: 4,
           streetlight: 3,
@@ -528,6 +555,199 @@ export function CesiumRoadMap({
     refreshRoadsRef.current = scheduleRoadRefresh;
     const removeCameraListener = viewer.camera.moveEnd.addEventListener(scheduleRoadRefresh);
 
+    function publishBuildingStatus(status: BuildingMapStatus) {
+      if (cancelled || renderingFailed) return;
+      buildingStatus = status;
+      onBuildingStatusChange({ ...status, cachedCount: buildingRecords.size });
+      if (layerStatus) {
+        layerStatus = { ...layerStatus, buildingCount: status.count };
+        onStatusChange(layerStatus);
+      }
+    }
+
+    function releaseBuildings(source: GeoJsonDataSource) {
+      if (!viewer.isDestroyed()) viewer.dataSources.remove(source, true);
+      source.entities.removeAll();
+    }
+
+    function syncBuildingVisibility(): number {
+      let count = 0;
+      for (const record of buildingRecords.values()) {
+        const visible = [...record.tiles].some((key) => buildingRequests.visible.has(key));
+        if (visible) count++;
+        for (const entity of record.entities) if (entity.show !== visible) entity.show = visible;
+      }
+      buildingDataSource.show = buildingRequests.visible.size > 0;
+      viewer.scene.requestRender();
+      return count;
+    }
+
+    function evictBuildingTiles() {
+      for (const key of buildingRequests.evict()) {
+        for (const id of buildingTiles.get(key) ?? []) {
+          const record = buildingRecords.get(id);
+          if (!record) continue;
+          record.tiles.delete(key);
+          if (record.tiles.size) continue;
+          for (const entity of record.entities) {
+            buildingDataSource.entities.remove(entity);
+            buildingSelectionsRef.current.delete(entity);
+            mapInfoRef.current.delete(entity);
+          }
+          buildingRecords.delete(id);
+        }
+        buildingTiles.delete(key);
+      }
+    }
+
+    async function refreshVisibleBuildings() {
+      if (cancelled || renderingFailed || viewer.isDestroyed()) return;
+      const rectangle = viewer.camera.computeViewRectangle();
+      const decision = buildingRequests.plan(rectangle ? {
+        west: CesiumMath.toDegrees(rectangle.west),
+        south: CesiumMath.toDegrees(rectangle.south),
+        east: CesiumMath.toDegrees(rectangle.east),
+        north: CesiumMath.toDegrees(rectangle.north),
+      } : null);
+      if (decision.kind === "hidden") {
+        syncBuildingVisibility();
+        publishBuildingStatus({ kind: "zoom-in", count: 0 });
+        return;
+      }
+      const visibleCount = syncBuildingVisibility();
+      if (decision.kind === "reuse") {
+        publishBuildingStatus({ kind: "ready", count: visibleCount });
+        return;
+      }
+      if (decision.kind !== "load") return;
+      const request = decision.request;
+      const isCurrent = () => !cancelled && !renderingFailed &&
+        !viewer.isDestroyed() && buildingRequests.isCurrent(request);
+      publishBuildingStatus({ kind: "loading", count: visibleCount });
+      let nextSource: GeoJsonDataSource | null = null;
+      try {
+        for (const batch of request.batches) {
+          if (!isCurrent()) return;
+          const buildings = await loadGeoJson<BuildingFeatureCollection>(
+            `/api/buildings?source=${encodeURIComponent(buildingSource)}&bbox=${roadBboxQuery(batch.bounds)}`,
+            "화면 주변 건물",
+            request.controller.signal,
+          );
+          if (!isCurrent()) return;
+          const tileIds = new Map(batch.tiles.map((tile) => [tile.key, new Set<string>()]));
+          const uniqueFeatures = new Map<string, BuildingFeatureCollection["features"][number]>();
+          for (const feature of buildings.features) {
+            const bounds = geometryBounds(feature.geometry.coordinates);
+            if (!bounds) continue;
+            const id = String(feature.id);
+            let included = false;
+            for (const tile of batch.tiles) if (boundsIntersect(bounds, tile.bounds)) {
+              tileIds.get(tile.key)!.add(id);
+              included = true;
+            }
+            if (included && !buildingRecords.has(id)) uniqueFeatures.set(id, {
+              ...feature, properties: { ...feature.properties, safealley_building_key: id },
+            });
+          }
+          nextSource = await GeoJsonDataSource.load(
+            { ...buildings, features: [...uniqueFeatures.values()] } as Parameters<typeof GeoJsonDataSource.load>[0],
+            { clampToGround: false },
+          );
+          if (!isCurrent()) return;
+          nextSource.name = `${buildingSource} visible buildings`;
+          nextSource.show = false;
+          const prepared = new Map<string, Entity[]>();
+          const now = JulianDate.now();
+          let styledCount = 0;
+          for (const entity of nextSource.entities.values) {
+            if (!entity.polygon) continue;
+            const properties = entity.properties?.getValue(now) as Record<string, unknown> | undefined;
+            const height = Number(properties?.height_m);
+            const buildingName = String(properties?.building_name ?? "").trim() || null;
+            const address = String(properties?.address ?? "").trim() || null;
+            buildingSelectionsRef.current.set(entity, { displayName: buildingName ?? address, address });
+            const key = String(properties?.safealley_building_key);
+            if (!prepared.has(key)) prepared.set(key, []);
+            prepared.get(key)!.push(entity);
+            mapInfoRef.current.set(entity, {
+              kind: "building",
+              title: buildingName ?? address ?? "건물",
+              rows: infoRows([
+                ["건물명", properties?.building_name],
+                ["주용도", properties?.main_use],
+                ["건축면적", properties?.building_area == null ? null : `${properties.building_area}㎡`],
+                ["연면적", properties?.total_floor_area == null ? null : `${properties.total_floor_area}㎡`],
+                ["높이", properties?.height_m == null ? null : `${properties.height_m}m`],
+                ["층수", properties?.floors],
+                ["주소", properties?.address],
+                ["출처", properties?.source],
+              ]),
+            });
+            entity.name = buildingName ?? address ?? "건물";
+            entity.description = new ConstantProperty(buildingDescription(properties ?? {}));
+            entity.polygon.material = new ColorMaterialProperty(
+              Color.fromCssColorString("#35b8c8").withAlpha(0.38),
+            );
+            entity.polygon.outline = new ConstantProperty(true);
+            entity.polygon.outlineColor = new ConstantProperty(Color.fromCssColorString("#8be8f0").withAlpha(0.9));
+            if (properties?.height_m != null && Number.isFinite(height) && height >= 0) {
+              entity.polygon.height = new ConstantProperty(0);
+              entity.polygon.extrudedHeight = new ConstantProperty(height);
+            }
+            // Let input/painting run between batches; abandon stale parses during camera movement.
+            if (++styledCount % 200 === 0) {
+              await new Promise<void>((resolve) => setTimeout(resolve, 0));
+              if (!isCurrent()) return;
+            }
+          }
+          if (!isCurrent()) return;
+          if (!viewer.dataSources.contains(buildingDataSource)) await viewer.dataSources.add(buildingDataSource);
+          if (!isCurrent()) return;
+          if (!buildingRequests.commit(request, batch)) return;
+          buildingDataSource.entities.suspendEvents();
+          try {
+            for (const [id, entities] of prepared) {
+              for (const entity of entities) {
+                nextSource.entities.remove(entity);
+                buildingDataSource.entities.add(entity);
+              }
+              buildingRecords.set(id, { entities, tiles: new Set() });
+            }
+          } finally { buildingDataSource.entities.resumeEvents(); }
+          for (const [key, ids] of tileIds) {
+            buildingTiles.set(key, ids);
+            for (const id of ids) buildingRecords.get(id)?.tiles.add(key);
+          }
+          releaseBuildings(nextSource);
+          nextSource = null;
+          evictBuildingTiles();
+          publishBuildingStatus({ kind: "loading", count: syncBuildingVisibility() });
+        }
+        publishBuildingStatus({ kind: "ready", count: syncBuildingVisibility() });
+      } catch (error) {
+        if (!isCurrent()) return;
+        buildingRequests.fail(request);
+        publishBuildingStatus({ kind: "error", count: buildingStatus.count });
+        console.warn("화면 주변 건물 조회 실패", error);
+      } finally {
+        if (nextSource) releaseBuildings(nextSource);
+      }
+    }
+
+    function scheduleBuildingRefresh() {
+      clearTimeout(buildingTimer);
+      buildingTimer = setTimeout(() => void refreshVisibleBuildings(), 250);
+    }
+    const removeBuildingMoveStart = viewer.camera.moveStart.addEventListener(() => {
+      clearTimeout(buildingTimer);
+      buildingRequests.cancelPending();
+    });
+    const removeBuildingMoveEnd = viewer.camera.moveEnd.addEventListener(scheduleBuildingRefresh);
+    const buildingResizeObserver = new ResizeObserver(scheduleBuildingRefresh);
+    buildingResizeObserver.observe(containerRef.current);
+    publishBuildingStatus({ kind: "loading", count: 0 });
+    scheduleBuildingRefresh();
+
     async function loadMapLayers() {
       onStatusChange({ kind: "loading" });
 
@@ -544,67 +764,12 @@ export function CesiumRoadMap({
           "/api/help-points?source=ai-ready-help-points",
           "AI 안전시설",
         );
-        const [buildings, streetlights, cctvs, helpPoints] = await Promise.all([
-          loadGeoJson<BuildingFeatureCollection>(
-            `/api/buildings?source=${encodeURIComponent(buildingSource)}`,
-            "건물",
-          ),
+        const [streetlights, cctvs, helpPoints] = await Promise.all([
           streetlightRequest,
           cctvRequest,
           helpPointRequest,
         ]);
 
-        const buildingDataSource = await GeoJsonDataSource.load(
-          buildings as Parameters<typeof GeoJsonDataSource.load>[0],
-          { clampToGround: false },
-        );
-        buildingDataSource.name = `${buildingSource} buildings`;
-        const now = JulianDate.now();
-        for (const entity of buildingDataSource.entities.values) {
-          if (!entity.polygon) continue;
-          const properties = entity.properties?.getValue(now) as
-            | Record<string, unknown>
-            | undefined;
-          const height = Number(properties?.height_m);
-          const buildingName = String(properties?.building_name ?? "").trim() || null;
-          const address = String(properties?.address ?? "").trim() || null;
-          buildingSelectionsRef.current.set(entity, {
-            displayName: buildingName ?? address,
-            address,
-          });
-          mapInfoRef.current.set(entity, {
-            kind: "building",
-            title: buildingName ?? address ?? "건물",
-            rows: infoRows([
-              ["건물명", properties?.building_name],
-              ["주용도", properties?.main_use],
-              ["건축면적", properties?.building_area == null ? null : `${properties.building_area}㎡`],
-              ["연면적", properties?.total_floor_area == null ? null : `${properties.total_floor_area}㎡`],
-              ["높이", properties?.height_m == null ? null : `${properties.height_m}m`],
-              ["층수", properties?.floors],
-              ["주소", properties?.address],
-              ["출처", properties?.source],
-            ]),
-          });
-          entity.name = buildingName ?? address ?? "건물";
-          entity.description = new ConstantProperty(
-            buildingDescription(properties ?? {}),
-          );
-          entity.polygon.material = new ColorMaterialProperty(
-            Color.fromCssColorString("#35b8c8").withAlpha(0.38),
-          );
-          entity.polygon.outline = new ConstantProperty(true);
-          entity.polygon.outlineColor = new ConstantProperty(
-            Color.fromCssColorString("#8be8f0").withAlpha(0.9),
-          );
-          if (properties?.height_m != null && Number.isFinite(height) && height >= 0) {
-            entity.polygon.height = new ConstantProperty(0);
-            entity.polygon.extrudedHeight = new ConstantProperty(height);
-          }
-        }
-
-        if (cancelled || renderingFailed) return;
-        await viewer.dataSources.add(buildingDataSource);
         if (cancelled || renderingFailed) return;
         const streetlightPrimitives = new PointPrimitiveCollection();
         streetlightPrimitives.show = facilityVisibilityRef.current.streetlights;
@@ -758,7 +923,7 @@ export function CesiumRoadMap({
         layerStatus = {
           kind: "ready",
           roadCount: 0,
-          buildingCount: buildings.metadata.count,
+          buildingCount: buildingStatus.count,
           streetlightCount: streetlights.metadata.count,
           cctvCount: cctvs.metadata.count,
           cctvRecordCount: cctvs.metadata.record_count ?? cctvs.metadata.count,
@@ -774,12 +939,105 @@ export function CesiumRoadMap({
       }
     }
 
+    async function loadStairMarkers() {
+      try {
+        const stairs = await loadGeoJson<RoadFeatureCollection>("/api/roads?source=osm&steps_only=true", "계단");
+        if (cancelled || renderingFailed || viewer.isDestroyed()) return;
+        for (const feature of stairs.features) {
+          if (feature.properties.is_steps !== true && feature.properties.highway !== "steps") continue;
+          const position = stairMarkerPosition(feature.geometry.coordinates);
+          if (!position) continue;
+          const entity = viewer.entities.add({
+            id: `stairs-${feature.id}`,
+            name: "계단",
+            position: Cartesian3.fromDegrees(...position),
+            billboard: {
+              image: STAIRS_MARKER_IMAGE,
+              width: 32,
+              height: 32,
+              heightReference: HeightReference.CLAMP_TO_GROUND,
+              pixelOffset: new Cartesian2(0, -12),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              distanceDisplayCondition: new DistanceDisplayCondition(0, 15000),
+            },
+          });
+          mapInfoRef.current.set(entity, {
+            kind: "stairs", title: "계단",
+            rows: infoRows([
+              ["도로명", feature.properties.name], ["계단 수", feature.properties.step_count],
+              ["경사", feature.properties.incline], ["난간", feature.properties.handrail],
+              ["경사로", feature.properties.ramp], ["출처", "OpenStreetMap · 현장 확인 필요"],
+            ]),
+          });
+        }
+        viewer.scene.requestRender();
+      } catch (error) {
+        if (!cancelled) console.warn("계단 위치 조회 실패", error);
+      }
+    }
+
+    async function loadBridgeMarkers() {
+      try {
+        const bridges = await loadGeoJson<PointFeatureCollection>("/api/pedestrian-bridges", "육교 위치");
+        if (cancelled || renderingFailed || viewer.isDestroyed()) return;
+        for (const feature of bridges.features) {
+          const position = bridgeMarkerPosition(feature.geometry.coordinates);
+          if (!position) continue;
+          const p = feature.properties;
+          const connected = p.routing_connected === true;
+          const title = String(p.name ?? "보도육교");
+          const entity = viewer.entities.add({
+            id: `bridge-${feature.id}`,
+            name: title,
+            position: Cartesian3.fromDegrees(...position),
+            billboard: {
+              image: connected ? CONNECTED_BRIDGE_IMAGE : REFERENCE_BRIDGE_IMAGE,
+              width: 34, height: 34,
+              heightReference: HeightReference.CLAMP_TO_GROUND,
+              // Offset from the nearby stair marker so both remain selectable.
+              pixelOffset: new Cartesian2(24, -30),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              distanceDisplayCondition: new DistanceDisplayCondition(0, 15000),
+            },
+          });
+          mapInfoRef.current.set(entity, {
+            kind: "bridge", title,
+            rows: infoRows([
+              ["시설", "보도육교"], ["주소", p.address],
+              ["경로망", connected ? "OSM 보행 구간 연결" : "참조 위치만 표시 · 경로망 미연결"],
+              ["길이", p.bridge_length_m == null ? null : `${p.bridge_length_m}m`],
+              ["폭", p.bridge_width_m == null ? null : `${p.bridge_width_m}m`],
+              ["접근 시설(원본)", p.accessible_facility_type],
+              ["부대시설(원본)", p.auxiliary_facility_type],
+              ["이용 제한(원본)", p.use_restriction],
+              ["기준일", p.reference_date], ["출처", p.source_dataset],
+              ["위치 안내", "자료의 대표 위치 · 진입 지점이 아닐 수 있음"],
+              ["주의", "현장 통행 가능 여부 및 엘리베이터 운행 미확인"],
+            ]),
+          });
+        }
+        viewer.scene.requestRender();
+      } catch (error) {
+        if (!cancelled) console.warn("육교 위치 조회 실패", error);
+      }
+    }
+
     void loadMapLayers();
+    void loadStairMarkers();
+    void loadBridgeMarkers();
 
     return () => {
       cancelled = true;
       layerController.abort();
       roadController?.abort();
+      buildingRequests.clear();
+      clearTimeout(buildingTimer);
+      removeBuildingMoveStart();
+      removeBuildingMoveEnd();
+      buildingResizeObserver.disconnect();
+      releaseBuildings(buildingDataSource);
+      buildingTiles.clear();
+      buildingRecords.clear();
       clearTimeout(roadTimer);
       removeCameraListener();
       refreshRoadsRef.current = null;
@@ -794,7 +1052,7 @@ export function CesiumRoadMap({
       mapInfoRef.current = new WeakMap();
       if (!viewer.isDestroyed()) viewer.destroy();
     };
-  }, [onStatusChange]);
+  }, [onStatusChange, onBuildingStatusChange]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

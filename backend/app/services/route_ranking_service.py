@@ -32,6 +32,7 @@ def _route_arguments(arguments: RouteOptimizationArguments) -> dict[str, object]
         "end_latitude": arguments.destination.latitude,
         "source": arguments.source,
         "stairs_weight": arguments.stairs_weight,
+        "intersection_weight": arguments.intersection_weight,
     }
 
 

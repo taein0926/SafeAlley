@@ -35,6 +35,10 @@ class GraphEdge:
     incline_percent: float | None = None
     walkability_class: str | None = None
     field_status: str = "unverified"
+    intersection_exposure_m: float = 0.0
+    grade_separated: bool = False
+    pedestrian_bridge_ids: tuple[str, ...] = ()
+    pedestrian_reference_version: str | None = None
 
 
 @dataclass

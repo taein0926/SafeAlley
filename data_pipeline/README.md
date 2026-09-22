@@ -1,5 +1,7 @@
 # Data Pipeline
 
+미추홀구 육교·교차로 선별 GeoJSON의 `load-pedestrian-references` 적재 및 라우팅 연결 절차는 [교차로 회피 문서](../docs/intersection-routing.md)를 참고합니다. OSM 재적재 후에는 이 연결 명령을 다시 실행합니다.
+
 보행 경사, 인천시 공식 횡단보도 POI, 경로망 검증 절차는 [보행 데이터·품질 문서](../docs/pedestrian-data-quality.md)를 참고합니다.
 
 외부 공간 데이터의 수집, 전처리, 좌표계 변환 및 PostGIS 적재를 담당할 독립 배치 영역입니다.

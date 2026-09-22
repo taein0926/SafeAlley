@@ -13,6 +13,7 @@ class RouteRequest(BaseModel):
     end: CoordinateInput
     source: str | None = Field(default=None, min_length=1, max_length=32)
     stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class GeoJSONLineString(BaseModel):
@@ -49,6 +50,10 @@ class RouteRoadSegment(BaseModel):
     distance_factor: float
     risk_factor: float
     stairs_penalty: float = 0.0
+    intersection_penalty: float = 0.0
+    intersection_exposure_m: float = 0.0
+    grade_separated: bool = False
+    pedestrian_bridge_ids: list[str] = Field(default_factory=list)
     traversal_cost: float
 
 
@@ -56,6 +61,7 @@ class RouteCostWeights(BaseModel):
     distance: float
     risk: float
     stairs: float = 0.0
+    intersection: float = 0.0
 
 
 class RouteProperties(BaseModel):
@@ -73,6 +79,12 @@ class RouteProperties(BaseModel):
     end_snap_distance_m: float
     total_crosswalk_count: int = 0
     stairs_distance_m: float = 0
+    intersection_distance_m: float = 0
+    pedestrian_bridge_count: int = 0
+    intersection_data_available: bool = False
+    intersection_baseline_distance_m: float | None = None
+    intersection_distance_limit_m: float | None = None
+    intersection_detour_limited: bool = False
     sidewalk_coverage_percent: float = 0
     max_slope_percent: float | None = None
     slope_coverage_percent: float = 0

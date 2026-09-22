@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildDirectRouteToolCall,
   currentLocalTime,
+  estimatedWalkingMinutes,
   isValidDepartureTime,
   resolveDirectLocation,
   selectDisplayedCandidates,
@@ -69,6 +70,14 @@ test("0-100 slider values map to the backend stairs range", () => {
   assert.equal(sliderToUnit(100), 1);
 });
 
+test("walking estimate uses distance, not routing cost", () => {
+  assert.equal(estimatedWalkingMinutes(312), 5);
+  assert.equal(estimatedWalkingMinutes(4500), 60);
+  assert.equal(estimatedWalkingMinutes(0), 0);
+  assert.equal(estimatedWalkingMinutes(-1), null);
+  assert.equal(estimatedWalkingMinutes(NaN), null);
+});
+
 test("departure time defaults use local hours and zero-padded minutes", () => {
   assert.equal(currentLocalTime(new Date(2026, 8, 22, 0, 5)), "00:05");
   assert.equal(currentLocalTime(new Date(2026, 8, 22, 23, 59)), "23:59");
@@ -122,6 +131,17 @@ test("map-selected coordinates bypass the text place resolver", async () => {
   assert.equal(resolverCalls, 0);
   assert.equal(resolved.source, "map");
   assert.equal(resolved.latitude, 37.45);
+});
+
+test("intersection slider maps to bounded API weight and proximity ranking, not slope", () => {
+  for (const [slider, expected] of [[0, 0], [50, 0.5], [100, 1], [150, 1], [-10, 0]]) {
+    const payload = buildDirectRouteToolCall(origin, destination, { safety: 70, stairs: 40, intersection: slider }, "user-1");
+    assert.equal(payload.arguments.intersection_weight, expected);
+    assert.equal(payload.arguments.stairs_weight, 0.4);
+    assert.equal("slope_weight" in payload.arguments, false);
+    const preference = payload.arguments.preferences.find((p) => p.factor === "intersection_distance_m");
+    assert.equal(preference?.weight ?? 0, expected * 100);
+  }
 });
 
 test("editing a text location uses the place resolver", async () => {
