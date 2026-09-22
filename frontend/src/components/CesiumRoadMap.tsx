@@ -105,13 +105,13 @@ function routeSegmentInfo(segment: RouteRoadSegment): MapInfoSelection {
     kind: "route_segment",
     title: segment.name || "경로 구간",
     rows: infoRows([
-      ["안전도", Number(segment.safety_score).toFixed(1)],
+      ["시설 접근성 지표(상대)", Number(segment.safety_score).toFixed(1)],
       ["도로 유형", segment.highway],
       ["거리", `${Math.round(segment.distance_m)}m`],
       ["계단", segment.is_steps ? "예" : "아니오"],
-      ["가로등 점수", Number(segment.streetlight_score).toFixed(1)],
-      ["CCTV 점수", Number(segment.cctv_score).toFixed(1)],
-      ["안전시설 점수", segment.help_point_score],
+      ["가로등 위치 지표(상대)", Number(segment.streetlight_score).toFixed(1)],
+      ["CCTV 위치 지표(상대)", Number(segment.cctv_score).toFixed(1)],
+      ["도움시설 위치 지표(상대)", segment.help_point_score],
     ]),
   };
 }

@@ -74,6 +74,8 @@ class AgentExecutionResponse(BaseModel):
     selected_route_type: Literal["shortest", "balanced", "safe"] | None
     selected_route: RouteFeature | None
     recommendation_status: Literal["ready", "field_review_required", "no_supported_preferences"] = "ready"
+    recommendation_reason: str | None = None
+    recommendation_notes: list[str] = Field(default_factory=list)
     candidates: list[RouteCandidate]
     unsupported_preferences: list[UnsupportedPreference]
 

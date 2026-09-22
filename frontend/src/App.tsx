@@ -27,7 +27,6 @@ import {
 import type {
   AgentExecutionResponse,
   ResolvedPlace,
-  RouteCandidate,
   RouteQueryResponse,
   RouteType,
 } from "./types";
@@ -58,11 +57,6 @@ function anonymousUserId(): string {
 
 function formatDistance(value: number): string {
   return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${Math.round(value)} m`;
-}
-
-function metric(candidate: RouteCandidate, key: string): number | null {
-  const value = candidate.metrics[key];
-  return typeof value === "number" ? value : null;
 }
 
 async function responseJson<T>(response: Response): Promise<T> {
@@ -435,7 +429,7 @@ function App() {
                   </span>
                   <small>경로 검색을 누르면 선택한 시간의 지도 테마와 야간 추천 기준을 적용합니다.</small>
                 </label>
-                <PreferenceSlider label="안전도" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 안전도 우선으로 경로를 추천합니다." />
+                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 가로등·CCTV·도움시설 위치 기반 지표를 더 반영합니다. 실제 안전을 보증하지 않습니다." />
                 <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} description="높을수록 계단을 더 피하도록 반영합니다. 계단 없는 경로를 보장하지는 않습니다." />
                 <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} description="높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다." />
               </div>
@@ -457,17 +451,27 @@ function App() {
             <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
             {searchResult?.model && <small>{searchResult.model}</small>}
           </div>
+          {searchResult?.result.recommendation_reason && (
+            <section className="route-explanation" role="status" aria-live="polite">
+              <strong>{searchResult.result.recommendation_status === "ready" ? "추천 이유" : "추천 보류 이유"}</strong>
+              <p>{searchResult.result.recommendation_reason}</p>
+              {searchResult.result.recommendation_notes.length > 0 && (
+                <details>
+                  <summary>판단 근거와 자료 한계</summary>
+                  <ul>{searchResult.result.recommendation_notes.map((note) => <li key={note}>{note}</li>)}</ul>
+                </details>
+              )}
+            </section>
+          )}
           <div className="route-cards">
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;
-              const safety = metric(candidate, "safety_score") ?? candidate.route.properties.average_safety_score;
               return (
                 <button key={candidate.route_type} type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
-                  <span className="route-card-title"><strong>{label}</strong>{candidate.preference_score != null && <em>{candidate.preference_score.toFixed(0)}점</em>}</span>
+                  <span className="route-card-title"><strong>{label}</strong></span>
                   <dl>
                     <div><dt>거리</dt><dd>{formatDistance(candidate.route.properties.total_distance_m)}</dd></div>
                     <div><dt>예상 소요 시간</dt><dd>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "계산 불가" : `약 ${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</dd></div>
-                    <div><dt>안전도</dt><dd>{safety == null ? "데이터 없음" : safety.toFixed(1)}</dd></div>
                     <div><dt>계단 구간</dt><dd>{candidate.route.properties.stairs_segment_count}개</dd></div>
                     <div><dt>교차로 주변</dt><dd>{candidate.route.properties.intersection_data_available ? formatDistance(candidate.route.properties.intersection_distance_m ?? 0) : "데이터 미연결"}</dd></div>
                     <div><dt>연결된 육교</dt><dd>{candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}</dd></div>

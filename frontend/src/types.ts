@@ -87,6 +87,8 @@ export type RouteQueryResponse = {
     recommendation_id: string | null;
     selected_route_type: RouteType | null;
     recommendation_status: "ready" | "field_review_required" | "no_supported_preferences";
+    recommendation_reason: string | null;
+    recommendation_notes: string[];
     candidates: RouteCandidate[];
     unsupported_preferences: Array<{ factor: string; reason: string }>;
   };
