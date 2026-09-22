@@ -43,26 +43,3 @@ export function roadBboxQuery(bounds: RoadViewport): string {
     .map((value) => value.toFixed(6))
     .join(",");
 }
-
-// Frame the existing building layer without downloading every road just for its extent.
-export function geometryBounds(coordinates: unknown[]): RoadViewport | null {
-  let bounds: RoadViewport | null = null;
-  function visit(value: unknown): void {
-    if (!Array.isArray(value)) return;
-    if (typeof value[0] === "number" && typeof value[1] === "number") {
-      const [longitude, latitude] = value;
-      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return;
-      if (!bounds) bounds = { west: longitude, east: longitude, south: latitude, north: latitude };
-      else {
-        bounds.west = Math.min(bounds.west, longitude);
-        bounds.east = Math.max(bounds.east, longitude);
-        bounds.south = Math.min(bounds.south, latitude);
-        bounds.north = Math.max(bounds.north, latitude);
-      }
-      return;
-    }
-    for (const child of value) visit(child);
-  }
-  visit(coordinates);
-  return bounds;
-}

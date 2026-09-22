@@ -23,7 +23,7 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
 import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
-import { geometryBounds, roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
+import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
 
 export type RoadMapStatus =
   | { kind: "loading" }
@@ -395,6 +395,12 @@ export function CesiumRoadMap({
 
     viewer.scene.backgroundColor = Color.fromCssColorString("#071a2b");
     viewer.scene.globe.baseColor = Color.fromCssColorString("#173944");
+    // Juan Station coordinates from the existing /api/places/resolve landmark.
+    // Set the camera before loading layers; late responses must not reset user navigation.
+    viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(126.6804, 37.4649, 1400),
+      orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
+    });
     viewer.screenSpaceEventHandler.setInputAction(
       (movement: { position: Cartesian2 }) => {
         const pickedObjects = viewer.scene.drillPick(movement.position);
@@ -749,20 +755,6 @@ export function CesiumRoadMap({
         viewer.scene.primitives.add(helpPointPrimitives);
         helpPointPrimitivesRef.current = helpPointPrimitives;
         if (renderingFailed) return;
-        const extent = geometryBounds(buildings.features.map((feature) => feature.geometry.coordinates));
-        if (extent) {
-          const padding = 0.0015;
-
-          viewer.camera.flyTo({
-            duration: 0,
-            destination: Rectangle.fromDegrees(
-              extent.west - padding,
-              extent.south - padding,
-              extent.east + padding,
-              extent.north + padding,
-            ),
-          });
-        }
         layerStatus = {
           kind: "ready",
           roadCount: 0,

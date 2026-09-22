@@ -12,6 +12,8 @@ import {
 } from "./components/CesiumRoadMap";
 import {
   buildDirectRouteToolCall,
+  currentLocalTime,
+  isValidDepartureTime,
   resolveDirectLocation,
   selectDisplayedCandidates,
   type DirectLocationInput,
@@ -102,6 +104,8 @@ function App() {
   const [criteriaOpen, setCriteriaOpen] = useState(false);
   const [safetyWeight, setSafetyWeight] = useState(0);
   const [stairsWeight, setStairsWeight] = useState(0);
+  const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
+  const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState(
     "밤 10시에 주안역에서 인천사랑병원까지 CCTV가 많은 길로 안내해줘",
   );
@@ -242,6 +246,7 @@ function App() {
   }
 
   function finishSearch(result: RouteSearchResult) {
+    setAppliedDepartureTime(result.departureTime);
     setSearchResult(result);
     setSelectedRouteType(
       result.result.selected_route_type ?? result.result.candidates[0]?.route_type ?? null,
@@ -257,6 +262,11 @@ function App() {
   async function searchDirect(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (requestState === "loading") return;
+    if (!isValidDepartureTime(departureTime)) {
+      failSearch(new Error("출발 시간을 올바르게 설정해주세요."));
+      return;
+    }
+    setAppliedDepartureTime(departureTime);
     beginSearch();
     try {
       const [origin, destination] = await Promise.all([
@@ -271,6 +281,7 @@ function App() {
           destination,
           { safety: safetyWeight, stairs: stairsWeight },
           userId,
+          departureTime,
         )),
       });
       finishSearch({
@@ -278,7 +289,7 @@ function App() {
         origin,
         destination,
         model: null,
-        departureTime: null,
+        departureTime,
         result: await responseJson<AgentExecutionResponse>(response),
       });
     } catch (error) {
@@ -347,7 +358,7 @@ function App() {
         onInvalidBuildingSelect={handleInvalidBuildingSelect}
         draftLocations={draftLocations}
         onMapInfoChange={setMapInfo}
-        nightMode={isNightDepartureTime(searchResult?.departureTime ?? null)}
+        nightMode={isNightDepartureTime(appliedDepartureTime)}
       />
 
       <nav className="facility-controls" aria-label="시설 표시">
@@ -407,6 +418,14 @@ function App() {
             </button>
             {criteriaOpen && (
               <div className="route-criteria">
+                <label>
+                  <span>출발 시간</span>
+                  <span className="departure-time-control">
+                    <input aria-label="출발 시간" type="time" value={departureTime} onChange={(event) => setDepartureTime(event.target.value)} required />
+                    <button type="button" onClick={() => setDepartureTime(currentLocalTime())}>현재 시간</button>
+                  </span>
+                  <small>경로 검색을 누르면 선택한 시간의 지도 테마와 야간 추천 기준을 적용합니다.</small>
+                </label>
                 <label><span>안전도 <output>{safetyWeight}</output></span><input aria-label="안전도" type="range" min="0" max="100" value={safetyWeight} onChange={(event) => setSafetyWeight(Number(event.target.value))} /></label>
                 <label><span>계단 회피 <output>{stairsWeight}</output></span><input aria-label="계단 회피" type="range" min="0" max="100" value={stairsWeight} onChange={(event) => setStairsWeight(Number(event.target.value))} /></label>
                 <label className="disabled-criterion"><span>경사도 회피 <output>미지원</output></span><input aria-label="경사도 회피" type="range" min="0" max="100" value="0" disabled /><small>경사 데이터가 충분하지 않아 경로 비용에 적용하지 않습니다.</small></label>

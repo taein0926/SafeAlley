@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { geometryBounds, roadBboxQuery, roadRequestBounds, viewportIsInside } from "./roadViewport.ts";
+import { roadBboxQuery, roadRequestBounds, viewportIsInside } from "./roadViewport.ts";
 
 const neighborhood = { west: 126.68, south: 37.46, east: 126.69, north: 37.47 };
 
@@ -23,13 +23,4 @@ test("padded viewport supports small pans without another request", () => {
   assert.equal(viewportIsInside({ ...neighborhood, east: 126.692 }, bounds), true);
   assert.equal(viewportIsInside({ ...neighborhood, east: 126.7 }, bounds), false);
   assert.equal(viewportIsInside(bounds, bounds), true);
-});
-
-test("initial framing uses Polygon and MultiPolygon coordinates without road download", () => {
-  assert.deepEqual(geometryBounds([
-    [[[126.68, 37.46], [126.69, 37.47]]],
-    [[[[126.67, 37.45, 10], [126.7, 37.48]]]],
-    null, [[NaN, 37]],
-  ]), { west: 126.67, south: 37.45, east: 126.7, north: 37.48 });
-  assert.equal(geometryBounds([]), null);
 });

@@ -35,6 +35,14 @@ export function sliderToUnit(value: number): number {
   return Math.min(100, Math.max(0, value)) / 100;
 }
 
+export function currentLocalTime(now = new Date()): string {
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+export function isValidDepartureTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
 export async function resolveDirectLocation(
   location: DirectLocationInput,
   textResolver: (name: string) => Promise<ResolvedPlace>,
@@ -61,7 +69,11 @@ export function buildDirectRouteToolCall(
   destination: ResolvedPlace,
   weights: DirectSearchWeights,
   userId: string,
+  departureTime: string | null = null,
 ) {
+  if (departureTime !== null && !isValidDepartureTime(departureTime)) {
+    throw new Error("출발 시간을 올바르게 설정해주세요.");
+  }
   const safety = Math.min(100, Math.max(0, weights.safety));
   const distance = 100 - safety;
   const preferences = [];
@@ -81,6 +93,7 @@ export function buildDirectRouteToolCall(
       profile: "pedestrian",
       source: "osm",
       user_id: userId,
+      departure_time: departureTime,
       stairs_weight: sliderToUnit(weights.stairs),
       preferences,
     },

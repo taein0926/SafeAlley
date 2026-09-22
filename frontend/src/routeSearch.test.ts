@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildDirectRouteToolCall,
+  currentLocalTime,
+  isValidDepartureTime,
   resolveDirectLocation,
   selectDisplayedCandidates,
   sliderToUnit,
@@ -65,6 +67,31 @@ test("0-100 slider values map to the backend stairs range", () => {
   assert.equal(sliderToUnit(0), 0);
   assert.equal(sliderToUnit(65), 0.65);
   assert.equal(sliderToUnit(100), 1);
+});
+
+test("departure time defaults use local hours and zero-padded minutes", () => {
+  assert.equal(currentLocalTime(new Date(2026, 8, 22, 0, 5)), "00:05");
+  assert.equal(currentLocalTime(new Date(2026, 8, 22, 23, 59)), "23:59");
+});
+
+test("only a complete valid departure time can be applied on submit", () => {
+  for (const time of ["00:00", "06:00", "22:30", "23:59"]) assert.equal(isValidDepartureTime(time), true);
+  for (const time of ["", "22:", "24:00", "12:60", "9:00"]) assert.equal(isValidDepartureTime(time), false);
+});
+
+test("direct requests carry departure time alongside safety and stair weights", () => {
+  for (const time of ["00:00", "06:00", "20:00", "23:59"]) {
+    const payload = buildDirectRouteToolCall(origin, destination, { safety: 70, stairs: 40 }, "user-1", time);
+    assert.equal(payload.arguments.departure_time, time);
+    assert.equal(payload.arguments.stairs_weight, 0.4);
+    assert.equal(payload.arguments.preferences[1].weight, 70);
+  }
+});
+
+test("cleared or invalid departure times cannot be submitted even with criteria collapsed", () => {
+  for (const time of ["", "24:00", "20:60", "9:00"]) {
+    assert.throws(() => buildDirectRouteToolCall(origin, destination, { safety: 0, stairs: 0 }, "user-1", time), /출발 시간/);
+  }
 });
 
 test("direct search maps safety ranking and stairs_weight without slope fields", () => {

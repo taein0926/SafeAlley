@@ -24,6 +24,9 @@ input,
 textarea { font: inherit; }
 
 .app-shell {
+  --map-edge: 22px;
+  --facility-rail-width: 58px;
+  --panel-right: calc(var(--map-edge) + var(--facility-rail-width) + 16px);
   position: relative;
   min-width: 320px;
   min-height: 100vh;
@@ -45,7 +48,9 @@ textarea { font: inherit; }
 
 .facility-controls {
   top: 50%;
-  right: 474px;
+  right: var(--map-edge);
+  width: var(--facility-rail-width);
+  z-index: 20;
   display: grid;
   gap: 7px;
   padding: 7px;
@@ -96,7 +101,7 @@ textarea { font: inherit; }
 .search-panel {
   top: 22px;
   left: 22px;
-  width: min(620px, calc(100% - 520px));
+  width: min(620px, calc(100% - 590px));
   min-width: 500px;
   max-height: calc(100vh - 44px);
   overflow-y: auto;
@@ -215,6 +220,27 @@ textarea { font: inherit; }
 .route-criteria label > span { display: flex; justify-content: space-between; color: #a8c1bc; font-size: 0.86rem; }
 .route-criteria output { color: #4fe0ae; font-weight: 800; }
 .route-criteria input[type="range"] { width: 100%; accent-color: #4fe0ae; }
+.route-criteria .departure-time-control { display: flex; gap: 8px; }
+.departure-time-control input {
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+  padding: 10px;
+  border: 1px solid rgba(154, 220, 203, 0.25);
+  border-radius: 9px;
+  color: #eef7f4;
+  color-scheme: dark;
+  background: rgba(255, 255, 255, 0.055);
+}
+.departure-time-control button {
+  flex-shrink: 0;
+  border: 1px solid rgba(154, 220, 203, 0.25);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #a8c1bc;
+  background: transparent;
+  cursor: pointer;
+}
 .route-criteria small { color: #6f8c87; font-size: 0.76rem; line-height: 1.4; }
 .disabled-criterion { opacity: 0.58; }
 
@@ -238,7 +264,7 @@ textarea { font: inherit; }
 
 .result-panel {
   top: 22px;
-  right: 22px;
+  right: var(--panel-right);
   width: 430px;
   max-height: calc(56vh - 22px);
   overflow-y: auto;
@@ -277,7 +303,7 @@ textarea { font: inherit; }
 .selection-message { margin: 11px 0 0; color: #8acdbd; font-size: 0.8rem; }
 
 .map-info-panel {
-  right: 22px;
+  right: var(--panel-right);
   bottom: 22px;
   width: 430px;
   max-height: calc(38vh - 22px);
@@ -337,20 +363,27 @@ textarea { font: inherit; }
 .cesium-viewer-toolbar { margin: 10px; }
 
 @media (max-width: 1250px) {
+  .app-shell { --map-edge: 18px; }
   .brand-chip { display: none; }
-  .search-panel { left: 18px; width: min(520px, calc(100% - 450px)); min-width: 430px; }
-  .result-panel, .map-info-panel { right: 18px; width: 390px; }
-  .facility-controls { right: 430px; }
+  .search-panel { left: 18px; width: min(520px, calc(100% - 500px)); min-width: 360px; }
+  .result-panel, .map-info-panel { width: 350px; }
 }
 
-@media (max-width: 760px) {
-  .search-panel { top: 12px; left: 12px; width: calc(100% - 24px); min-width: 0; max-height: 44vh; padding: 16px; }
-  .result-panel { top: auto; right: 12px; bottom: 12px; left: 12px; width: auto; max-height: 34vh; padding: 16px; }
+@media (max-width: 960px) {
+  .app-shell { --map-edge: 12px; --panel-right: calc(var(--map-edge) + var(--facility-rail-width) + 12px); }
+  .search-panel { top: 12px; left: 12px; width: calc(100% - var(--panel-right) - 12px); min-width: 0; max-height: 44vh; padding: 16px; }
+  .result-panel { top: auto; right: var(--panel-right); bottom: 12px; left: 12px; width: auto; max-height: 34vh; padding: 16px; }
   .app-shell--map-info .result-panel { bottom: min(39vh, 310px); }
   .app-shell--map-info .search-panel { max-height: calc(30vh - 36px); }
-  .map-info-panel { right: 12px; bottom: 12px; left: 12px; width: auto; max-height: 34vh; padding: 16px; }
+  .map-info-panel { right: var(--panel-right); bottom: 12px; left: 12px; width: auto; max-height: 34vh; padding: 16px; }
   .map-status { display: none; }
-  .facility-controls { top: 48%; right: 12px; }
+  .facility-controls { top: 50%; }
   .place-inputs { grid-template-columns: 1fr; }
   .place-inputs > i { display: none; }
+}
+
+@media (max-width: 480px) {
+  .segmented-control button { padding: 12px 6px; font-size: 0.84rem; }
+  .route-card dl { grid-template-columns: 1fr; }
+  .map-info-panel dl div { grid-template-columns: minmax(60px, 0.8fr) minmax(0, 1.2fr); gap: 8px; }
 }
