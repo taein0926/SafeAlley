@@ -31,6 +31,7 @@ class RouteRoadSegment(BaseModel):
     cctv_score: float
     population_score: float
     safety_score: float
+    coordinates: list[list[float]]
     highway: str | None = None
     step_count: str | None = None
     incline: str | None = None

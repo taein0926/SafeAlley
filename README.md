@@ -185,7 +185,7 @@ Tool 이름은 allowlist로 제한되고, 추가 JSON 필드와 임의 Tool 이�
 
 ### 로컬 LLM 자연어 입력
 
-`POST /api/agent/query`는 한 문장에서 출발 장소, 도착 장소, 출발 시각, 경로 선호조건을 로컬 Ollama의 `qwen3:4b` Structured Output으로 추출합니다. 장소명은 SQL이나 좌표로 자유 생성하지 않고 `places` 테이블의 allowlisted DB Resolver가 실제 좌표로 변환합니다. 변환된 좌표와 검증된 조건만 동일한 Tool Router로 전달됩니다. 기존 클라이언트를 위해 `origin`과 `destination` 좌표를 직접 전달하는 방식도 유지합니다.
+`POST /api/agent/query`는 한 문장에서 출발 장소, 도착 장소, 출발 시각, 경로 선호조건을 로컬 Ollama의 `qwen3:4b` Structured Output으로 추출합니다. 장소명은 SQL이나 좌표로 자유 생성하지 않고 직접 검색과 동일한 Resolver가 실제 좌표로 변환합니다. Resolver는 `places`의 이름·별칭·주소를 정규화하여 먼저 검색하고, 로컬 결과가 없을 때만 로드된 미추홀구 OSM 도로 bbox로 제한한 공식 Nominatim 검색을 사용합니다. fallback 결과는 `source=nominatim-osm`으로 기존 `places`에 캐시됩니다. 변환된 좌표와 검증된 조건만 동일한 Tool Router로 전달됩니다. 기존 클라이언트를 위해 `origin`과 `destination` 좌표를 직접 전달하는 방식도 유지합니다.
 
 ```http
 POST /api/agent/query
@@ -197,9 +197,20 @@ Content-Type: application/json
 }
 ```
 
-Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=120`입니다. 모델 연결 실패는 HTTP 503, 스키마에 맞지 않는 출력은 HTTP 502로 반환합니다. 오류가 발생해도 규칙 Parser로 조용히 대체하지 않습니다. 장소를 찾지 못하면 HTTP 404로 명확히 중단하며 다른 장소로 임의 대체하지 않습니다.
+Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=300`입니다. Windows에서는 [공식 Ollama 앱](https://ollama.com/download/windows)을 설치하고 실행한 다음, 새 PowerShell 창에서 모델을 내려받습니다.
 
-`places`에는 현재 주안역과 공식 도움시설(경찰·소방·응급의료)이 들어 있습니다. 범용 장소 검색 범위를 넓히려면 OSM 또는 권위 있는 기관의 역·학교·공공시설 데이터를 같은 테이블에 적재하고 별칭을 관리해야 합니다. 런타임 외부 지오코딩 API에는 의존하지 않습니다.
+```powershell
+winget install --id Ollama.Ollama --exact --source winget
+ollama pull qwen3:4b
+ollama list
+docker compose up -d --build backend frontend
+```
+
+Ollama 앱이 실행되지 않았다면 시작 메뉴에서 Ollama를 실행하거나 별도 터미널에서 `ollama serve`를 실행합니다. `http://localhost:3000`의 **AI 검색**에서 위 예시 질문으로 확인할 수 있습니다. 첫 요청은 모델 로딩과 GPU 초기화 때문에 수 분 걸릴 수 있습니다. 이를 위해 모델 요청은 기본 300초, 프론트엔드의 AI 검색 프록시는 의미 검증 재시도까지 고려해 660초 대기합니다. 환경변수를 바꿨다면 `docker compose up -d --build --force-recreate backend`로 컨테이너를 다시 생성합니다.
+
+모델 연결 실패는 HTTP 503, 스키마에 맞지 않는 출력은 HTTP 502로 반환합니다. 오류가 발생해도 규칙 Parser로 조용히 대체하지 않습니다. 장소를 찾지 못하면 HTTP 404로 명확히 중단하며 다른 장소로 임의 대체하지 않습니다.
+
+초기 `places` 데이터는 주안역과 공식 도움시설(경찰·소방·응급의료) 중심의 작은 demo subset입니다. Nominatim fallback은 사용자 검색에 의한 소량 요청을 위한 MVP 기능이며 `NOMINATIM_BASE_URL`, `NOMINATIM_USER_AGENT`, `NOMINATIM_TIMEOUT_SECONDS`로 설정합니다. 운영 데이터는 OSM 또는 권위 있는 기관의 역·학교·공공시설을 파이프라인으로 미리 적재하고 별칭을 관리해야 합니다.
 
 ## 가로등 기반 상대 안전지표
 

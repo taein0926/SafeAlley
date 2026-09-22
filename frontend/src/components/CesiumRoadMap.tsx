@@ -1,15 +1,19 @@
 import {
   Cartesian3,
   Cartesian2,
+  Cartographic,
+  ClassificationType,
   Color,
   ColorMaterialProperty,
   ConstantProperty,
   Credit,
   Entity,
   GeoJsonDataSource,
+  HeightReference,
   ImageryLayer,
   Ion,
   JulianDate,
+  Math as CesiumMath,
   OpenStreetMapImageryProvider,
   PointPrimitiveCollection,
   Rectangle,
@@ -18,7 +22,7 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
-import type { RouteCandidate, RouteType } from "../types";
+import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
 
 export type RoadMapStatus =
   | { kind: "loading" }
@@ -37,7 +41,64 @@ type CesiumRoadMapProps = {
   onStatusChange: (status: RoadMapStatus) => void;
   routeCandidates: RouteCandidate[];
   selectedRouteType: RouteType | null;
+  facilityVisibility: FacilityVisibility;
+  buildingSelectionMode: BuildingSelectionMode;
+  onBuildingSelect: (selection: BuildingMapSelection) => void;
+  onInvalidBuildingSelect: () => void;
+  draftLocations: DraftMapLocation[];
+  onMapInfoChange: (selection: MapInfoSelection | null) => void;
 };
+
+export type FacilityVisibility = {
+  streetlights: boolean;
+  cctvs: boolean;
+  helpPoints: boolean;
+};
+
+export type BuildingSelectionMode = "origin" | "destination" | null;
+
+export type BuildingMapSelection = {
+  displayName: string | null;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+};
+
+export type DraftMapLocation = {
+  kind: "origin" | "destination";
+  latitude: number;
+  longitude: number;
+};
+
+export type MapInfoSelection = {
+  kind: "building" | "streetlight" | "cctv" | "help_point" | "route_segment";
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+};
+
+function infoRows(
+  rows: Array<[string, unknown]>,
+): Array<{ label: string; value: string }> {
+  return rows
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([label, value]) => ({ label, value: String(value) }));
+}
+
+function routeSegmentInfo(segment: RouteRoadSegment): MapInfoSelection {
+  return {
+    kind: "route_segment",
+    title: segment.name || "경로 구간",
+    rows: infoRows([
+      ["안전도", Number(segment.safety_score).toFixed(1)],
+      ["도로 유형", segment.highway],
+      ["거리", `${Math.round(segment.distance_m)}m`],
+      ["계단", segment.is_steps ? "예" : "아니오"],
+      ["가로등 점수", Number(segment.streetlight_score).toFixed(1)],
+      ["CCTV 점수", Number(segment.cctv_score).toFixed(1)],
+      ["안전시설 점수", segment.help_point_score],
+    ]),
+  };
+}
 
 type FeatureCollectionMetadata = {
   count: number;
@@ -208,23 +269,82 @@ function webGlCapabilityError(): string | null {
   return null;
 }
 
-const routeColors: Record<RouteType, Color> = {
-  shortest: Color.fromCssColorString("#1261ff"),
-  balanced: Color.fromCssColorString("#ffe600"),
-  safe: Color.fromCssColorString("#ff2bd6"),
-};
+const routeColor = Color.fromCssColorString("#1261ff");
+
+function pickedWgs84Coordinate(
+  viewer: Viewer,
+  position: Cartesian2,
+): { latitude: number; longitude: number } | null {
+  let cartesian: Cartesian3 | undefined;
+  if (viewer.scene.pickPositionSupported) {
+    try {
+      cartesian = viewer.scene.pickPosition(position);
+    } catch {
+      cartesian = undefined;
+    }
+  }
+  cartesian ??= viewer.camera.pickEllipsoid(position, viewer.scene.globe.ellipsoid);
+  if (!cartesian) return null;
+  const cartographic = Cartographic.fromCartesian(cartesian);
+  return {
+    latitude: CesiumMath.toDegrees(cartographic.latitude),
+    longitude: CesiumMath.toDegrees(cartographic.longitude),
+  };
+}
 
 export function CesiumRoadMap({
   onStatusChange,
   routeCandidates,
   selectedRouteType,
+  facilityVisibility,
+  buildingSelectionMode,
+  onBuildingSelect,
+  onInvalidBuildingSelect,
+  draftLocations,
+  onMapInfoChange,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const roadDataSourceRef = useRef<GeoJsonDataSource | null>(null);
+  const streetlightPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
+  const cctvPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
+  const helpPointPrimitivesRef = useRef<PointPrimitiveCollection | null>(null);
+  const cctvCellEntityIdsRef = useRef<string[]>([]);
+  const buildingSelectionsRef = useRef<WeakMap<Entity, Omit<BuildingMapSelection, "latitude" | "longitude">>>(new WeakMap());
+  const mapInfoRef = useRef<WeakMap<Entity, MapInfoSelection>>(new WeakMap());
   const routeEntityIdsRef = useRef<string[]>([]);
   const lastRouteSignatureRef = useRef("");
+  const facilityVisibilityRef = useRef(facilityVisibility);
+  const buildingSelectionModeRef = useRef(buildingSelectionMode);
+  const onBuildingSelectRef = useRef(onBuildingSelect);
+  const onInvalidBuildingSelectRef = useRef(onInvalidBuildingSelect);
+  const onMapInfoChangeRef = useRef(onMapInfoChange);
   const [renderingError, setRenderingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    facilityVisibilityRef.current = facilityVisibility;
+    const viewer = viewerRef.current;
+    if (streetlightPrimitivesRef.current) {
+      streetlightPrimitivesRef.current.show = facilityVisibility.streetlights;
+    }
+    if (cctvPrimitivesRef.current) cctvPrimitivesRef.current.show = facilityVisibility.cctvs;
+    if (helpPointPrimitivesRef.current) {
+      helpPointPrimitivesRef.current.show = facilityVisibility.helpPoints;
+    }
+    if (viewer && !viewer.isDestroyed()) {
+      for (const id of cctvCellEntityIdsRef.current) {
+        const entity = viewer.entities.getById(id);
+        if (entity) entity.show = facilityVisibility.cctvs;
+      }
+    }
+  }, [facilityVisibility]);
+
+  useEffect(() => {
+    buildingSelectionModeRef.current = buildingSelectionMode;
+    onBuildingSelectRef.current = onBuildingSelect;
+    onInvalidBuildingSelectRef.current = onInvalidBuildingSelect;
+    onMapInfoChangeRef.current = onMapInfoChange;
+  }, [buildingSelectionMode, onBuildingSelect, onInvalidBuildingSelect, onMapInfoChange]);
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -243,9 +363,6 @@ export function CesiumRoadMap({
       import.meta.env.VITE_OSM_TILE_URL || "https://tile.openstreetmap.org/";
     const buildingSource =
       import.meta.env.VITE_BUILDING_SOURCE || "molit-gis-building";
-    const showStreetlights = import.meta.env.VITE_SHOW_STREETLIGHTS !== "false";
-    const showCctvs = import.meta.env.VITE_SHOW_CCTVS !== "false";
-    const showHelpPoints = import.meta.env.VITE_SHOW_HELP_POINTS !== "false";
 
     let cancelled = false;
     let renderingFailed = false;
@@ -266,10 +383,10 @@ export function CesiumRoadMap({
         fullscreenButton: false,
         geocoder: false,
         homeButton: false,
-        infoBox: true,
+        infoBox: false,
         navigationHelpButton: false,
         sceneModePicker: false,
-        selectionIndicator: true,
+        selectionIndicator: false,
         showRenderLoopErrors: false,
         timeline: false,
       });
@@ -297,23 +414,38 @@ export function CesiumRoadMap({
     viewer.screenSpaceEventHandler.setInputAction(
       (movement: { position: Cartesian2 }) => {
         const pickedObjects = viewer.scene.drillPick(movement.position);
-        let fallback: Entity | undefined;
+        if (buildingSelectionModeRef.current !== null) {
+          for (const picked of pickedObjects) {
+            const candidate = picked.id;
+            if (!(candidate instanceof Entity)) continue;
+            const building = buildingSelectionsRef.current.get(candidate);
+            if (!building) continue;
+            const coordinate = pickedWgs84Coordinate(viewer, movement.position);
+            if (!coordinate) break;
+            onBuildingSelectRef.current({ ...building, ...coordinate });
+            return;
+          }
+          onInvalidBuildingSelectRef.current();
+          return;
+        }
+        let selectedInfo: MapInfoSelection | null = null;
+        let selectedPriority = -1;
+        const priorities: Record<MapInfoSelection["kind"], number> = {
+          route_segment: 5,
+          cctv: 4,
+          help_point: 4,
+          streetlight: 3,
+          building: 2,
+        };
         for (const picked of pickedObjects) {
           const candidate = picked.id;
           if (!(candidate instanceof Entity)) continue;
-          fallback ??= candidate;
-          const properties = candidate.properties?.getValue(JulianDate.now()) as
-            | Record<string, unknown>
-            | undefined;
-          if (
-            properties?.safealley_layer === "help_point" ||
-            properties?.safealley_layer === "cctv"
-          ) {
-            viewer.selectedEntity = candidate;
-            return;
-          }
+          const info = mapInfoRef.current.get(candidate);
+          if (!info || priorities[info.kind] <= selectedPriority) continue;
+          selectedInfo = info;
+          selectedPriority = priorities[info.kind];
         }
-        viewer.selectedEntity = fallback;
+        onMapInfoChangeRef.current(selectedInfo);
       },
       ScreenSpaceEventType.LEFT_CLICK,
     );
@@ -342,33 +474,18 @@ export function CesiumRoadMap({
       onStatusChange({ kind: "loading" });
 
       try {
-        const streetlightRequest = showStreetlights
-          ? loadGeoJson<StreetlightFeatureCollection>(
-              "/api/streetlights?source=michuhol-public-data",
-              "가로등",
-            )
-          : Promise.resolve<StreetlightFeatureCollection>({
-              type: "FeatureCollection",
-              features: [],
-              metadata: { count: 0, crs: "EPSG:4326" },
-            });
-        const emptyPoints: PointFeatureCollection = {
-          type: "FeatureCollection",
-          features: [],
-          metadata: { count: 0, crs: "EPSG:4326" },
-        };
-        const cctvRequest = showCctvs
-          ? loadGeoJson<PointFeatureCollection>(
-              "/api/cctvs?source=michuhol-cctv-ai-ready&safety_only=true",
-              "방범 CCTV",
-            )
-          : Promise.resolve(emptyPoints);
-        const helpPointRequest = showHelpPoints
-          ? loadGeoJson<PointFeatureCollection>(
-              "/api/help-points?source=ai-ready-help-points",
-              "AI 안전시설",
-            )
-          : Promise.resolve(emptyPoints);
+        const streetlightRequest = loadGeoJson<StreetlightFeatureCollection>(
+          "/api/streetlights?source=michuhol-public-data",
+          "가로등",
+        );
+        const cctvRequest = loadGeoJson<PointFeatureCollection>(
+          "/api/cctvs?source=michuhol-cctv-ai-ready&safety_only=true",
+          "방범 CCTV",
+        );
+        const helpPointRequest = loadGeoJson<PointFeatureCollection>(
+          "/api/help-points?source=ai-ready-help-points",
+          "AI 안전시설",
+        );
         const [roads, buildings, streetlights, cctvs, helpPoints] = await Promise.all([
           loadGeoJson<RoadFeatureCollection>("/api/safety/roads?source=osm", "안전도 도로"),
           loadGeoJson<BuildingFeatureCollection>(
@@ -392,7 +509,27 @@ export function CesiumRoadMap({
             | Record<string, unknown>
             | undefined;
           const height = Number(properties?.height_m);
-          entity.name = String(properties?.building_name ?? properties?.building_id ?? "건물");
+          const buildingName = String(properties?.building_name ?? "").trim() || null;
+          const address = String(properties?.address ?? "").trim() || null;
+          buildingSelectionsRef.current.set(entity, {
+            displayName: buildingName ?? address,
+            address,
+          });
+          mapInfoRef.current.set(entity, {
+            kind: "building",
+            title: buildingName ?? address ?? "건물",
+            rows: infoRows([
+              ["건물명", properties?.building_name],
+              ["주용도", properties?.main_use],
+              ["건축면적", properties?.building_area == null ? null : `${properties.building_area}㎡`],
+              ["연면적", properties?.total_floor_area == null ? null : `${properties.total_floor_area}㎡`],
+              ["높이", properties?.height_m == null ? null : `${properties.height_m}m`],
+              ["층수", properties?.floors],
+              ["주소", properties?.address],
+              ["출처", properties?.source],
+            ]),
+          });
+          entity.name = buildingName ?? address ?? "건물";
           entity.description = new ConstantProperty(
             buildingDescription(properties ?? {}),
           );
@@ -414,6 +551,9 @@ export function CesiumRoadMap({
           { clampToGround: false },
         );
         roadDataSource.name = "Walkable road segments";
+        // Keep the full safety analysis layer available for a future layer control,
+        // but do not confuse it with the route selected by the user.
+        roadDataSource.show = false;
         roadDataSourceRef.current = roadDataSource;
 
         for (const entity of roadDataSource.entities.values) {
@@ -435,17 +575,32 @@ export function CesiumRoadMap({
         await viewer.dataSources.add(buildingDataSource);
         await viewer.dataSources.add(roadDataSource);
         const streetlightPrimitives = new PointPrimitiveCollection();
+        streetlightPrimitives.show = facilityVisibilityRef.current.streetlights;
         for (const feature of streetlights.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
+          const streetlightEntity = new Entity({ name: "가로등" });
+          mapInfoRef.current.set(streetlightEntity, {
+            kind: "streetlight",
+            title: String(feature.properties.name ?? "가로등"),
+            rows: infoRows([
+              ["관리번호", feature.properties.management_id ?? feature.id],
+              ["주소", feature.properties.road_address ?? feature.properties.parcel_address],
+              ["광원", feature.properties.light_type],
+              ["출처", feature.properties.source_dataset ?? feature.properties.source],
+            ]),
+          });
           streetlightPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 2),
             pixelSize: 3,
             color: Color.fromCssColorString("#fff4a8").withAlpha(0.72),
             outlineWidth: 0,
+            id: streetlightEntity,
           });
         }
         viewer.scene.primitives.add(streetlightPrimitives);
+        streetlightPrimitivesRef.current = streetlightPrimitives;
         const cctvPrimitives = new PointPrimitiveCollection();
+        cctvPrimitives.show = facilityVisibilityRef.current.cctvs;
         for (const feature of cctvs.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
           const coordinateQuality = String(feature.properties.coordinate_quality ?? "unknown");
@@ -465,16 +620,32 @@ export function CesiumRoadMap({
             ],
             "cctv",
           );
+          mapInfoRef.current.set(description, {
+            kind: "cctv",
+            title: coordinateQuality === "source_approximate" ? "CCTV 저정밀 위치 셀" : "방범 CCTV",
+            rows: infoRows([
+              ["좌표 품질", coordinateQuality],
+              ["이 좌표에 묶인 원본", recordCount],
+              ["카메라 수", feature.properties.camera_count],
+              ["설치 목적", feature.properties.purpose],
+              ["촬영 방면", feature.properties.direction_info],
+              ["설치 연월", feature.properties.installed_at],
+              ["대표 주소", feature.properties.road_address ?? feature.properties.parcel_address],
+              ["관리 기관", feature.properties.management_agency],
+            ]),
+          });
           if (coordinateQuality === "source_approximate") {
             const longitudeDigits = Number(feature.properties.longitude_precision_digits ?? 2);
             const latitudeDigits = Number(feature.properties.latitude_precision_digits ?? 3);
             const longitudeHalfCell = 0.5 * 10 ** -longitudeDigits;
             const latitudeHalfCell = 0.5 * 10 ** -latitudeDigits;
             const alpha = Math.min(0.42, 0.10 + Math.log2(Math.max(1, recordCount)) * 0.045);
+            const cellId = `cctv-cell-${feature.id}`;
             viewer.entities.add({
-              id: `cctv-cell-${feature.id}`,
+              id: cellId,
               name: "CCTV 추정 위치 범위",
-              description: new ConstantProperty(description),
+              properties: description.properties,
+              show: facilityVisibilityRef.current.cctvs,
               rectangle: {
                 coordinates: Rectangle.fromDegrees(
                   longitude - longitudeHalfCell,
@@ -487,6 +658,12 @@ export function CesiumRoadMap({
                 outlineColor: Color.fromCssColorString("#b8f9ff").withAlpha(0.55),
               },
             });
+            const cellEntity = viewer.entities.getById(cellId);
+            if (cellEntity) {
+              const info = mapInfoRef.current.get(description);
+              if (info) mapInfoRef.current.set(cellEntity, info);
+            }
+            cctvCellEntityIdsRef.current.push(cellId);
             continue;
           }
           cctvPrimitives.add({
@@ -500,10 +677,39 @@ export function CesiumRoadMap({
           });
         }
         viewer.scene.primitives.add(cctvPrimitives);
+        cctvPrimitivesRef.current = cctvPrimitives;
 
         const helpPointPrimitives = new PointPrimitiveCollection();
+        helpPointPrimitives.show = facilityVisibilityRef.current.helpPoints;
         for (const feature of helpPoints.features) {
           const [longitude, latitude] = feature.geometry.coordinates;
+          const helpPointEntity = pointDescription(
+            String(feature.properties.name ?? "안전·보건 시설"),
+            feature.properties,
+            [
+              ["시설 유형", feature.properties.category],
+              ["세부 유형", feature.properties.subtype],
+              ["주소", feature.properties.address],
+              ["전화", feature.properties.phone ?? feature.properties.emergency_phone],
+              ["원천 기관", feature.properties.source_org],
+              ["출처", feature.properties.source_dataset ?? feature.properties.source],
+              ["기준일", feature.properties.reference_date],
+            ],
+            "help_point",
+          );
+          mapInfoRef.current.set(helpPointEntity, {
+            kind: "help_point",
+            title: String(feature.properties.name ?? "안전·보건 시설"),
+            rows: infoRows([
+              ["시설 유형", feature.properties.category],
+              ["세부 유형", feature.properties.subtype],
+              ["주소", feature.properties.address],
+              ["전화", feature.properties.phone ?? feature.properties.emergency_phone],
+              ["원천 기관", feature.properties.source_org],
+              ["출처", feature.properties.source_dataset ?? feature.properties.source],
+              ["기준일", feature.properties.reference_date],
+            ]),
+          });
           helpPointPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 4),
             pixelSize: 9,
@@ -511,23 +717,11 @@ export function CesiumRoadMap({
             outlineColor: Color.WHITE,
             outlineWidth: 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            id: pointDescription(
-              String(feature.properties.name ?? "안전·보건 시설"),
-              feature.properties,
-              [
-                ["시설 유형", feature.properties.category],
-                ["세부 유형", feature.properties.subtype],
-                ["주소", feature.properties.address],
-                ["전화", feature.properties.phone ?? feature.properties.emergency_phone],
-                ["원천 기관", feature.properties.source_org],
-                ["출처", feature.properties.source_dataset ?? feature.properties.source],
-                ["기준일", feature.properties.reference_date],
-              ],
-              "help_point",
-            ),
+            id: helpPointEntity,
           });
         }
         viewer.scene.primitives.add(helpPointPrimitives);
+        helpPointPrimitivesRef.current = helpPointPrimitives;
         if (renderingFailed) return;
         if (roads.features.length > 0) {
           const coordinates = roads.features.flatMap(
@@ -571,6 +765,12 @@ export function CesiumRoadMap({
       removeRenderErrorListener();
       viewerRef.current = null;
       roadDataSourceRef.current = null;
+      streetlightPrimitivesRef.current = null;
+      cctvPrimitivesRef.current = null;
+      helpPointPrimitivesRef.current = null;
+      cctvCellEntityIdsRef.current = [];
+      buildingSelectionsRef.current = new WeakMap();
+      mapInfoRef.current = new WeakMap();
       if (!viewer.isDestroyed()) viewer.destroy();
     };
   }, [onStatusChange]);
@@ -579,10 +779,9 @@ export function CesiumRoadMap({
     const viewer = viewerRef.current;
     if (viewer === null || viewer.isDestroyed()) return;
 
-    if (roadDataSourceRef.current !== null) {
-      roadDataSourceRef.current.show = routeCandidates.length === 0;
-    }
+    if (roadDataSourceRef.current !== null) roadDataSourceRef.current.show = false;
 
+    onMapInfoChangeRef.current(null);
     for (const id of routeEntityIdsRef.current) viewer.entities.removeById(id);
     routeEntityIdsRef.current = [];
 
@@ -593,33 +792,120 @@ export function CesiumRoadMap({
     for (const candidate of visibleCandidates) {
       const selected = candidate.route_type === selectedRouteType;
       const casingId = `recommended-route-${candidate.route_type}-casing`;
-      const lineId = `recommended-route-${candidate.route_type}`;
       const positions = candidate.route.geometry.coordinates.map(([longitude, latitude]) =>
-        Cartesian3.fromDegrees(longitude, latitude, selected ? 12 : 9),
+        Cartesian3.fromDegrees(longitude, latitude),
       );
-      viewer.entities.add({
-        id: casingId,
-        name: `${candidate.route_type} 경로 후보 외곽선`,
-        polyline: {
-          positions,
-          width: selected ? 18 : 10,
-          material: selected
-            ? Color.WHITE.withAlpha(0.98)
-            : Color.fromCssColorString("#07111d").withAlpha(0.9),
-          clampToGround: false,
-        },
-      });
-      viewer.entities.add({
-        id: lineId,
-        name: `${candidate.route_type} 경로 후보`,
-        polyline: {
-          positions,
-          width: selected ? 12 : 6,
-          material: routeColors[candidate.route_type].withAlpha(selected ? 1 : 0.92),
-          clampToGround: false,
-        },
-      });
-      routeEntityIdsRef.current.push(casingId, lineId);
+      const segments = candidate.route.properties.road_segments ?? [];
+      if (segments.length > 0) {
+        segments.forEach((segment, index) => {
+          if (segment.coordinates.length < 2) return;
+          const info = routeSegmentInfo(segment);
+          const segmentCasingId = `${casingId}-${index}`;
+          const segmentId = `recommended-route-${candidate.route_type}-segment-${index}`;
+          const segmentPositions = segment.coordinates.map(([longitude, latitude]) =>
+            Cartesian3.fromDegrees(longitude, latitude),
+          );
+          const segmentCasing = viewer.entities.add({
+            id: segmentCasingId,
+            name: `${segment.name || "경로 구간"} 외곽선`,
+            polyline: {
+              positions: segmentPositions,
+              width: selected ? 10 : 8,
+              material: Color.WHITE.withAlpha(0.95),
+              clampToGround: true,
+              classificationType: ClassificationType.TERRAIN,
+              zIndex: 1,
+            },
+          });
+          const segmentEntity = viewer.entities.add({
+            id: segmentId,
+            name: segment.name || "경로 구간",
+            polyline: {
+              positions: segmentPositions,
+              width: selected ? 6 : 4,
+              material: routeColor.withAlpha(selected ? 1 : 0.7),
+              clampToGround: true,
+              classificationType: ClassificationType.TERRAIN,
+              zIndex: 2,
+            },
+          });
+          mapInfoRef.current.set(segmentCasing, info);
+          mapInfoRef.current.set(segmentEntity, info);
+          routeEntityIdsRef.current.push(segmentCasingId, segmentId);
+        });
+      } else {
+        viewer.entities.add({
+          id: casingId,
+          name: `${candidate.route_type} 경로 후보 외곽선`,
+          polyline: {
+            positions,
+            width: selected ? 10 : 8,
+            material: Color.WHITE.withAlpha(0.95),
+            clampToGround: true,
+            classificationType: ClassificationType.TERRAIN,
+            zIndex: 1,
+          },
+        });
+        const lineId = `recommended-route-${candidate.route_type}`;
+        viewer.entities.add({
+          id: lineId,
+          name: `${candidate.route_type} 경로 후보`,
+          polyline: {
+            positions,
+            width: selected ? 6 : 4,
+            material: routeColor.withAlpha(selected ? 1 : 0.7),
+            clampToGround: true,
+            classificationType: ClassificationType.TERRAIN,
+            zIndex: 2,
+          },
+        });
+        routeEntityIdsRef.current.push(casingId, lineId);
+      }
+    }
+
+    const selectedCandidate = visibleCandidates[0];
+    const selectedCoordinates = selectedCandidate?.route.geometry.coordinates ?? [];
+    if (selectedCoordinates.length > 0) {
+      const markers = [
+        { id: "selected-route-start", name: "출발지", coordinate: selectedCoordinates[0], color: "#4fe0ae" },
+        { id: "selected-route-end", name: "도착지", coordinate: selectedCoordinates[selectedCoordinates.length - 1], color: "#ff6b7d" },
+      ];
+      for (const marker of markers) {
+        viewer.entities.add({
+          id: marker.id,
+          name: marker.name,
+          position: Cartesian3.fromDegrees(marker.coordinate[0], marker.coordinate[1]),
+          point: {
+            heightReference: HeightReference.CLAMP_TO_GROUND,
+            pixelSize: 13,
+            color: Color.fromCssColorString(marker.color),
+            outlineColor: Color.WHITE,
+            outlineWidth: 3,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        routeEntityIdsRef.current.push(marker.id);
+      }
+    } else {
+      for (const location of draftLocations) {
+        const markerId = `draft-route-${location.kind}`;
+        viewer.entities.add({
+          id: markerId,
+          name: location.kind === "origin" ? "선택한 출발지" : "선택한 도착지",
+          position: Cartesian3.fromDegrees(location.longitude, location.latitude),
+          point: {
+            heightReference: HeightReference.CLAMP_TO_GROUND,
+            pixelSize: 13,
+            color: Color.fromCssColorString(
+              location.kind === "origin" ? "#4fe0ae" : "#ff6b7d",
+            ),
+            outlineColor: Color.WHITE,
+            outlineWidth: 3,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        routeEntityIdsRef.current.push(markerId);
+      }
     }
 
     const signature = visibleCandidates
@@ -640,11 +926,17 @@ export function CesiumRoadMap({
         ),
       });
       lastRouteSignatureRef.current = signature;
+    } else if (visibleCandidates.length === 0) {
+      lastRouteSignatureRef.current = "";
     }
-  }, [routeCandidates, selectedRouteType]);
+  }, [draftLocations, routeCandidates, selectedRouteType]);
 
   return (
-    <div ref={containerRef} className="cesium-map" aria-label="보행 가능 도로 지도">
+    <div
+      ref={containerRef}
+      className={`cesium-map ${buildingSelectionMode ? "cesium-map--selecting" : ""}`}
+      aria-label="보행 가능 도로 지도"
+    >
       {renderingError !== null && (
         <div className="map-rendering-error" role="alert">
           <strong>3D 지도를 표시할 수 없습니다</strong>

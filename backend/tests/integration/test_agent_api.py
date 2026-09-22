@@ -38,6 +38,52 @@ def test_agent_ranks_routes_from_structured_output() -> None:
     assert payload["unsupported_preferences"] == []
 
 
+def test_agent_propagates_stairs_weight_to_generated_routes() -> None:
+    response = client.post(
+        "/api/agent/execute",
+        json={
+            "tool": "rank_routes",
+            "arguments": {
+                "origin": {"latitude": 37.4608, "longitude": 126.6790},
+                "destination": {"latitude": 37.4608, "longitude": 126.6830},
+                "source": "test-fixture",
+                "stairs_weight": 1.0,
+                "preferences": [
+                    {"factor": "distance_m", "direction": "minimize", "weight": 1}
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(
+        candidate["route"]["properties"]["cost_weights"]["stairs"] == 1.0
+        for candidate in payload["candidates"]
+    )
+    shortest = next(
+        candidate for candidate in payload["candidates"]
+        if candidate["route_type"] == "shortest"
+    )
+    assert shortest["route"]["properties"]["stairs_segment_count"] == 0
+
+
+def test_agent_validates_stairs_weight_range() -> None:
+    response = client.post(
+        "/api/agent/execute",
+        json={
+            "tool": "rank_routes",
+            "arguments": {
+                "origin": {"latitude": 37.4608, "longitude": 126.6790},
+                "destination": {"latitude": 37.4608, "longitude": 126.6830},
+                "stairs_weight": 1.01,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_agent_reports_registered_metrics_that_have_no_source_data() -> None:
     response = client.post(
         "/api/agent/execute",

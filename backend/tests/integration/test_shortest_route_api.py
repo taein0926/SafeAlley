@@ -33,6 +33,7 @@ def test_shortest_route_uses_sample_graph() -> None:
     assert route["properties"]["cost_weights"]["stairs"] == 0
     assert route["properties"]["stairs_segment_count"] == 1
     assert route["properties"]["road_segments"][0]["highway"] == "steps"
+    assert len(route["properties"]["road_segments"][0]["coordinates"]) >= 2
     assert route["properties"]["road_segments"][0]["is_steps"] is True
     assert route["properties"]["road_segments"][0]["incline"] == "up"
     assert route["properties"]["road_segments"][0]["stairs_penalty"] == 0

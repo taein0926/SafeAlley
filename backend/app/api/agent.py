@@ -26,9 +26,9 @@ from app.repositories.personalization_repository import PersonalizationRepositor
 from app.repositories.place_repository import (
     PlaceNotFoundError,
     PlaceRepositoryError,
-    resolve_place,
 )
 from app.services.personalization_service import learn_from_selection
+from app.services.place_service import resolve_place
 
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])

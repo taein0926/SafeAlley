@@ -43,6 +43,7 @@ def _route(route_type: str, distance: float, score: float) -> dict[str, object]:
                     "cctv_score": score,
                     "population_score": score,
                     "safety_score": score,
+                    "coordinates": [[126.6, 37.4], [126.7, 37.5]],
                     "distance_factor": distance,
                     "risk_factor": 0.0,
                     "traversal_cost": distance,

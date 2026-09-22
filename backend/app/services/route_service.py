@@ -232,6 +232,7 @@ def _route_feature(
                     "cctv_score": round(edge.cctv_score, 2),
                     "population_score": round(edge.population_score, 2),
                     "safety_score": round(edge.safety_score, 2),
+                    "coordinates": [list(coordinate) for coordinate in edge.coordinates],
                     "highway": edge.highway,
                     "is_steps": edge.is_steps,
                     "step_count": edge.step_count,

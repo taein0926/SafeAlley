@@ -5,6 +5,24 @@ export type RouteGeometry = {
   coordinates: number[][];
 };
 
+export type RouteRoadSegment = {
+  id: number;
+  source_id: string;
+  name: string | null;
+  distance_m: number;
+  streetlight_score: number;
+  cctv_score: number;
+  population_score: number;
+  safety_score: number;
+  coordinates: number[][];
+  highway: string | null;
+  is_steps: boolean;
+  nearby_light_count?: number;
+  nearby_cctv_count?: number;
+  nearby_help_point_count?: number;
+  [key: string]: unknown;
+};
+
 export type RouteCandidate = {
   route_type: RouteType;
   preference_score: number | null;
@@ -16,6 +34,8 @@ export type RouteCandidate = {
       route_type: RouteType;
       total_distance_m: number;
       average_safety_score: number | null;
+      total_cost: number;
+      stairs_segment_count: number;
       total_crosswalk_count: number;
       stairs_distance_m: number;
       sidewalk_coverage_percent: number;
@@ -24,10 +44,22 @@ export type RouteCandidate = {
       review_status: "needs_field_review" | "map_data_only";
       unverified_major_road_count: number;
       unverified_major_road_source_ids: string[];
+      road_segments?: RouteRoadSegment[];
       [key: string]: unknown;
     };
   };
 };
+
+export type ResolvedPlace = {
+  name: string;
+  category: string | null;
+  address: string | null;
+  source: string;
+  latitude: number;
+  longitude: number;
+};
+
+export type AgentExecutionResponse = RouteQueryResponse["result"];
 
 export type RouteQueryResponse = {
   query: string;
@@ -43,22 +75,8 @@ export type RouteQueryResponse = {
       weight: number;
     }>;
   };
-  resolved_origin: {
-    name: string;
-    category: string | null;
-    address: string | null;
-    source: string;
-    latitude: number;
-    longitude: number;
-  } | null;
-  resolved_destination: {
-    name: string;
-    category: string | null;
-    address: string | null;
-    source: string;
-    latitude: number;
-    longitude: number;
-  } | null;
+  resolved_origin: ResolvedPlace | null;
+  resolved_destination: ResolvedPlace | null;
   result: {
     recommendation_id: string | null;
     selected_route_type: RouteType | null;
