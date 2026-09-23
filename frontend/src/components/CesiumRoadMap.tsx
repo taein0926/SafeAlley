@@ -25,12 +25,15 @@ import {
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
 import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
+import { helpPointRouteLocation, type BuildingMapSelection, type DirectLocationInput } from "../routeSearch";
+export type { BuildingMapSelection } from "../routeSearch";
 import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
 import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
 import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
+import { routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -53,7 +56,7 @@ export type RoadMapStatus =
 
 type CesiumRoadMapProps = {
   onStatusChange: (status: RoadMapStatus) => void;
-  onBuildingStatusChange: (status: BuildingMapStatus) => void;
+  onBuildingStatusChange?: (status: BuildingMapStatus) => void;
   routeCandidates: RouteCandidate[];
   selectedRouteType: RouteType | null;
   facilityVisibility: FacilityVisibility;
@@ -73,13 +76,6 @@ export type FacilityVisibility = {
 
 export type BuildingSelectionMode = "origin" | "destination" | null;
 
-export type BuildingMapSelection = {
-  displayName: string | null;
-  address: string | null;
-  latitude: number;
-  longitude: number;
-};
-
 export type DraftMapLocation = {
   kind: "origin" | "destination";
   latitude: number;
@@ -90,6 +86,9 @@ export type MapInfoSelection = {
   kind: "building" | "streetlight" | "cctv" | "help_point" | "route_segment" | "stairs" | "bridge";
   title: string;
   rows: Array<{ label: string; value: string }>;
+  buildingSelection?: BuildingMapSelection;
+  routeLocation?: DirectLocationInput | null;
+  routeType?: RouteType;
 };
 
 function infoRows(
@@ -100,9 +99,10 @@ function infoRows(
     .map(([label, value]) => ({ label, value: String(value) }));
 }
 
-function routeSegmentInfo(segment: RouteRoadSegment): MapInfoSelection {
+function routeSegmentInfo(segment: RouteRoadSegment, routeType: RouteType): MapInfoSelection {
   return {
     kind: "route_segment",
+    routeType,
     title: segment.name || "경로 구간",
     rows: infoRows([
       ["시설 접근성 지표(상대)", Number(segment.safety_score).toFixed(1)],
@@ -247,7 +247,6 @@ function webGlCapabilityError(): string | null {
   return null;
 }
 
-const routeColor = Color.fromCssColorString("#1261ff");
 
 function pickedWgs84Coordinate(
   viewer: Viewer,
@@ -287,6 +286,7 @@ export function CesiumRoadMap({
   const viewerRef = useRef<Viewer | null>(null);
   const baseLayerRef = useRef<ImageryLayer | null>(null);
   const routeCandidatesRef = useRef(routeCandidates);
+  const selectedRouteTypeRef = useRef(selectedRouteType);
   const refreshRoadsRef = useRef<(() => void) | null>(null);
   const streetlightPrimitivesRef = useRef<BillboardCollection | null>(null);
   const nightModeRef = useRef(nightMode);
@@ -324,11 +324,12 @@ export function CesiumRoadMap({
   }, [facilityVisibility]);
 
   useEffect(() => {
+    selectedRouteTypeRef.current = selectedRouteType;
     buildingSelectionModeRef.current = buildingSelectionMode;
     onBuildingSelectRef.current = onBuildingSelect;
     onInvalidBuildingSelectRef.current = onInvalidBuildingSelect;
     onMapInfoChangeRef.current = onMapInfoChange;
-  }, [buildingSelectionMode, onBuildingSelect, onInvalidBuildingSelect, onMapInfoChange]);
+  }, [buildingSelectionMode, onBuildingSelect, onInvalidBuildingSelect, onMapInfoChange, selectedRouteType]);
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -456,9 +457,20 @@ export function CesiumRoadMap({
           const candidate = picked.id;
           if (!(candidate instanceof Entity)) continue;
           const info = mapInfoRef.current.get(candidate);
-          if (!info || priorities[info.kind] <= selectedPriority) continue;
+          if (!info) continue;
+          const priority = info.kind === "route_segment"
+            ? routePickPriority(info.routeType, selectedRouteTypeRef.current)
+            : priorities[info.kind];
+          if (priority <= selectedPriority) continue;
           selectedInfo = info;
-          selectedPriority = priorities[info.kind];
+          if (info.kind === "building") {
+            const building = buildingSelectionsRef.current.get(candidate);
+            const coordinate = pickedWgs84Coordinate(viewer, movement.position);
+            if (building && coordinate) {
+              selectedInfo = { ...info, buildingSelection: { ...building, ...coordinate } };
+            }
+          }
+          selectedPriority = priority;
         }
         onMapInfoChangeRef.current(selectedInfo);
       },
@@ -556,7 +568,7 @@ export function CesiumRoadMap({
     function publishBuildingStatus(status: BuildingMapStatus) {
       if (cancelled || renderingFailed) return;
       buildingStatus = status;
-      onBuildingStatusChange({ ...status, cachedCount: buildingRecords.size });
+      onBuildingStatusChange?.({ ...status, cachedCount: buildingRecords.size });
       if (layerStatus) {
         layerStatus = { ...layerStatus, buildingCount: status.count };
         onStatusChange(layerStatus);
@@ -900,6 +912,7 @@ export function CesiumRoadMap({
           mapInfoRef.current.set(helpPointEntity, {
             kind: "help_point",
             title: String(feature.properties.name ?? "안전·보건 시설"),
+            routeLocation: helpPointRouteLocation(feature.properties, feature.geometry.coordinates),
             rows: infoRows([
               ["시설 유형", feature.properties.category],
               ["세부 유형", feature.properties.subtype],
@@ -1093,12 +1106,10 @@ export function CesiumRoadMap({
     for (const id of routeEntityIdsRef.current) viewer.entities.removeById(id);
     routeEntityIdsRef.current = [];
 
-    const visibleCandidates = selectedRouteType
-      ? routeCandidates.filter((candidate) => candidate.route_type === selectedRouteType)
-      : routeCandidates;
+    const visibleCandidates = routeCandidates;
 
     for (const candidate of visibleCandidates) {
-      const selected = candidate.route_type === selectedRouteType;
+      const style = routeLineStyle(candidate.route_type, selectedRouteType);
       const casingId = `recommended-route-${candidate.route_type}-casing`;
       const positions = candidate.route.geometry.coordinates.map(([longitude, latitude]) =>
         Cartesian3.fromDegrees(longitude, latitude),
@@ -1107,7 +1118,7 @@ export function CesiumRoadMap({
       if (segments.length > 0) {
         segments.forEach((segment, index) => {
           if (segment.coordinates.length < 2) return;
-          const info = routeSegmentInfo(segment);
+          const info = routeSegmentInfo(segment, candidate.route_type);
           const segmentCasingId = `${casingId}-${index}`;
           const segmentId = `recommended-route-${candidate.route_type}-segment-${index}`;
           const segmentPositions = segment.coordinates.map(([longitude, latitude]) =>
@@ -1118,11 +1129,11 @@ export function CesiumRoadMap({
             name: `${segment.name || "경로 구간"} 외곽선`,
             polyline: {
               positions: segmentPositions,
-              width: selected ? 10 : 8,
+              width: style.casingWidth,
               material: Color.WHITE.withAlpha(0.95),
               clampToGround: true,
               classificationType: ClassificationType.TERRAIN,
-              zIndex: 1,
+              zIndex: style.zIndex - 1,
             },
           });
           const segmentEntity = viewer.entities.add({
@@ -1130,11 +1141,11 @@ export function CesiumRoadMap({
             name: segment.name || "경로 구간",
             polyline: {
               positions: segmentPositions,
-              width: selected ? 6 : 4,
-              material: routeColor.withAlpha(selected ? 1 : 0.7),
+              width: style.width,
+              material: Color.fromCssColorString(style.color),
               clampToGround: true,
               classificationType: ClassificationType.TERRAIN,
-              zIndex: 2,
+              zIndex: style.zIndex,
             },
           });
           mapInfoRef.current.set(segmentCasing, info);
@@ -1142,36 +1153,44 @@ export function CesiumRoadMap({
           routeEntityIdsRef.current.push(segmentCasingId, segmentId);
         });
       } else {
-        viewer.entities.add({
+        const info: MapInfoSelection = {
+          kind: "route_segment",
+          routeType: candidate.route_type,
+          title: "경로",
+          rows: infoRows([["거리", `${Math.round(candidate.route.properties.total_distance_m)}m`]]),
+        };
+        const casing = viewer.entities.add({
           id: casingId,
           name: `${candidate.route_type} 경로 후보 외곽선`,
           polyline: {
             positions,
-            width: selected ? 10 : 8,
+            width: style.casingWidth,
             material: Color.WHITE.withAlpha(0.95),
             clampToGround: true,
             classificationType: ClassificationType.TERRAIN,
-            zIndex: 1,
+            zIndex: style.zIndex - 1,
           },
         });
         const lineId = `recommended-route-${candidate.route_type}`;
-        viewer.entities.add({
+        const line = viewer.entities.add({
           id: lineId,
           name: `${candidate.route_type} 경로 후보`,
           polyline: {
             positions,
-            width: selected ? 6 : 4,
-            material: routeColor.withAlpha(selected ? 1 : 0.7),
+            width: style.width,
+            material: Color.fromCssColorString(style.color),
             clampToGround: true,
             classificationType: ClassificationType.TERRAIN,
-            zIndex: 2,
+            zIndex: style.zIndex,
           },
         });
+        mapInfoRef.current.set(casing, info);
+        mapInfoRef.current.set(line, info);
         routeEntityIdsRef.current.push(casingId, lineId);
       }
     }
 
-    const selectedCandidate = visibleCandidates[0];
+    const selectedCandidate = visibleCandidates.find((candidate) => candidate.route_type === selectedRouteType) ?? visibleCandidates[0];
     const selectedCoordinates = selectedCandidate?.route.geometry.coordinates ?? [];
     if (selectedCoordinates.length > 0) {
       const markers = [
@@ -1216,9 +1235,7 @@ export function CesiumRoadMap({
       }
     }
 
-    const signature = visibleCandidates
-      .map((candidate) => `${candidate.route_type}:${candidate.route.geometry.coordinates.length}`)
-      .join("|");
+    const signature = routeGeometrySignature(visibleCandidates);
     if (visibleCandidates.length > 0 && signature !== lastRouteSignatureRef.current) {
       const coordinates = visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates);
       const longitudes = coordinates.map(([longitude]) => longitude);
@@ -1237,6 +1254,7 @@ export function CesiumRoadMap({
     } else if (visibleCandidates.length === 0) {
       lastRouteSignatureRef.current = "";
     }
+    viewer.scene.requestRender();
   }, [draftLocations, routeCandidates, selectedRouteType]);
 
   return (

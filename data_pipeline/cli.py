@@ -1,12 +1,15 @@
 import argparse
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from analysis.streetlight_safety import run_streetlight_safety_analysis
 from analysis.safety_components import run_safety_component_analysis
 from analysis.road_quality import audit_road_network
 from collectors.cctvs import collect_cctvs
+from collectors.weather import KST, fetch_forecast, fetch_solar, forecast_grid
+from loaders.weather import save_forecasts, save_solar
 from collectors.osm import collect_osm_roads, collect_osm_streetlights
 from loaders.buildings import load_buildings
 from loaders.postgis import load_road_segments
@@ -76,6 +79,38 @@ RAW_HELP_POINTS_PATH = (
     / "help_points"
     / "help_points_michuhol_routing_ready.geojson"
 )
+
+
+def collect_weather() -> None:
+    now = datetime.now(KST)
+    kma_key = os.environ.get("KMA_SERVICE_KEY", "").strip()
+    kasi_key = os.environ.get("KASI_SERVICE_KEY", "").strip()
+    failed = False
+    # Independent writes: one source's outage must not block the other source.
+    try:
+        if not kma_key:
+            raise ValueError("missing KMA key")
+        nx_value, ny_value = os.environ.get("KMA_GRID_NX", "").strip(), os.environ.get("KMA_GRID_NY", "").strip()
+        if bool(nx_value) != bool(ny_value):
+            raise ValueError("both KMA grid coordinates are required")
+        nx, ny = (int(nx_value), int(ny_value)) if nx_value else forecast_grid()
+        if not (1 <= nx <= 149 and 1 <= ny <= 253):
+            raise ValueError("invalid grid")
+        print(f"KMA: stored {save_forecasts(fetch_forecast(kma_key, nx, ny, now))} forecast hours (grid {nx},{ny})")
+    except Exception:
+        # Never echo exceptions containing secret-bearing URLs or DB DSNs.
+        print("Forecast collection failed; check approval, grid, connectivity and migration; cache preserved")
+        failed = True
+    try:
+        if not kasi_key:
+            raise ValueError("missing KASI key")
+        save_solar(fetch_solar(kasi_key, now.date(), os.environ.get("KASI_LOCATION", "인천")))
+        print("KASI: stored today's official sunrise/sunset")
+    except Exception:
+        print("Solar collection failed; check approval, location, connectivity and migration; cache preserved")
+        failed = True
+    if failed:
+        raise SystemExit(1)
 
 
 def collect_osm() -> None:
@@ -286,6 +321,8 @@ def main() -> None:
     parser.add_argument(
         "command",
         choices=[
+            "collect-weather",
+            "weather-worker",
             "collect-osm",
             "preprocess-osm",
             "load-osm",
@@ -345,7 +382,12 @@ def main() -> None:
     parser.add_argument("--crosswalk-audit-output", help="Optional GeoJSON of route-near crosswalk review candidates")
     arguments = parser.parse_args()
 
-    if arguments.command == "collect-osm":
+    if arguments.command == "collect-weather":
+        collect_weather()
+    elif arguments.command == "weather-worker":
+        from weather_worker import run_weather_worker
+        run_weather_worker(collect_weather)
+    elif arguments.command == "collect-osm":
         collect_osm()
     elif arguments.command == "preprocess-osm":
         preprocess_osm()

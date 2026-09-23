@@ -30,6 +30,7 @@ def _run_route(
             source=request.source,
             stairs_weight=request.stairs_weight,
             intersection_weight=request.intersection_weight,
+            departure_time=request.departure_time,
         )
     except SnapDistanceExceededError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

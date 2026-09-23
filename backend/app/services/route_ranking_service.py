@@ -14,6 +14,7 @@ from app.services.route_service import (
 )
 from app.repositories.personalization_repository import save_recommendation
 from app.services.personalization_service import learned_preferences_for_ranking
+from app.services.weather_service import RouteTimeContext, resolve_route_time
 
 
 NIGHT_START = time(20, 0)
@@ -71,6 +72,7 @@ def _route_arguments(arguments: RouteOptimizationArguments) -> dict[str, object]
         "source": arguments.source,
         "stairs_weight": arguments.stairs_weight,
         "intersection_weight": arguments.intersection_weight,
+        "departure_time": arguments.departure_time,
     }
 
 
@@ -80,8 +82,8 @@ def _is_night(departure_time: time | None) -> bool:
     )
 
 
-def _default_preferences(departure_time: time | None) -> list[RoutePreference]:
-    if not _is_night(departure_time):
+def _default_preferences(departure_time: time | None, *, is_night: bool | None = None) -> list[RoutePreference]:
+    if not (_is_night(departure_time) if is_night is None else is_night):
         return [RoutePreference(factor="distance_m", direction="minimize", weight=1.0)]
     return [
         RoutePreference(factor="distance_m", direction="minimize", weight=1.0),
@@ -94,9 +96,10 @@ def _default_preferences(departure_time: time | None) -> list[RoutePreference]:
 def _apply_time_policy(
     preferences: list[RoutePreference],
     departure_time: time | None,
+    *, is_night: bool | None = None,
 ) -> list[RoutePreference]:
-    if not _is_night(departure_time):
-        return preferences
+    if not (_is_night(departure_time) if is_night is None else is_night):
+        return [item for item in preferences if item.factor != "streetlight_score"]
     return [
         preference.model_copy(
             update={
@@ -291,7 +294,14 @@ def _recommendation_explanation(
     unsupported: list[UnsupportedPreference],
     status: str,
     departure_time: time | None,
+    *, is_night: bool | None = None,
 ) -> tuple[str, list[str]]:
+    night = _is_night(departure_time) if is_night is None else is_night
+    subjects = PROXY_SUBJECTS if night else {**PROXY_SUBJECTS, "safety_score": "CCTV·도움시설의 위치"}
+    comparisons = PROXY_COMPARISONS if night else {
+        **PROXY_COMPARISONS,
+        "safety_score": "CCTV·도움시설의 위치가 비교한 다른 길보다 조건에 더 잘 맞아",
+    }
     notes: list[str] = []
     excluded = [
         candidate for candidate in candidates
@@ -313,7 +323,7 @@ def _recommendation_explanation(
         distance = float(selected["metrics"]["distance_m"])
         priority = PRIORITY_PHRASES.get(primary.factor, "요청 조건을 우선해")
         if primary.factor in PROXY_SUBJECTS:
-            summary = f"{PROXY_SUBJECTS[primary.factor]}를 고려해 이 길을 추천했어요."
+            summary = f"{subjects[primary.factor]}를 고려해 이 길을 추천했어요."
         else:
             summary = f"{priority} 약 {_distance_text(distance)} 길을 골랐어요."
         eligible = [
@@ -383,7 +393,7 @@ def _recommendation_explanation(
                     if better:
                         if primary.factor in PROXY_SUBJECTS:
                             summary = (
-                                f"{PROXY_COMPARISONS[primary.factor]} "
+                                f"{comparisons[primary.factor]} "
                                 "이 길을 추천했어요."
                             )
                         elif primary.factor == "crosswalk_count":
@@ -438,28 +448,34 @@ def _recommendation_explanation(
             notes.append(
                 f"다른 길 {len(excluded)}개는 큰 도로의 보행로 정보가 없어 추천에서 뺐어요."
             )
-        if _is_night(departure_time) and any(item.factor in PROXY_FACTORS for item in supported):
+        if night and any(item.factor in PROXY_FACTORS for item in supported):
             notes.append("밤 시간 질문으로 처리했지만, 가로등 점등 상태나 CCTV 작동 여부는 알 수 없습니다.")
         if any(item.factor in PROXY_FACTORS for item in supported):
             notes.append("지도에 등록된 시설 위치만 비교했습니다. 실제 치안이나 안전을 보장하지 않습니다.")
     for item in unsupported:
         label = METRIC_NAMES.get(item.factor, item.factor.replace("_", " "))
-        if item.factor == "max_slope_percent":
+        if item.reason == "Excluded during daylight":
+            notes.append("낮에는 요청한 가로등 조건을 추천 순위에 반영하지 않았습니다.")
+        elif item.factor == "max_slope_percent":
             notes.append("경사는 전 구간 측정 자료가 없어 추천 조건에 반영하지 않았습니다. DEM은 현재 적재되지 않았습니다.")
         elif "hard avoidance" in item.reason:
             notes.append(f"{label} 요청을 충족하는 후보가 없어 해당 조건을 반영하지 않았습니다.")
         else:
             notes.append(f"{label} 요청은 검증된 측정값이 없어 반영하지 않았습니다.")
+    if not night:
+        notes.append("낮 시간에는 가로등을 제외하고 CCTV·도움시설 위치만으로 안전 관련 지표를 계산했습니다.")
     notes.append("지도 자료만으로 실제 길 상태나 통행 가능 여부를 보장할 수 없습니다.")
     return summary, notes
 
 
 def generate_route_candidates(
     arguments: RouteOptimizationArguments,
+    *, time_context: RouteTimeContext | None = None,
 ) -> list[dict[str, object]]:
     """Generate route alternatives independently from preference scoring."""
 
     route_arguments = _route_arguments(arguments)
+    route_arguments["time_context"] = time_context or resolve_route_time(arguments.departure_time)
     route_arguments["prepared"] = prepare_route(
         start_longitude=arguments.origin.longitude,
         start_latitude=arguments.origin.latitude,
@@ -544,28 +560,62 @@ def rank_generated_candidates(
     return selected, unsupported
 
 
+def _recommendation_factors(selected, preferences, unsupported, arguments) -> list[str]:
+    """Structured, evaluated conditions for UI icons; never infer from LLM prose."""
+    if selected is None:
+        return []
+    excluded = {item.factor for item in unsupported}
+    factors = set()
+    for item in preferences:
+        if item.factor in excluded or selected["metrics"].get(item.factor) is None:
+            continue
+        if item.factor == "distance_m" and item.direction == "minimize":
+            factors.add("distance")
+        elif item.factor in PROXY_FACTORS and item.direction == "maximize":
+            factors.add("safety")
+        elif item.factor == "stairs_distance_m" and item.direction in {"minimize", "avoid"}:
+            factors.add("stairs")
+        elif item.factor == "intersection_distance_m" and item.direction in {"minimize", "avoid"}:
+            factors.add("intersection")
+    if arguments.stairs_weight > 0:
+        factors.add("stairs")
+    if arguments.intersection_weight > 0 and selected["route"]["properties"].get("intersection_data_available"):
+        factors.add("intersection")
+    return [factor for factor in ("distance", "safety", "stairs", "intersection") if factor in factors]
+
+
 def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, object]:
+    time_context = resolve_route_time(arguments.departure_time)
     #1. 최단 경로와 안전 경로 후보 생성
-    candidates = generate_route_candidates(arguments)
+    candidates = generate_route_candidates(arguments, time_context=time_context)
     #2. 사용자 조건이없으면 시간대별 기본 조건 사용
     if arguments.preferences:
         requested_preferences = arguments.preferences
     elif arguments.user_id:
         requested_preferences = learned_preferences_for_ranking(arguments.user_id)
         if not requested_preferences:
-            requested_preferences = _default_preferences(arguments.departure_time)
+            requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     else:
-        requested_preferences = _default_preferences(arguments.departure_time)
+        requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     #3. 야간이면 안전 관련 가중치 적용
     effective_preferences = _apply_time_policy(
         requested_preferences,
         arguments.departure_time,
+        is_night=time_context.is_night,
     )
+    daytime_ignored = [
+        UnsupportedPreference(factor=item.factor, reason="Excluded during daylight")
+        for item in requested_preferences
+        if not time_context.is_night and item.factor == "streetlight_score"
+    ]
+    if not effective_preferences:
+        effective_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     #4. 후보 경로 점수 계산 및 최종 경로 선택
     selected, unsupported = rank_generated_candidates(
         candidates,
         effective_preferences,
     )
+    unsupported.extend(daytime_ignored)
     supported, _ = _supported_preferences(effective_preferences, candidates)
     avoidance = [item for item in supported if item.direction == "avoid"]
     condition_eligible = [
@@ -584,6 +634,7 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
     recommendation_reason, recommendation_notes = _recommendation_explanation(
         selected, candidates, effective_preferences, unsupported,
         recommendation_status, arguments.departure_time,
+        is_night=time_context.is_night,
     )
 
     recommendation_id = (
@@ -600,6 +651,9 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
         "recommendation_status": recommendation_status,
         "recommendation_reason": recommendation_reason,
         "recommendation_notes": recommendation_notes,
+        "recommendation_factors": _recommendation_factors(
+            selected, effective_preferences, unsupported, arguments,
+        ),
         "candidates": candidates,
         "unsupported_preferences": unsupported,
     }

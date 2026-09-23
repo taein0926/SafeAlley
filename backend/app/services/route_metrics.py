@@ -37,6 +37,8 @@ def _segment_weighted_average(
     route: RoutePayload,
     field: str,
 ) -> float | None:
+    if field == "streetlight_score" and _properties(route).get("streetlight_included") is False:
+        return None
     segments = _properties(route).get("road_segments")
     if not isinstance(segments, list) or not segments:
         return None

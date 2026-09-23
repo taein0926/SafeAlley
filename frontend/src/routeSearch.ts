@@ -16,7 +16,53 @@ export type DirectLocationInput = {
   source: "text" | "map";
   latitude?: number;
   longitude?: number;
+  category?: string;
+  address?: string | null;
 };
+
+export function helpPointRouteLocation(
+  properties: Record<string, unknown>,
+  coordinates: readonly number[],
+): DirectLocationInput | null {
+  const [longitude, latitude] = coordinates;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  const name = typeof properties.name === "string" ? properties.name.trim() : "";
+  const address = typeof properties.address === "string" ? properties.address.trim() : "";
+  return {
+    displayName: name || address || "안전지원시설",
+    source: "map",
+    latitude,
+    longitude,
+    category: typeof properties.category === "string" ? properties.category : "help_point",
+    address: address || null,
+  };
+}
+
+export type BuildingMapSelection = {
+  displayName: string | null;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+};
+
+export async function resolveBuildingLocation(
+  selection: BuildingMapSelection,
+  reverseResolver: (latitude: number, longitude: number) => Promise<ResolvedPlace>,
+): Promise<DirectLocationInput> {
+  const { latitude, longitude } = selection;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw new Error("건물 위치를 확인하지 못했습니다. 다시 선택해주세요.");
+  }
+  let displayName = selection.displayName?.trim() || selection.address?.trim();
+  if (!displayName) {
+    const reversed = await reverseResolver(latitude, longitude);
+    displayName = reversed.address?.trim() || reversed.name;
+  }
+  // Reverse lookup supplies only a label; route requests retain the clicked location.
+  return { displayName, latitude, longitude, source: "map" };
+}
 
 export type RouteSearchResult = {
   mode: "direct" | "ai";
@@ -40,10 +86,12 @@ export function currentLocalTime(now = new Date()): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
-// Display-only estimate: 4.5 km/h, excluding traffic signals and individual walking pace.
+export const WALKING_SPEED_MPS = 1.2;
+
+// Display-only estimate, excluding traffic signals and individual walking pace.
 export function estimatedWalkingMinutes(distanceM: number): number | null {
   if (!Number.isFinite(distanceM) || distanceM < 0) return null;
-  return Math.ceil(distanceM / 75);
+  return Math.ceil(distanceM / (WALKING_SPEED_MPS * 60));
 }
 
 export function isValidDepartureTime(value: string): boolean {
@@ -61,8 +109,8 @@ export async function resolveDirectLocation(
   ) {
     return {
       name: location.displayName,
-      category: "building",
-      address: location.displayName,
+      category: location.category ?? "building",
+      address: location.address ?? location.displayName,
       source: "map",
       latitude: location.latitude,
       longitude: location.longitude,

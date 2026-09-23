@@ -1,6 +1,7 @@
+from datetime import time
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CoordinateInput(BaseModel):
@@ -14,6 +15,14 @@ class RouteRequest(BaseModel):
     source: str | None = Field(default=None, min_length=1, max_length=32)
     stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    departure_time: time | None = None
+
+    @field_validator("departure_time")
+    @classmethod
+    def local_departure_time(cls, value: time | None) -> time | None:
+        if value is not None and value.tzinfo is not None:
+            raise ValueError("departure_time must be a local Korean time without a timezone")
+        return value
 
 
 class GeoJSONLineString(BaseModel):
@@ -30,6 +39,7 @@ class RouteRoadSegment(BaseModel):
     distance_m: float
     streetlight_score: float
     cctv_score: float
+    help_point_score: float = 0.0
     population_score: float
     safety_score: float
     coordinates: list[list[float]]
@@ -71,6 +81,7 @@ class RouteProperties(BaseModel):
     total_distance_m: float
     average_safety_score: float | None
     total_cost: float
+    streetlight_included: bool = True
     stairs_segment_count: int = 0
     cost_weights: RouteCostWeights
     start_node_id: int

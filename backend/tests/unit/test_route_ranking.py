@@ -1,13 +1,19 @@
+from datetime import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.agent import RouteOptimizationArguments, RoutePreference
 from app.services import route_ranking_service
+from app.services.weather_service import RouteTimeContext
 
 
 @pytest.fixture(autouse=True)
 def balanced_route_candidate(monkeypatch) -> None:
+    monkeypatch.setattr(route_ranking_service, "resolve_route_time", lambda departure: RouteTimeContext(
+        departure or time(14), (departure or time(14)) >= time(20) or (departure or time(14)) < time(6), "fallback",
+    ))
     monkeypatch.setattr(route_ranking_service, "prepare_route", lambda **_: None)
     monkeypatch.setattr(
         route_ranking_service,
@@ -85,7 +91,7 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
             [
                 {"factor": "distance_m", "direction": "minimize", "weight": 1},
                 {"factor": "streetlight_score", "direction": "maximize", "weight": 3},
-            ]
+            ], departure_time="22:00:00",
         )
     )
 
@@ -449,6 +455,38 @@ def test_night_default_policy_prefers_well_lit_safe_route(monkeypatch) -> None:
 
     assert day_result["selected_route_type"] == "shortest"
     assert night_result["selected_route_type"] == "safe"
+
+
+def test_daytime_ignores_even_explicit_streetlight_preference(monkeypatch):
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    result = route_ranking_service.rank_route_candidates(_arguments(
+        [{"factor": "streetlight_score", "direction": "maximize", "weight": 100}],
+        departure_time="14:00:00",
+    ))
+    assert result["selected_route_type"] == "shortest"
+    assert result["unsupported_preferences"][0].reason == "Excluded during daylight"
+    assert result["recommendation_factors"] == ["distance"]
+    assert any("가로등 조건" in note for note in result["recommendation_notes"])
+
+
+def test_daytime_safety_explanation_excludes_lighting(monkeypatch):
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    result = route_ranking_service.rank_route_candidates(_arguments(
+        [{"factor": "safety_score", "direction": "maximize"}], departure_time="14:00:00",
+    ))
+    assert "CCTV·도움시설" in result["recommendation_reason"]
+    assert "가로등" not in result["recommendation_reason"]
+
+
+def test_solar_night_drives_ranking_before_the_old_20_hour_boundary(monkeypatch):
+    monkeypatch.setattr(route_ranking_service, "resolve_route_time", lambda _: RouteTimeContext(time(19), True, "official_solar"))
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    result = route_ranking_service.rank_route_candidates(_arguments([], departure_time="19:00:00"))
+    assert result["selected_route_type"] == "safe"
+    assert any("밤 시간" in note for note in result["recommendation_notes"])
 
 
 def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> None:

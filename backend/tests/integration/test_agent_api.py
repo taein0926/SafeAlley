@@ -271,6 +271,7 @@ def test_route_selection_updates_server_side_preferences() -> None:
                 "destination": {"latitude": 37.4608, "longitude": 126.6830},
                 "source": "test-fixture",
                 "user_id": TEST_USER_ID,
+                "departure_time": "22:00:00",
             },
         },
     )
@@ -301,6 +302,17 @@ def test_route_selection_updates_server_side_preferences() -> None:
         "sidewalk_coverage_percent",
     }
     assert all(item["observations"] == 1 for item in learned)
+
+    # Map and result-card clicks can change the choice for the same recommendation.
+    # The existing unique recommendation record must be updated, not rejected.
+    for route_type in ["shortest", "balanced", "safe"]:
+        changed = client.post("/api/agent/route-selections", json={
+            "recommendation_id": payload["recommendation_id"],
+            "user_id": TEST_USER_ID,
+            "selected_route_type": route_type,
+        })
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["selected_route_type"] == route_type
 
 
 def test_route_selection_rejects_another_user() -> None:

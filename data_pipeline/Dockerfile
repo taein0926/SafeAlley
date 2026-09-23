@@ -14,6 +14,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --requirement requirements.txt
 
 COPY cli.py ./
+COPY weather_worker.py ./
 COPY safety_config.py ./
 COPY streetlight_config.py ./
 COPY safety_component_config.py ./

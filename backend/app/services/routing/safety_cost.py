@@ -25,6 +25,9 @@ class SafetyCostPolicy:
     risk_weight: float
     stairs_weight: float = 0.0
     intersection_weight: float = 0.0
+    streetlight_included: bool = True
+    cctv_weight: float = 0.40
+    help_point_weight: float = 0.20
 
     def __post_init__(self) -> None:
         if self.distance_weight <= 0:
@@ -35,9 +38,23 @@ class SafetyCostPolicy:
             raise ValueError("Stairs weight must be between zero and one")
         if not 0.0 <= self.intersection_weight <= 1.0:
             raise ValueError("Intersection weight must be between zero and one")
+        if not 0 <= self.cctv_weight <= 1 or not 0 <= self.help_point_weight <= 1:
+            raise ValueError("Facility weights must be between zero and one")
+
+    def effective_safety_score(self, edge: GraphEdge) -> float:
+        if self.streetlight_included:
+            return edge.safety_score
+        # Preserve CCTV/help-facility proportions, normalized back to 0–100.
+        # Do not edit the stored night score or mutate the shared route graph.
+        total = self.cctv_weight + self.help_point_weight
+        if total == 0:
+            return 0.0
+        return min(100.0, max(0.0, (
+            edge.cctv_score * self.cctv_weight + edge.help_point_score * self.help_point_weight
+        ) / total))
 
     def breakdown(self, edge: GraphEdge) -> SafetyCostBreakdown:
-        normalized_risk = (100.0 - edge.safety_score) / 100.0
+        normalized_risk = (100.0 - self.effective_safety_score(edge)) / 100.0
         return SafetyCostBreakdown(
             distance_factor=edge.distance_m * self.distance_weight,
             risk_factor=edge.distance_m * normalized_risk * self.risk_weight,

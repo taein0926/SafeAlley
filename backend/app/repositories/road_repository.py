@@ -61,6 +61,7 @@ class RoutingRoadSegment:
     grade_separated: bool = False
     pedestrian_bridge_ids: tuple[str, ...] = ()
     pedestrian_reference_version: str | None = None
+    help_point_score: float = 0.0
 
 
 class RoadRepositoryError(RuntimeError):
@@ -227,6 +228,7 @@ def list_routing_road_segments(
             length_m,
             streetlight_score,
             cctv_score,
+            help_point_score,
             population_score,
             safety_score,
             COALESCE(properties->>'safety_data_status', '') LIKE 'streetlight-%%'
@@ -295,6 +297,7 @@ def list_routing_road_segments(
             length_m=float(row["length_m"]),
             streetlight_score=float(row["streetlight_score"]),
             cctv_score=float(row["cctv_score"]),
+            help_point_score=float(row["help_point_score"]),
             population_score=float(row["population_score"]),
             safety_score=float(row["safety_score"]),
             streetlight_data_available=bool(row["streetlight_data_available"]),

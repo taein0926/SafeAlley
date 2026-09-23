@@ -6,6 +6,8 @@ test("day basemap is subdued and night is darker with stronger light markers", (
   const day = mapLighting(false);
   const night = mapLighting(true);
   assert.ok(day.brightness < 1 && day.brightness > 0.5);
+  assert.ok(Math.abs(day.brightness - 0.68 * 1.1) < 1e-12);
+  assert.equal(night.brightness, 0.26);
   assert.ok(night.brightness < day.brightness && night.brightness > 0.2);
   assert.ok(night.saturation < day.saturation);
   assert.ok(night.lightSize > day.lightSize);

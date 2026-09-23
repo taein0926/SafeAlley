@@ -12,6 +12,7 @@ export type RouteRoadSegment = {
   distance_m: number;
   streetlight_score: number;
   cctv_score: number;
+  help_point_score?: number;
   population_score: number;
   safety_score: number;
   coordinates: number[][];
@@ -35,6 +36,7 @@ export type RouteCandidate = {
       total_distance_m: number;
       average_safety_score: number | null;
       total_cost: number;
+      streetlight_included?: boolean;
       stairs_segment_count: number;
       total_crosswalk_count: number;
       stairs_distance_m: number;
@@ -89,6 +91,7 @@ export type RouteQueryResponse = {
     recommendation_status: "ready" | "field_review_required" | "no_supported_preferences";
     recommendation_reason: string | null;
     recommendation_notes: string[];
+    recommendation_factors?: Array<"distance" | "safety" | "stairs" | "intersection">;
     candidates: RouteCandidate[];
     unsupported_preferences: Array<{ factor: string; reason: string }>;
   };

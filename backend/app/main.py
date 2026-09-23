@@ -8,6 +8,7 @@ from app.api.pedestrian_references import router as pedestrian_references_router
 from app.api.roads import router as roads_router
 from app.api.routes import router as routes_router
 from app.api.safety import router as safety_router
+from app.api.weather import router as weather_router
 
 
 app = FastAPI(
@@ -24,3 +25,4 @@ app.include_router(buildings_router)
 app.include_router(roads_router)
 app.include_router(routes_router)
 app.include_router(safety_router)
+app.include_router(weather_router)

@@ -5,10 +5,13 @@ import {
   buildDirectRouteToolCall,
   currentLocalTime,
   estimatedWalkingMinutes,
+  helpPointRouteLocation,
   isValidDepartureTime,
+  resolveBuildingLocation,
   resolveDirectLocation,
   selectDisplayedCandidates,
   sliderToUnit,
+  WALKING_SPEED_MPS,
 } from "./routeSearch.ts";
 import type { ResolvedPlace, RouteCandidate, RouteType } from "./types.ts";
 
@@ -71,11 +74,17 @@ test("0-100 slider values map to the backend stairs range", () => {
 });
 
 test("walking estimate uses distance, not routing cost", () => {
+  assert.equal(WALKING_SPEED_MPS, 1.2);
   assert.equal(estimatedWalkingMinutes(312), 5);
-  assert.equal(estimatedWalkingMinutes(4500), 60);
+  assert.equal(estimatedWalkingMinutes(4500), 63);
+  assert.equal(estimatedWalkingMinutes(4320), 60);
+  assert.equal(estimatedWalkingMinutes(72), 1);
+  assert.equal(estimatedWalkingMinutes(72.01), 2);
+  assert.equal(estimatedWalkingMinutes(1000), 14);
   assert.equal(estimatedWalkingMinutes(0), 0);
   assert.equal(estimatedWalkingMinutes(-1), null);
   assert.equal(estimatedWalkingMinutes(NaN), null);
+  assert.equal(estimatedWalkingMinutes(Infinity), null);
 });
 
 test("departure time defaults use local hours and zero-padded minutes", () => {
@@ -131,6 +140,79 @@ test("map-selected coordinates bypass the text place resolver", async () => {
   assert.equal(resolverCalls, 0);
   assert.equal(resolved.source, "map");
   assert.equal(resolved.latitude, 37.45);
+});
+
+test("help point endpoints preserve the facility coordinates without a text lookup", async () => {
+  for (const category of ["police", "fire_station", "hospital"]) {
+    const location = helpPointRouteLocation({ name: " 안전시설 ", address: " 시설 주소 ", category }, [126.681, 37.465]);
+    assert.ok(location);
+    const place = await resolveDirectLocation(location, async () => { throw new Error("unexpected text lookup"); });
+    assert.equal(place.name, "안전시설");
+    assert.equal(place.category, category);
+    assert.equal(place.address, "시설 주소");
+    const request = buildDirectRouteToolCall(place, place, { safety: 50, stairs: 100 }, "test");
+    assert.deepEqual(request.arguments.origin, { latitude: 37.465, longitude: 126.681 });
+    assert.deepEqual(request.arguments.destination, request.arguments.origin);
+    assert.equal(request.arguments.stairs_weight, 1);
+  }
+});
+
+test("unnamed help points use their address or a label while retaining the point", () => {
+  assert.equal(helpPointRouteLocation({ name: " ", address: " 시설 주소 " }, [126.681, 37.465])?.displayName, "시설 주소");
+  assert.equal(helpPointRouteLocation({}, [126.681, 37.465])?.displayName, "안전지원시설");
+});
+
+test("invalid help point coordinates cannot become route endpoints", () => {
+  for (const coordinates of [[], [126.68], [NaN, 37.46], [126.68, Infinity], [181, 37.46], [126.68, 91]]) {
+    assert.equal(helpPointRouteLocation({ name: "시설" }, coordinates), null);
+  }
+});
+
+test("building name or address can be selected without a reverse lookup", async () => {
+  for (const selection of [
+    { displayName: " 주안역 ", address: "인천 미추홀구", expected: "주안역" },
+    { displayName: " ", address: " 인천 미추홀구 ", expected: "인천 미추홀구" },
+  ]) {
+    const location = await resolveBuildingLocation(
+      { ...selection, latitude: 37.46, longitude: 126.68 },
+      async () => { throw new Error("unexpected reverse lookup"); },
+    );
+    assert.deepEqual(location, { displayName: selection.expected, source: "map", latitude: 37.46, longitude: 126.68 });
+  }
+});
+
+test("unnamed building lookup supplies a label but retains clicked route coordinates", async () => {
+  const location = await resolveBuildingLocation(
+    { displayName: null, address: null, latitude: 37.465, longitude: 126.681 },
+    async (latitude, longitude) => {
+      assert.equal(latitude, 37.465);
+      assert.equal(longitude, 126.681);
+      return { ...origin, address: "인천 미추홀구 주안동" };
+    },
+  );
+  const place = await resolveDirectLocation(location, async () => { throw new Error("unexpected text lookup"); });
+  assert.equal(place.name, "인천 미추홀구 주안동");
+  assert.equal(place.latitude, 37.465);
+  assert.equal(place.longitude, 126.681);
+  const request = buildDirectRouteToolCall(place, destination, { safety: 50, stairs: 100 }, "test");
+  assert.deepEqual(request.arguments.origin, { latitude: 37.465, longitude: 126.681 });
+  assert.equal(request.arguments.stairs_weight, 1);
+});
+
+test("failed building address lookup is reported instead of selecting a different location", async () => {
+  await assert.rejects(resolveBuildingLocation(
+    { displayName: null, address: null, latitude: 37.46, longitude: 126.68 },
+    async () => { throw new Error("주소 조회 실패"); },
+  ), /주소 조회 실패/);
+});
+
+test("invalid building coordinates cannot become route endpoints", async () => {
+  for (const [latitude, longitude] of [[NaN, 126.68], [37.46, Infinity], [91, 126.68], [37.46, 181]]) {
+    await assert.rejects(resolveBuildingLocation(
+      { displayName: "건물", address: null, latitude, longitude },
+      async () => origin,
+    ), /건물 위치/);
+  }
 });
 
 test("intersection slider maps to bounded API weight and proximity ranking, not slope", () => {

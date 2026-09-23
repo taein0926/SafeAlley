@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { isNightDepartureTime } from "./nightMode";
 import { PreferenceSlider } from "./components/PreferenceSlider";
-import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
-import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE } from "./bridgeMarkers";
+import { RecommendationIcons } from "./components/RecommendationIcons";
+import { useWeather, WeatherHud } from "./components/WeatherHud";
 
 import {
   CesiumRoadMap,
   type BuildingMapSelection,
-  type BuildingMapStatus,
   type BuildingSelectionMode,
   type DraftMapLocation,
   type FacilityVisibility,
@@ -19,6 +18,7 @@ import {
   currentLocalTime,
   estimatedWalkingMinutes,
   isValidDepartureTime,
+  resolveBuildingLocation,
   resolveDirectLocation,
   selectDisplayedCandidates,
   type DirectLocationInput,
@@ -90,18 +90,22 @@ function emptyDirectLocation(): DirectLocationInput {
 function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [roads, setRoads] = useState<RoadMapStatus>({ kind: "loading" });
-  const [buildings, setBuildings] = useState<BuildingMapStatus>({ kind: "loading", count: 0 });
-  const [mode, setMode] = useState<SearchMode>("direct");
+  const [mode, setMode] = useState<SearchMode>("ai");
   const [originLocation, setOriginLocation] = useState<DirectLocationInput>(emptyDirectLocation);
   const [destinationLocation, setDestinationLocation] = useState<DirectLocationInput>(emptyDirectLocation);
   const [buildingSelectionMode, setBuildingSelectionMode] = useState<BuildingSelectionMode>(null);
   const [mapSelectionNotice, setMapSelectionNotice] = useState<MapSelectionNotice>(null);
+  const buildingRequestSerial = useRef(0);
+  const [buildingSelectionPending, setBuildingSelectionPending] = useState(false);
   const [facilityVisibility, setFacilityVisibility] = useState<FacilityVisibility>(() => ({
     streetlights: import.meta.env.VITE_SHOW_STREETLIGHTS !== "false",
     cctvs: import.meta.env.VITE_SHOW_CCTVS !== "false",
     helpPoints: import.meta.env.VITE_SHOW_HELP_POINTS !== "false",
   }));
   const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [searchPanelOpen, setSearchPanelOpen] = useState(true);
+  const [facilityPanelOpen, setFacilityPanelOpen] = useState(true);
+  const [weatherHudHeight, setWeatherHudHeight] = useState(142);
   const [safetyWeight, setSafetyWeight] = useState(0);
   const [stairsWeight, setStairsWeight] = useState(0);
   const [intersectionWeight, setIntersectionWeight] = useState(0);
@@ -113,10 +117,14 @@ function App() {
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [searchResult, setSearchResult] = useState<RouteSearchResult | null>(null);
+  const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
   const [selectionMessage, setSelectionMessage] = useState("");
+  const selectionRequestSerial = useRef(0);
   const [mapInfo, setMapInfo] = useState<MapInfoSelection | null>(null);
   const userId = useMemo(anonymousUserId, []);
+  const weather = useWeather(appliedDepartureTime);
+  const nightMode = isNightDepartureTime(weather.time, weather.solar);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,6 +145,8 @@ function App() {
     if (buildingSelectionMode === null) return;
     function cancelWithEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      ++buildingRequestSerial.current;
+      setBuildingSelectionPending(false);
       setBuildingSelectionMode(null);
       setMapSelectionNotice(null);
     }
@@ -145,7 +155,6 @@ function App() {
   }, [buildingSelectionMode]);
 
   const handleRoadStatus = useCallback((status: RoadMapStatus) => setRoads(status), []);
-  const handleBuildingStatus = useCallback((status: BuildingMapStatus) => setBuildings(status), []);
   // Keep the empty collection stable so opening a map info panel does not
   // rerun the map's route cleanup effect before a search has been made.
   const routeCandidates = useMemo(
@@ -155,9 +164,10 @@ function App() {
   const selectedCandidate = routeCandidates.find(
     (candidate) => candidate.route_type === selectedRouteType,
   );
-  const displayedCandidates = searchResult
+  const displayedCandidates = useMemo(() => searchResult
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
-    : [];
+    : [], [routeCandidates, searchResult]);
+  const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
     const locations: DraftMapLocation[] = [];
@@ -180,42 +190,70 @@ function App() {
     return locations;
   }, [destinationLocation, originLocation]);
 
-  const handleBuildingSelect = useCallback(async (selection: BuildingMapSelection) => {
-    const target = buildingSelectionMode;
-    if (target === null) return;
+  const handleBuildingSelect = useCallback(async (
+    selection: BuildingMapSelection,
+    target: BuildingSelectionMode = buildingSelectionMode,
+  ) => {
+    if (target === null || requestState === "loading") return;
+    const serial = ++buildingRequestSerial.current;
+    setMode("direct");
+    setSearchPanelOpen(true);
+    setBuildingSelectionPending(true);
     setMapSelectionNotice({ kind: "instruction", text: "건물 위치를 확인하고 있습니다..." });
     try {
-      let displayName = selection.displayName ?? selection.address;
-      if (!displayName) {
-        const reversed = await reversePlace(selection.latitude, selection.longitude);
-        displayName = reversed.address ?? reversed.name;
-      }
-      const location: DirectLocationInput = {
-        displayName,
-        latitude: selection.latitude,
-        longitude: selection.longitude,
-        source: "map",
-      };
+      const location = await resolveBuildingLocation(selection, reversePlace);
+      if (serial !== buildingRequestSerial.current) return;
       if (target === "origin") setOriginLocation(location);
       else setDestinationLocation(location);
       setBuildingSelectionMode(null);
+      setMapInfo(null);
       setMapSelectionNotice({
         kind: "success",
         text: `${target === "origin" ? "출발지" : "도착지"} 건물을 선택했습니다.`,
       });
     } catch (error) {
+      if (serial !== buildingRequestSerial.current) return;
       setMapSelectionNotice({
         kind: "error",
         text: error instanceof Error ? error.message : "건물 주소를 확인하지 못했습니다.",
       });
+    } finally {
+      if (serial === buildingRequestSerial.current) setBuildingSelectionPending(false);
     }
-  }, [buildingSelectionMode]);
+  }, [buildingSelectionMode, requestState]);
 
   const handleInvalidBuildingSelect = useCallback((message?: string) => {
     setMapSelectionNotice({ kind: "error", text: message ?? "건물을 선택해주세요" });
   }, []);
 
+  function selectMapInfoLocation(target: Exclude<BuildingSelectionMode, null>) {
+    if (requestState === "loading" || buildingSelectionPending) return;
+    if (mapInfo?.kind === "building" && mapInfo.buildingSelection) {
+      void handleBuildingSelect(mapInfo.buildingSelection, target);
+      return;
+    }
+    if (mapInfo?.kind !== "help_point" || !mapInfo.routeLocation) return;
+    ++buildingRequestSerial.current;
+    setBuildingSelectionPending(false);
+    setMode("direct");
+    setSearchPanelOpen(true);
+    if (target === "origin") setOriginLocation(mapInfo.routeLocation);
+    else setDestinationLocation(mapInfo.routeLocation);
+    setBuildingSelectionMode(null);
+    setMapInfo(null);
+    setMapSelectionNotice({
+      kind: "success",
+      text: `${target === "origin" ? "출발지" : "도착지"} 시설을 선택했습니다.`,
+    });
+  }
+
+  const mapInfoLocationAvailable = mapInfo?.kind === "building"
+    ? Boolean(mapInfo.buildingSelection)
+    : mapInfo?.kind === "help_point" && Boolean(mapInfo.routeLocation);
+
   function toggleBuildingSelection(target: Exclude<BuildingSelectionMode, null>) {
+    ++buildingRequestSerial.current;
+    setBuildingSelectionPending(false);
     if (buildingSelectionMode === target) {
       setBuildingSelectionMode(null);
       setMapSelectionNotice(null);
@@ -229,6 +267,8 @@ function App() {
     target: "origin" | "destination",
     displayName: string,
   ) {
+    ++buildingRequestSerial.current;
+    setBuildingSelectionPending(false);
     const textLocation: DirectLocationInput = { displayName, source: "text" };
     if (target === "origin") setOriginLocation(textLocation);
     else setDestinationLocation(textLocation);
@@ -237,6 +277,9 @@ function App() {
   }
 
   function beginSearch() {
+    ++selectionRequestSerial.current;
+    ++buildingRequestSerial.current;
+    setBuildingSelectionPending(false);
     setRequestState("loading");
     setErrorMessage("");
     setSelectionMessage("");
@@ -248,7 +291,8 @@ function App() {
   }
 
   function finishSearch(result: RouteSearchResult) {
-    setAppliedDepartureTime(result.departureTime);
+    setResultPanelOpen(true);
+    setAppliedDepartureTime(result.departureTime ?? currentLocalTime());
     setSearchResult(result);
     setSelectedRouteType(
       result.result.selected_route_type ?? result.result.candidates[0]?.route_type ?? null,
@@ -323,10 +367,13 @@ function App() {
     }
   }
 
-  async function selectRoute(routeType: RouteType) {
+  const selectRoute = useCallback(async (routeType: RouteType) => {
+    setResultPanelOpen(true);
+    setMapInfo(null);
+    if (routeType === selectedRouteType) return;
+    const serial = ++selectionRequestSerial.current;
     setSelectedRouteType(routeType);
     setSelectionMessage("");
-    setMapInfo(null);
     const recommendationId = searchResult?.result.recommendation_id;
     if (!recommendationId) return;
     try {
@@ -340,31 +387,42 @@ function App() {
         }),
       });
       await responseJson(response);
+      if (serial !== selectionRequestSerial.current) return;
       setSelectionMessage("선택한 경로를 저장했습니다.");
     } catch (error) {
+      if (serial !== selectionRequestSerial.current) return;
       setSelectionMessage(
         error instanceof Error ? `선택 저장 실패: ${error.message}` : "선택 저장 실패",
       );
     }
-  }
+  }, [searchResult, selectedRouteType, userId]);
+
+  const handleMapInfoChange = useCallback((selection: MapInfoSelection | null) => {
+    if (selection?.kind === "route_segment" && selection.routeType) {
+      void selectRoute(selection.routeType);
+      return;
+    }
+    setMapInfo(selection);
+  }, [selectRoute]);
 
   return (
-    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""}`}>
+    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""}`} data-theme={nightMode ? "night" : "day"} style={{ "--weather-clearance": `${12 + weatherHudHeight + 16}px` } as CSSProperties}>
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
-        onBuildingStatusChange={handleBuildingStatus}
-        routeCandidates={routeCandidates}
+        routeCandidates={mapCandidates}
         selectedRouteType={selectedRouteType}
         facilityVisibility={facilityVisibility}
         buildingSelectionMode={buildingSelectionMode}
         onBuildingSelect={(selection) => void handleBuildingSelect(selection)}
         onInvalidBuildingSelect={handleInvalidBuildingSelect}
         draftLocations={draftLocations}
-        onMapInfoChange={setMapInfo}
-        nightMode={isNightDepartureTime(appliedDepartureTime)}
+        onMapInfoChange={handleMapInfoChange}
+        nightMode={nightMode}
       />
+      <WeatherHud {...weather} onHeightChange={setWeatherHudHeight} />
 
-      <nav className="facility-controls" aria-label="시설 표시">
+      <div className={`facility-panel-shell ${facilityPanelOpen ? "" : "facility-panel-shell--collapsed"}`}>
+      <nav id="facility-controls" className="facility-controls" aria-label="시설 표시" inert={!facilityPanelOpen} aria-hidden={!facilityPanelOpen}>
         <button
           type="button"
           aria-label="가로등 표시"
@@ -396,16 +454,23 @@ function App() {
           }))}
         ><span aria-hidden="true">🏥</span></button>
       </nav>
+      <button className="facility-panel-handle" type="button" aria-label={facilityPanelOpen ? "시설 토글 접기" : "시설 토글 열기"} aria-controls="facility-controls" aria-expanded={facilityPanelOpen} onClick={() => setFacilityPanelOpen((open) => !open)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <polyline points={facilityPanelOpen ? "9 5 15 12 9 19" : "15 5 9 12 15 19"} />
+        </svg>
+      </button>
+      </div>
 
       <header className="brand-chip" aria-label="SafeAlley">
         <strong>SafeAlley</strong>
         <span className={systemReady ? "system-dot system-dot--ready" : "system-dot"} />
       </header>
 
-      <section className="search-panel" aria-label="경로 검색">
+      <div className={`search-panel-shell ${searchPanelOpen ? "" : "search-panel-shell--collapsed"}`}>
+      <section id="route-search-panel" className="search-panel" aria-label="경로 검색" inert={!searchPanelOpen} aria-hidden={!searchPanelOpen}>
         <div className="segmented-control" role="tablist" aria-label="검색 방식">
+          <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
           <button type="button" role="tab" aria-selected={mode === "direct"} onClick={() => setMode("direct")}>직접 검색</button>
-          <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
         </div>
 
         {mode === "direct" ? (
@@ -429,7 +494,7 @@ function App() {
                   </span>
                   <small>경로 검색을 누르면 선택한 시간의 지도 테마와 야간 추천 기준을 적용합니다.</small>
                 </label>
-                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 가로등·CCTV·도움시설 위치 기반 지표를 더 반영합니다. 실제 안전을 보증하지 않습니다." />
+                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 CCTV·도움시설 위치 지표를 더 반영합니다. 가로등은 밤에만 포함하며 실제 안전을 보증하지 않습니다." />
                 <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} description="높을수록 계단을 더 피하도록 반영합니다. 계단 없는 경로를 보장하지는 않습니다." />
                 <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} description="높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다." />
               </div>
@@ -444,23 +509,24 @@ function App() {
         )}
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
+      <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색창 접기" : "검색창 열기"} aria-controls="route-search-panel" aria-expanded={searchPanelOpen} onClick={() => setSearchPanelOpen((open) => !open)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <polyline points={searchPanelOpen ? "15 5 9 12 15 19" : "9 5 15 12 9 19"} />
+        </svg>
+      </button>
+      </div>
 
-      {displayedCandidates.length > 0 && (
+      {displayedCandidates.length > 0 && resultPanelOpen && (
         <aside className="result-panel" aria-label="경로 검색 결과">
           <div className="result-heading">
-            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
-            {searchResult?.model && <small>{searchResult.model}</small>}
+            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong>{searchResult?.model && <small>{searchResult.model}</small>}</div>
+            <button className="panel-close" type="button" aria-label="경로 검색 결과 닫기" title="닫기 · 지도 경로를 누르면 다시 열립니다" onClick={() => { setResultPanelOpen(false); setMapInfo(null); }}>×</button>
           </div>
           {searchResult?.result.recommendation_reason && (
             <section className="route-explanation" role="status" aria-live="polite">
               <strong>{searchResult.result.recommendation_status === "ready" ? "추천 이유" : "추천 보류 이유"}</strong>
+              <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />
               <p>{searchResult.result.recommendation_reason}</p>
-              {searchResult.result.recommendation_notes.length > 0 && (
-                <details>
-                  <summary>판단 근거와 자료 한계</summary>
-                  <ul>{searchResult.result.recommendation_notes.map((note) => <li key={note}>{note}</li>)}</ul>
-                </details>
-              )}
             </section>
           )}
           <div className="route-cards">
@@ -468,7 +534,7 @@ function App() {
               const active = candidate.route_type === selectedRouteType;
               return (
                 <button key={candidate.route_type} type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
-                  <span className="route-card-title"><strong>{label}</strong></span>
+                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong><small>{active ? "선택됨" : "지도에 함께 표시"}</small></span>
                   <dl>
                     <div><dt>거리</dt><dd>{formatDistance(candidate.route.properties.total_distance_m)}</dd></div>
                     <div><dt>예상 소요 시간</dt><dd>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "계산 불가" : `약 ${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</dd></div>
@@ -480,8 +546,7 @@ function App() {
               );
             })}
           </div>
-          <p className="selection-message">도보 4.5km/h 기준 · 신호 대기·계단 지연·개인 보행속도 미반영</p>
-          <p className="selection-message">교차로 주변 거리는 대표 좌표 반경 35m의 지상 구간 추정값입니다. 실제 횡단 횟수나 육교 접근성·엘리베이터 운행을 보장하지 않습니다.</p>
+          {selectedCandidate?.route.properties.streetlight_included === false && <p className="selection-message">낮 시간 안전도: CCTV·도움시설만 반영 · 가로등 제외</p>}
           {selectedCandidate?.route.properties.intersection_detour_limited && <p className="selection-message">먼 우회를 막기 위해 교차로 회피를 일부 완화했습니다.</p>}
           {selectedCandidate?.route.properties.unverified_major_road_count ? (
             <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
@@ -497,8 +562,14 @@ function App() {
               <span>{mapInfo.kind === "route_segment" ? "경로 구간" : "지도 객체"}</span>
               <strong>{mapInfo.title}</strong>
             </div>
-            <button type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
+            <button className="panel-close" type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
           </header>
+          {(mapInfo.kind === "building" || mapInfo.kind === "help_point") && (
+            <div className="building-location-actions" role="group" aria-label={mapInfo.kind === "building" ? "건물 경로 선택" : "안전지원시설 경로 선택"}>
+              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("origin")}>출발</button>
+              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("destination")}>도착</button>
+            </div>
+          )}
           <dl>
             {mapInfo.rows.map((row) => (
               <div key={`${row.label}-${row.value}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>
@@ -507,16 +578,6 @@ function App() {
         </aside>
       )}
 
-      <details className="map-status">
-        <summary>데이터 상태</summary>
-        <p>Backend: {health.kind === "ready" ? "연결됨" : health.kind === "error" ? health.message : "확인 중"}</p>
-        <p>지도 레이어: {roads.kind === "ready" ? `화면 주변 조회 도로 ${roads.roadCount.toLocaleString()}개 · EPSG:4326` : roads.kind === "error" ? roads.message : "불러오는 중"}</p>
-        <p>전체 안전도 도로는 검색 전 자동 표시하지 않습니다.</p>
-        <p>가로등의 밝은 원과 빛 번짐은 위치 강조용이며 실제 조도·점등 상태를 의미하지 않습니다.</p>
-        <p><img src={STAIRS_MARKER_IMAGE} alt="계단 아이콘" width="18" height="18" style={{ verticalAlign: "middle" }} />은 OSM에 등록된 계단 위치입니다.</p>
-        <p><img src={CONNECTED_BRIDGE_IMAGE} alt="경로망 연결 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 육교·경로망 연결 / <img src={REFERENCE_BRIDGE_IMAGE} alt="참조 위치 육교" width="18" height="18" style={{ verticalAlign: "middle" }} /> 참조 위치만 표시</p>
-        <p>건물: {buildings.kind === "loading" ? "새 구역 로딩 중" : buildings.kind === "zoom-in" ? "확대하면 상세 건물 표시" : buildings.kind === "error" ? "조회 실패 · 지도 이동 시 재시도" : `화면 주변 ${buildings.count.toLocaleString()}개`} · 캐시 {(buildings.cachedCount ?? 0).toLocaleString()}개</p>
-      </details>
     </main>
   );
 }

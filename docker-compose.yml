@@ -39,6 +39,8 @@ services:
       ROUTE_SNAP_MAX_DISTANCE_M: ${ROUTE_SNAP_MAX_DISTANCE_M:-500}
       SAFE_ROUTE_DISTANCE_WEIGHT: ${SAFE_ROUTE_DISTANCE_WEIGHT:-1.0}
       SAFE_ROUTE_RISK_WEIGHT: ${SAFE_ROUTE_RISK_WEIGHT:-5.0}
+      SAFETY_CCTV_WEIGHT: ${SAFETY_CCTV_WEIGHT:-0.40}
+      SAFETY_HELP_POINT_WEIGHT: ${SAFETY_HELP_POINT_WEIGHT:-0.20}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-300}
@@ -94,6 +96,31 @@ services:
     networks:
       - public
 
+  # Runs in the same safealley project. Batch collection only; no exposed port.
+  weather:
+    build:
+      context: ./data_pipeline
+    command: ["weather-worker"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-safealley}
+      POSTGRES_USER: ${POSTGRES_USER:-safealley}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safealley-local-only}
+      DB_HOST: database
+      DB_PORT: 5432
+      WEATHER_REFRESH_SECONDS: ${WEATHER_REFRESH_SECONDS:-3600}
+      KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-}
+      KMA_GRID_NX: ${KMA_GRID_NX:-}
+      KMA_GRID_NY: ${KMA_GRID_NY:-}
+      KASI_SERVICE_KEY: ${KASI_SERVICE_KEY:-}
+      KASI_LOCATION: ${KASI_LOCATION:-인천}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - public
+      - private
+
   pipeline:
     profiles: ["tools"]
     build:
@@ -110,6 +137,11 @@ services:
       SAFETY_POPULATION_WEIGHT: ${SAFETY_POPULATION_WEIGHT:-0.20}
       DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
       DATA_GO_KR_CCTV_API_URL: ${DATA_GO_KR_CCTV_API_URL:-}
+      KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-}
+      KMA_GRID_NX: ${KMA_GRID_NX:-}
+      KMA_GRID_NY: ${KMA_GRID_NY:-}
+      KASI_SERVICE_KEY: ${KASI_SERVICE_KEY:-}
+      KASI_LOCATION: ${KASI_LOCATION:-인천}
       SAFETY_CCTV_PURPOSES: ${SAFETY_CCTV_PURPOSES:-}
       CCTV_SEARCH_RADIUS_M: ${CCTV_SEARCH_RADIUS_M:-30}
       CCTV_SAMPLE_INTERVAL_M: ${CCTV_SAMPLE_INTERVAL_M:-5}

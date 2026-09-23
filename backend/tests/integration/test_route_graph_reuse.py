@@ -12,6 +12,7 @@ def test_candidates_reuse_graph_without_changing_routes(stairs, intersection):
         origin={"longitude": 126.679, "latitude": 37.4608},
         destination={"longitude": 126.683, "latitude": 37.4608},
         source="test-fixture", stairs_weight=stairs, intersection_weight=intersection,
+        departure_time="14:00:00",
     )
     kwargs = route_ranking_service._route_arguments(arguments)
     shortest = route_service.get_shortest_route(**kwargs)

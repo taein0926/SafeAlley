@@ -111,6 +111,9 @@ def record_selection(
                         recommendation_id, user_id, selected_route_type,
                         selected_metrics
                     ) VALUES (%s, %s, %s, %s::jsonb)
+                    ON CONFLICT (recommendation_id) DO UPDATE SET
+                        selected_route_type = EXCLUDED.selected_route_type,
+                        selected_metrics = EXCLUDED.selected_metrics
                     """,
                     (
                         recommendation_id,

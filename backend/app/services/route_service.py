@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import time
 from typing import Literal
 
 from app.core.config import get_settings
@@ -13,6 +14,7 @@ from app.services.routing.astar import PathNotFoundError, PathResult, find_path
 from app.services.routing.graph import GraphEdge, GraphNode, RoadGraph
 from app.services.routing.safety_cost import SafetyCostPolicy
 from app.services.routing.intersection import find_intersection_aware_path
+from app.services.weather_service import RouteTimeContext, resolve_route_time
 
 
 class RoutingDataNotFoundError(RuntimeError):
@@ -57,6 +59,7 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     distance_m=segment.length_m,
                     streetlight_score=segment.streetlight_score,
                     cctv_score=segment.cctv_score,
+                    help_point_score=segment.help_point_score,
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
                     streetlight_data_available=segment.streetlight_data_available,
@@ -91,6 +94,7 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     distance_m=segment.length_m,
                     streetlight_score=segment.streetlight_score,
                     cctv_score=segment.cctv_score,
+                    help_point_score=segment.help_point_score,
                     population_score=segment.population_score,
                     safety_score=segment.safety_score,
                     streetlight_data_available=segment.streetlight_data_available,
@@ -144,11 +148,11 @@ def _merge_path_coordinates(
     return coordinates
 
 
-def _average_safety_score(result: PathResult) -> float | None:
+def _average_safety_score(result: PathResult, policy: SafetyCostPolicy) -> float | None:
     if result.total_distance_m == 0:
         return None
     weighted_total = sum(
-        edge.safety_score * edge.distance_m for edge in result.edges
+        policy.effective_safety_score(edge) * edge.distance_m for edge in result.edges
     )
     return weighted_total / result.total_distance_m
 
@@ -160,7 +164,7 @@ def _route_feature(
     route_type: Literal["shortest", "balanced", "safe"],
     policy: SafetyCostPolicy,
 ) -> dict[str, object]:
-    average_safety_score = _average_safety_score(result)
+    average_safety_score = _average_safety_score(result, policy)
     crossing_node_ids = {
         node_id for edge in result.edges for node_id in edge.crossing_node_ids
     }
@@ -200,6 +204,7 @@ def _route_feature(
                 else None
             ),
             "total_cost": round(result.total_cost, 2),
+            "streetlight_included": policy.streetlight_included,
             "stairs_segment_count": sum(edge.is_steps for edge in result.edges),
             "cost_weights": {
                 "distance": policy.distance_weight,
@@ -247,8 +252,9 @@ def _route_feature(
                     "distance_m": round(edge.distance_m, 2),
                     "streetlight_score": round(edge.streetlight_score, 2),
                     "cctv_score": round(edge.cctv_score, 2),
+                    "help_point_score": round(edge.help_point_score, 2),
                     "population_score": round(edge.population_score, 2),
-                    "safety_score": round(edge.safety_score, 2),
+                    "safety_score": round(policy.effective_safety_score(edge), 2),
                     "coordinates": [list(coordinate) for coordinate in edge.coordinates],
                     "highway": edge.highway,
                     "is_steps": edge.is_steps,
@@ -346,7 +352,10 @@ def _get_route(
     penalized_segment_ids: set[int] | None = None,
     intersection_weight: float = 0.0,
     prepared: PreparedRoute | None = None,
+    departure_time: time | None = None,
+    time_context: RouteTimeContext | None = None,
 ) -> dict[str, object]:
+    time_context = time_context or resolve_route_time(departure_time)
     context = prepared or prepare_route(
         start_longitude, start_latitude, end_longitude, end_latitude, source,
     )
@@ -375,6 +384,9 @@ def _get_route(
     policy = SafetyCostPolicy(
         distance_weight=policy.distance_weight, risk_weight=policy.risk_weight,
         stairs_weight=stairs_weight, intersection_weight=intersection_weight,
+        streetlight_included=time_context.is_night,
+        cctv_weight=settings.safety_cctv_weight,
+        help_point_weight=settings.safety_help_point_weight,
     )
 
     def extra_cost(edge: GraphEdge) -> float:
@@ -427,6 +439,8 @@ def get_shortest_route(
     stairs_weight: float = 0.0,
     intersection_weight: float = 0.0,
     prepared: PreparedRoute | None = None,
+    departure_time: time | None = None,
+    time_context: RouteTimeContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -434,6 +448,8 @@ def get_shortest_route(
         end_longitude,
         end_latitude,
         route_type="shortest",
+        departure_time=departure_time,
+        time_context=time_context,
         prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
@@ -450,6 +466,8 @@ def get_safe_route(
     stairs_weight: float = 0.0,
     intersection_weight: float = 0.0,
     prepared: PreparedRoute | None = None,
+    departure_time: time | None = None,
+    time_context: RouteTimeContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -457,6 +475,8 @@ def get_safe_route(
         end_longitude,
         end_latitude,
         route_type="safe",
+        departure_time=departure_time,
+        time_context=time_context,
         prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
@@ -474,6 +494,8 @@ def get_balanced_route(
     penalized_segment_ids: set[int] | None = None,
     intersection_weight: float = 0.0,
     prepared: PreparedRoute | None = None,
+    departure_time: time | None = None,
+    time_context: RouteTimeContext | None = None,
 ) -> dict[str, object]:
     return _get_route(
         start_longitude,
@@ -481,6 +503,8 @@ def get_balanced_route(
         end_longitude,
         end_latitude,
         route_type="balanced",
+        departure_time=departure_time,
+        time_context=time_context,
         prepared=prepared,
         source=source,
         stairs_weight=stairs_weight,
