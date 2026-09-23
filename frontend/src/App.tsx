@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { isNightDepartureTime } from "./nightMode";
 import { PreferenceSlider } from "./components/PreferenceSlider";
 import { RecommendationIcons } from "./components/RecommendationIcons";
+import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
 
 import {
@@ -504,7 +505,13 @@ function App() {
           </form>
         ) : (
           <form className="route-form" onSubmit={searchWithAi}>
-            <label className="ai-query"><span>AI 경로 요청</span><textarea value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required /></label>
+            <div className="ai-query">
+              <div className="ai-query-heading">
+                <label htmlFor="ai-route-query">AI 경로 요청</label>
+                <SpeechInput value={query} onText={setQuery} disabled={requestState === "loading" || !searchPanelOpen} />
+              </div>
+              <textarea id="ai-route-query" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
+            </div>
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
           </form>
         )}

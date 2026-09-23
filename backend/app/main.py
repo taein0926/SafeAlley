@@ -9,6 +9,7 @@ from app.api.roads import router as roads_router
 from app.api.routes import router as routes_router
 from app.api.safety import router as safety_router
 from app.api.weather import router as weather_router
+from app.api.speech import router as speech_router
 
 
 app = FastAPI(
@@ -26,3 +27,4 @@ app.include_router(roads_router)
 app.include_router(routes_router)
 app.include_router(safety_router)
 app.include_router(weather_router)
+app.include_router(speech_router)

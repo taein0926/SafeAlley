@@ -1,0 +1,72 @@
+# Adapted from pilot2/agent d3aea330 (local speech input).
+from io import BytesIO
+import wave
+from types import SimpleNamespace
+
+from fastapi.testclient import TestClient
+import pytest
+from app.main import app
+from app.services import speech_service as speech
+
+client = TestClient(app)
+
+
+def wav(seconds=1, value=0):
+    output = BytesIO()
+    with wave.open(output, 'wb') as audio:
+        audio.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+        audio.writeframes(int(value).to_bytes(2, 'little', signed=True) * int(seconds * 16000))
+    return output.getvalue()
+
+
+@pytest.mark.parametrize('payload,content_type,expected', [
+    (b'', 'audio/wav', 422), (b'bad', 'audio/wav', 422),
+    (b'bad', 'text/plain', 415), (b'x' * (speech.MAX_BYTES + 1), 'audio/webm', 413),
+    (wav(), 'audio/wav', 422), (wav(31, 500), 'audio/wav', 413),
+])
+def test_audio_limits(payload, content_type, expected):
+    assert client.post('/api/speech/transcribe', content=payload,
+                       headers={'Content-Type': content_type}).status_code == expected
+
+
+def test_transcription_returns_text_not_search(monkeypatch):
+    class FakeModel:
+        def transcribe(self, audio, **options):
+            assert options['language'] == 'ko'
+            return iter([SimpleNamespace(text='금천구 안에 있는 시설물을 보여줘')]), None
+    monkeypatch.setattr(speech, '_model', FakeModel())
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 200
+    assert response.json()['text'] == '금천구 안에 있는 시설물을 보여줘'
+    assert 'result' not in response.json()
+
+
+def test_busy_returns_retryable_error():
+    with speech._lock:
+        response = client.post('/api/speech/transcribe', content=wav(), headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 503
+
+
+def test_error_releases_inference_lock(monkeypatch):
+    class BrokenModel:
+        def transcribe(self, *_args, **_kwargs):
+            raise RuntimeError('private implementation error')
+    monkeypatch.setattr(speech, '_model', BrokenModel())
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 503
+    assert 'private implementation error' not in response.text
+    assert not speech._lock.locked()
+
+
+@pytest.mark.parametrize('text', ['', 'a' * 501])
+def test_empty_and_overlong_transcriptions_are_rejected(monkeypatch, text):
+    class FakeModel:
+        def transcribe(self, *_args, **_kwargs):
+            return iter([SimpleNamespace(text=text)]), None
+    monkeypatch.setattr(speech, '_model', FakeModel())
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav; codecs=pcm'})
+    assert response.status_code == 422
+    assert not speech._lock.locked()

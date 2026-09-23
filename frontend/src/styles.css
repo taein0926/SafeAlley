@@ -22,6 +22,19 @@ body,
 button,
 input,
 textarea { font: inherit; }
+.speech-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.speech-input button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; color: #dce9e5; background: #243d48; border: 1px solid #527180; border-radius: 9px; cursor: pointer; font: inherit; font-size: .78rem; }
+.speech-input button:disabled { opacity: .5; cursor: not-allowed; }
+.speech-input button:focus-visible { outline: 2px solid #65b5ff; outline-offset: 2px; }
+.speech-preview { margin: 7px 0 0; font-size: .72rem; line-height: 1.45; color: #b5cbd1; overflow-wrap: anywhere; }
+.speech-preview p { margin: 4px 0 8px; }
+.app-shell[data-theme="day"] .speech-input button { color: #18569e; background: #e7f1fd; border-color: #8ab6e6; }
+.app-shell[data-theme="day"] .speech-preview { color: #506a77; }
+.ai-query-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ai-query-heading > label { flex-shrink: 0; color: #91aaa5; font-size: .86rem; font-weight: 700; }
+.ai-query-heading .speech-input { max-width: 65%; }
+.ai-query-heading .speech-actions { justify-content: flex-end; }
+.app-shell[data-theme="day"] .ai-query-heading > label { color: #506a77; }
 
 .app-shell {
   --weather-clearance: 170px;

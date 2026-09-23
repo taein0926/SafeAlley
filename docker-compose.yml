@@ -46,11 +46,15 @@ services:
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-300}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       OLLAMA_INTENT_CACHE_SECONDS: ${OLLAMA_INTENT_CACHE_SECONDS:-300}
+      STT_MODEL: ${STT_MODEL:-small}
+      STT_MODEL_DIR: /models/stt
       NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-SafeAlley-MVP/0.1}
       NOMINATIM_TIMEOUT_SECONDS: ${NOMINATIM_TIMEOUT_SECONDS:-10}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - stt_models:/models/stt
     depends_on:
       database:
         condition: service_healthy
@@ -176,6 +180,7 @@ services:
 
 volumes:
   postgis_data:
+  stt_models:
 
 networks:
   public:
