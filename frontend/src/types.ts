@@ -67,6 +67,15 @@ export type ResolvedPlace = {
   longitude: number;
 };
 
+export type RecommendationCriterion = {
+  factor: string;
+  label: string;
+  outcome: "better" | "similar" | "worse" | "not_compared" | "unavailable";
+  summary: string;
+  confidence: "high" | "medium" | "low";
+  confidence_reason: string;
+};
+
 export type AgentExecutionResponse = RouteQueryResponse["result"];
 
 export type RouteQueryResponse = {
@@ -92,6 +101,8 @@ export type RouteQueryResponse = {
     recommendation_reason: string | null;
     recommendation_notes: string[];
     recommendation_factors?: Array<"distance" | "safety" | "stairs" | "intersection">;
+    compared_route_type: RouteType | null;
+    recommendation_criteria: RecommendationCriterion[];
     candidates: RouteCandidate[];
     unsupported_preferences: Array<{ factor: string; reason: string }>;
   };

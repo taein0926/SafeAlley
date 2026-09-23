@@ -97,9 +97,16 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
 
     assert result["selected_route_type"] == "safe"
     assert result["unsupported_preferences"] == []
-    assert "가로등이 비교한 다른 길보다 경로 주변에 더 잘 분포해 있어" in result["recommendation_reason"]
-    assert "다른 길보다 약 15m 더 걸어요" in result["recommendation_reason"]
-    assert any("추천 경로 130m, 비교 경로 115m" in note
+    assert "가로등과의 거리·주변 밀도·가로등이 드문 구간" in result["recommendation_reason"]
+    assert "균형 길보다 조건이 좋아" in result["recommendation_reason"]
+    assert "균형 길보다 약 15m 더 걸어요" in result["recommendation_reason"]
+    assert result["compared_route_type"] == "balanced"
+    criteria = {item["factor"]: item for item in result["recommendation_criteria"]}
+    assert criteria["streetlight_score"]["outcome"] == "better"
+    assert criteria["streetlight_score"]["confidence"] == "medium"
+    assert criteria["distance_m"]["outcome"] == "worse"
+    assert criteria["distance_m"]["confidence"] == "high"
+    assert any("추천 경로 130m, 균형 길 115m" in note
                for note in result["recommendation_notes"])
     assert any("실제 치안" in note for note in result["recommendation_notes"])
 
@@ -116,8 +123,9 @@ def test_cctv_explanation_uses_plain_language_without_claiming_device_count(monk
 
     reason = result["recommendation_reason"]
     assert result["selected_route_type"] == "safe"
-    assert "CCTV가 비교한 다른 길보다 경로 주변에 더 잘 분포해 있어" in reason
-    assert "다른 길보다 약 15m 더 걸어요" in reason
+    assert "CCTV와의 거리·주변 밀도·CCTV가 드문 구간" in reason
+    assert "균형 길보다 조건이 좋아" in reason
+    assert "균형 길보다 약 15m 더 걸어요" in reason
     assert "더 안전" not in reason
     assert "지표" not in reason
     assert "CCTV가 더 많" not in reason
@@ -140,10 +148,10 @@ def test_explanation_does_not_compare_with_excluded_route_or_exaggerate_small_ga
     assert result["selected_route_type"] == "shortest"
     assert result["recommendation_reason"] == (
         "거리를 우선해 약 1.29km 길을 골랐어요. "
-        "다른 길과의 거리 차이는 약 4m로 거의 같아요."
+        "안전지표 우선 길과의 거리 차이는 약 4m로 거의 같아요."
     )
     assert any("다른 길 1개" in note for note in result["recommendation_notes"])
-    assert any("추천 경로 1292.5m, 비교 경로 1296.8m" in note
+    assert any("추천 경로 1292.5m, 안전지표 우선 길 1296.8m" in note
                for note in result["recommendation_notes"])
     assert all("1959" not in text and "100점" not in text
                for text in [result["recommendation_reason"], *result["recommendation_notes"]])
@@ -179,6 +187,7 @@ def test_unknown_metrics_are_reported_without_substitution(monkeypatch) -> None:
     assert result["recommendation_status"] == "no_supported_preferences"
     assert "자료가 부족해" in result["recommendation_reason"]
     assert any("계단" in note for note in result["recommendation_notes"])
+    assert {item["outcome"] for item in result["recommendation_criteria"]} == {"unavailable"}
 
 
 def test_registered_metric_without_candidate_data_is_not_scored() -> None:
@@ -314,12 +323,12 @@ def test_cctv_and_stairs_explanation_mentions_step_free_tie() -> None:
     reason, _ = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )
-    assert "CCTV가 비교한 다른 길보다" in reason
+    assert "CCTV와의 거리·주변 밀도·CCTV가 드문 구간" in reason
     assert "두 경로 모두 지도에 기록된 계단 구간은 0m예요" in reason
     notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )[1]
-    assert any("계단 구간: 추천 경로 0m, 비교 경로 0m" in note for note in notes)
+    assert any("계단 구간: 추천 경로 0m, 빠른 길 0m" in note for note in notes)
     assert any("현장에 계단이 없음을 보장하지 않습니다" in note for note in notes)
 
 
@@ -344,10 +353,98 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
     reason, notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )
-    assert "CCTV는 다른 길 주변에 더 잘 분포해요" in reason
-    assert "이 길 주변에 더 잘 분포" not in reason
-    assert any("추천 경로의 상대 지표가 비교 경로보다 낮습니다" in note
+    assert "다만 CCTV와의 거리·주변 밀도·분포 공백만 보면 안전지표 우선 길이 더 유리해요" in reason
+    assert "이 길이 더 유리" not in reason
+    assert any("CCTV와의 거리·주변 밀도·분포 공백: 안전지표 우선 길이 더 유리합니다" in note
                for note in notes)
+
+
+@pytest.mark.parametrize(
+    ("factor", "selected_value", "other_value", "expected"),
+    [
+        ("stairs_distance_m", 0, 18, "계단 구간은 다른 길보다 약 18m 짧아요"),
+        (
+            "intersection_distance_m", 25, 60,
+            "교차로 주변으로 추정된 구간은 다른 길보다 약 35m 짧아요",
+        ),
+        ("max_slope_percent", 2.5, 6.0, "최대 경사는 다른 길보다 3.5%p 낮아요"),
+    ],
+)
+def test_secondary_explanation_covers_accessibility_metrics(
+    factor: str,
+    selected_value: float,
+    other_value: float,
+    expected: str,
+) -> None:
+    selected = {"metrics": {factor: selected_value}}
+    comparison = {"metrics": {factor: other_value}}
+    preference = RoutePreference(factor=factor, direction="minimize")
+
+    detail = route_ranking_service._secondary_condition_sentence(
+        preference, selected, comparison,
+    )
+
+    assert detail is not None
+    assert expected in detail
+
+
+def test_proxy_evidence_explains_inputs_without_exposing_abstract_score() -> None:
+    selected = {"metrics": {"cctv_score": 72}}
+    comparison = {"metrics": {"cctv_score": 58}}
+
+    note = route_ranking_service._metric_evidence_note(
+        RoutePreference(factor="cctv_score", direction="maximize"),
+        selected,
+        comparison,
+    )
+
+    assert note == "CCTV와의 거리·주변 밀도·분포 공백: 추천 경로가 더 유리합니다."
+    assert "점수" not in note
+    assert "지표" not in note
+
+
+@pytest.mark.parametrize(
+    ("factor", "selected_value", "other_value", "expected"),
+    [
+        ("stairs_distance_m", 0, 18, "계단 구간이 안전지표 우선 길보다 약 18m 짧아"),
+        (
+            "intersection_distance_m", 25, 60,
+            "교차로 주변으로 추정된 구간이 안전지표 우선 길보다 약 35m 짧아",
+        ),
+        ("max_slope_percent", 2.5, 6.0, "최대 경사가 안전지표 우선 길보다 3.5%p 낮아"),
+    ],
+)
+def test_primary_accessibility_metric_uses_plain_comparison(
+    factor: str,
+    selected_value: float,
+    other_value: float,
+    expected: str,
+) -> None:
+    candidates = [
+        {
+            "route_type": "shortest",
+            "preference_score": None,
+            "metrics": {"distance_m": 110, factor: selected_value},
+            "route": _route("shortest", 110, 50),
+        },
+        {
+            "route_type": "safe",
+            "preference_score": None,
+            "metrics": {"distance_m": 100, factor: other_value},
+            "route": _route("safe", 100, 50),
+        },
+    ]
+    preference = RoutePreference(factor=factor, direction="minimize")
+    selected, unsupported = route_ranking_service.rank_generated_candidates(
+        candidates, [preference],
+    )
+
+    reason, _ = route_ranking_service._recommendation_explanation(
+        selected, candidates, [preference], unsupported, "ready", None,
+    )
+
+    assert expected in reason
+    assert "값이 더" not in reason
 
 
 def test_distance_primary_does_not_call_a_longer_route_nearly_equal() -> None:
@@ -478,6 +575,9 @@ def test_daytime_safety_explanation_excludes_lighting(monkeypatch):
     ))
     assert "CCTV·도움시설" in result["recommendation_reason"]
     assert "가로등" not in result["recommendation_reason"]
+    safety = next(item for item in result["recommendation_criteria"] if item["factor"] == "safety_score")
+    assert "가로등" not in safety["summary"]
+    assert "가로등" not in safety["confidence_reason"]
 
 
 def test_solar_night_drives_ranking_before_the_old_20_hour_boundary(monkeypatch):
@@ -548,6 +648,8 @@ def test_unverified_major_road_candidates_are_not_final_recommendations(monkeypa
     assert len(result["candidates"]) == 3
     assert "자동 추천을 보류" in result["recommendation_reason"]
     assert any("위험하다는 뜻은 아닙니다" in note for note in result["recommendation_notes"])
+    assert result["recommendation_criteria"][0]["outcome"] == "unavailable"
+    assert "추천 경로가 확정되지 않아" in result["recommendation_criteria"][0]["summary"]
 
 
 def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:

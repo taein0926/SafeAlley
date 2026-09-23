@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildDirectRouteToolCall,
+  confidenceLabel,
+  criterionOutcomeLabel,
   currentLocalTime,
   estimatedWalkingMinutes,
   helpPointRouteLocation,
@@ -71,6 +73,17 @@ test("0-100 slider values map to the backend stairs range", () => {
   assert.equal(sliderToUnit(0), 0);
   assert.equal(sliderToUnit(65), 0.65);
   assert.equal(sliderToUnit(100), 1);
+});
+
+test("recommendation evidence labels are plain Korean", () => {
+  assert.equal(criterionOutcomeLabel("better"), "추천 경로 우세");
+  assert.equal(criterionOutcomeLabel("similar"), "차이 거의 없음");
+  assert.equal(criterionOutcomeLabel("worse"), "비교 경로 우세");
+  assert.equal(criterionOutcomeLabel("not_compared"), "비교 경로 없음");
+  assert.equal(criterionOutcomeLabel("unavailable"), "비교 불가");
+  assert.equal(confidenceLabel("high"), "근거 높음");
+  assert.equal(confidenceLabel("medium"), "근거 보통");
+  assert.equal(confidenceLabel("low"), "근거 낮음");
 });
 
 test("walking estimate uses distance, not routing cost", () => {

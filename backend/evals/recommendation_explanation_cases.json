@@ -1,0 +1,121 @@
+[
+  {
+    "name": "cctv_advantage_with_distance_tradeoff",
+    "status": "ready",
+    "selected_type": "safe",
+    "preferences": [{"factor": "cctv_score", "direction": "maximize", "weight": 1}],
+    "candidates": [
+      {"route_type": "safe", "score": 100, "metrics": {"distance_m": 130, "cctv_score": 90}},
+      {"route_type": "shortest", "score": 0, "metrics": {"distance_m": 100, "cctv_score": 20}}
+    ],
+    "reason_contains": ["빠른 길보다 조건이 좋아", "빠른 길보다 약 30m 더 걸어요"],
+    "forbidden": ["더 안전", "CCTV가 더 많", "100점"],
+    "criteria": {"cctv_score": "better"},
+    "compared_route_type": "shortest"
+  },
+  {
+    "name": "distance_wins_and_cctv_tradeoff_is_disclosed",
+    "status": "ready",
+    "selected_type": "shortest",
+    "preferences": [
+      {"factor": "distance_m", "direction": "minimize", "weight": 2},
+      {"factor": "cctv_score", "direction": "maximize", "weight": 1}
+    ],
+    "candidates": [
+      {"route_type": "shortest", "score": 67, "metrics": {"distance_m": 100, "cctv_score": 20}},
+      {"route_type": "safe", "score": 33, "metrics": {"distance_m": 130, "cctv_score": 90}}
+    ],
+    "reason_contains": ["안전지표 우선 길보다 약 30m 짧아요", "안전지표 우선 길이 더 유리해요"],
+    "forbidden": ["CCTV 조건도 더 좋", "더 안전"],
+    "criteria": {"distance_m": "better", "cctv_score": "worse"},
+    "compared_route_type": "safe"
+  },
+  {
+    "name": "zero_stairs_is_not_claimed_as_field_truth",
+    "status": "ready",
+    "selected_type": "shortest",
+    "preferences": [{"factor": "stairs_distance_m", "direction": "avoid", "weight": 1}],
+    "candidates": [
+      {"route_type": "shortest", "score": 100, "metrics": {"distance_m": 100, "stairs_distance_m": 0}},
+      {"route_type": "safe", "score": 100, "metrics": {"distance_m": 105, "stairs_distance_m": 0}}
+    ],
+    "reason_contains": ["지도 자료상 계단 구간이 없어서", "가장 짧은 길"],
+    "notes_contains": ["현장에 계단이 없음을 보장하지 않습니다"],
+    "forbidden": ["현장에 계단이 없습니다"],
+    "criteria": {"stairs_distance_m": "similar"},
+    "compared_route_type": "safe"
+  },
+  {
+    "name": "zero_crosswalk_has_completeness_warning",
+    "status": "ready",
+    "selected_type": "shortest",
+    "preferences": [{"factor": "crosswalk_count", "direction": "minimize", "weight": 1}],
+    "candidates": [
+      {"route_type": "shortest", "score": 100, "metrics": {"distance_m": 100, "crosswalk_count": 0}},
+      {"route_type": "safe", "score": 100, "metrics": {"distance_m": 105, "crosswalk_count": 0}}
+    ],
+    "reason_contains": ["횡단보도 수가 0개여서", "가장 짧은 길"],
+    "notes_contains": ["실제 부재를 확인한 것은 아닙니다"],
+    "forbidden": ["횡단보도가 없습니다"],
+    "criteria": {"crosswalk_count": "similar"},
+    "compared_route_type": "safe"
+  },
+  {
+    "name": "intersection_advantage_and_detour",
+    "status": "ready",
+    "selected_type": "balanced",
+    "preferences": [{"factor": "intersection_distance_m", "direction": "minimize", "weight": 1}],
+    "candidates": [
+      {"route_type": "balanced", "score": 100, "metrics": {"distance_m": 120, "intersection_distance_m": 20}},
+      {"route_type": "shortest", "score": 0, "metrics": {"distance_m": 100, "intersection_distance_m": 70}}
+    ],
+    "reason_contains": ["빠른 길보다 약 50m 짧아", "빠른 길보다 약 20m 더 걸어요"],
+    "forbidden": ["교차로가 50개"],
+    "criteria": {"intersection_distance_m": "better"},
+    "compared_route_type": "shortest"
+  },
+  {
+    "name": "missing_slope_data_is_not_flat_ground",
+    "status": "no_supported_preferences",
+    "selected_type": null,
+    "preferences": [{"factor": "max_slope_percent", "direction": "minimize", "weight": 1}],
+    "unsupported": [{"factor": "max_slope_percent", "reason": "The metric is registered but data is unavailable for one or more candidate routes"}],
+    "candidates": [
+      {"route_type": "shortest", "score": null, "metrics": {"distance_m": 100, "max_slope_percent": null}}
+    ],
+    "reason_contains": ["자료가 부족해"],
+    "notes_contains": ["DEM은 현재 적재되지 않았습니다"],
+    "forbidden": ["평지", "완만"],
+    "criteria": {"max_slope_percent": "unavailable"},
+    "compared_route_type": null
+  },
+  {
+    "name": "field_review_is_not_safety_failure",
+    "status": "field_review_required",
+    "selected_type": null,
+    "preferences": [{"factor": "distance_m", "direction": "minimize", "weight": 1}],
+    "candidates": [
+      {"route_type": "shortest", "score": null, "unverified": 1, "metrics": {"distance_m": 100}},
+      {"route_type": "safe", "score": null, "unverified": 1, "metrics": {"distance_m": 120}}
+    ],
+    "reason_contains": ["자동 추천을 보류"],
+    "notes_contains": ["위험하다는 뜻은 아닙니다"],
+    "forbidden": ["위험한 길", "통행할 수 없습니다"],
+    "criteria": {"distance_m": "unavailable"},
+    "compared_route_type": null
+  },
+  {
+    "name": "small_distance_gap_is_not_exaggerated",
+    "status": "ready",
+    "selected_type": "shortest",
+    "preferences": [{"factor": "distance_m", "direction": "minimize", "weight": 1}],
+    "candidates": [
+      {"route_type": "shortest", "score": 100, "metrics": {"distance_m": 1292.5}},
+      {"route_type": "safe", "score": 0, "metrics": {"distance_m": 1296.77}}
+    ],
+    "reason_contains": ["안전지표 우선 길과의 거리 차이는 약 4m로 거의 같아요"],
+    "forbidden": ["훨씬 짧", "약 4m 짧아요"],
+    "criteria": {"distance_m": "similar"},
+    "compared_route_type": "safe"
+  }
+]

@@ -51,15 +51,68 @@ METRIC_NAMES = {
     "police_accessibility": "경찰 도움시설 접근성",
 }
 PROXY_FACTORS = {"safety_score", "streetlight_score", "cctv_score"}
-PROXY_SUBJECTS = {
-    "safety_score": "가로등·CCTV·도움시설의 위치",
-    "streetlight_score": "길 주변 가로등 위치",
-    "cctv_score": "길 주변 CCTV 위치",
+PROXY_PRIORITY_SUMMARIES = {
+    "safety_score": "가로등·CCTV·도움시설 접근성을 함께 고려해",
+    "streetlight_score": "가로등과 가까운 정도와 분포를 함께 고려해",
+    "cctv_score": "CCTV와 가까운 정도와 분포를 함께 고려해",
 }
 PROXY_COMPARISONS = {
-    "safety_score": "가로등·CCTV·도움시설의 위치가 비교한 다른 길보다 조건에 더 잘 맞아",
-    "streetlight_score": "가로등이 비교한 다른 길보다 경로 주변에 더 잘 분포해 있어",
-    "cctv_score": "CCTV가 비교한 다른 길보다 경로 주변에 더 잘 분포해 있어",
+    "safety_score": (
+        "가로등·CCTV·경찰·소방·응급의료 시설 접근성을 종합했을 때"
+    ),
+    "streetlight_score": (
+        "가로등과의 거리·주변 밀도·가로등이 드문 구간을 종합했을 때"
+    ),
+    "cctv_score": (
+        "CCTV와의 거리·주변 밀도·CCTV가 드문 구간을 종합했을 때"
+    ),
+}
+PROXY_EVIDENCE_LABELS = {
+    "safety_score": "가로등·CCTV·도움시설 접근성",
+    "streetlight_score": "가로등과의 거리·주변 밀도·분포 공백",
+    "cctv_score": "CCTV와의 거리·주변 밀도·분포 공백",
+}
+ROUTE_TYPE_LABELS = {
+    "shortest": "빠른 길",
+    "balanced": "균형 길",
+    "safe": "안전지표 우선 길",
+}
+CRITERION_LABELS = {
+    "distance_m": "거리",
+    "safety_score": "안전 관련 시설",
+    "streetlight_score": "가로등",
+    "cctv_score": "CCTV",
+    "crosswalk_count": "횡단보도",
+    "intersection_distance_m": "교차로 주변 구간",
+    "stairs_distance_m": "계단 구간",
+    "sidewalk_coverage_percent": "보행공간",
+    "max_slope_percent": "경사",
+}
+CRITERION_CONFIDENCE = {
+    "distance_m": ("high", "도로망 구간 길이를 직접 합산했습니다."),
+    "safety_score": (
+        "medium",
+        "가로등·CCTV·도움시설 공개 좌표를 이용한 상대 비교입니다.",
+    ),
+    "streetlight_score": (
+        "medium",
+        "가로등 공개 좌표의 거리·밀도·분포 공백을 이용한 상대 비교입니다.",
+    ),
+    "cctv_score": (
+        "medium",
+        "CCTV 공개 좌표의 거리·밀도·분포 공백을 이용한 상대 비교입니다.",
+    ),
+    "crosswalk_count": ("low", "OSM에 기록된 횡단보도만 집계해 누락될 수 있습니다."),
+    "intersection_distance_m": (
+        "low",
+        "교차로 대표 좌표 주변 35m의 지상 구간을 추정한 값입니다.",
+    ),
+    "stairs_distance_m": ("low", "OSM에 계단으로 기록된 도로 구간만 합산했습니다."),
+    "sidewalk_coverage_percent": (
+        "low",
+        "OSM에서 보행공간으로 확인된 구간만 계산했습니다.",
+    ),
+    "max_slope_percent": ("low", "전 구간에 명시된 OSM 경사 정보가 있을 때만 계산합니다."),
 }
 
 
@@ -215,10 +268,210 @@ def _route_identity(candidate: dict[str, object]) -> tuple[object, ...]:
     return tuple(tuple(point) for point in route["geometry"]["coordinates"])
 
 
+def _comparison_candidates(
+    selected: dict[str, object] | None,
+    candidates: list[dict[str, object]],
+    preferences: list[RoutePreference],
+) -> list[dict[str, object]]:
+    if selected is None:
+        return []
+    return [
+        candidate for candidate in candidates
+        if candidate is not selected
+        and candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0
+        and _route_identity(candidate) != _route_identity(selected)
+        and all(
+            candidate["metrics"].get(item.factor) is not None
+            and float(candidate["metrics"][item.factor]) <= 0
+            for item in preferences if item.direction == "avoid"
+        )
+    ]
+
+
+def _comparison_candidate(
+    selected: dict[str, object] | None,
+    candidates: list[dict[str, object]],
+    preferences: list[RoutePreference],
+) -> dict[str, object] | None:
+    eligible = _comparison_candidates(selected, candidates, preferences)
+    if not eligible:
+        return None
+    return max(
+        eligible,
+        key=lambda item: (
+            float(item["preference_score"])
+            if item["preference_score"] is not None else float("-inf"),
+            -float(item["metrics"]["distance_m"]),
+        ),
+    )
+
+
+def _metric_tolerance(factor: str, value: float) -> float:
+    if factor == "distance_m":
+        return max(10.0, value * 0.01)
+    if factor in PROXY_FACTORS:
+        return 1.0
+    if factor in {"crosswalk_count", "stairs_distance_m", "intersection_distance_m",
+                  "sidewalk_coverage_percent"}:
+        return 0.5
+    if factor == "max_slope_percent":
+        return 0.1
+    return 0.01
+
+
+def _criterion_value_text(factor: str, value: float) -> str:
+    if factor in {"distance_m", "stairs_distance_m", "intersection_distance_m"}:
+        return _distance_text(value)
+    if factor == "crosswalk_count":
+        return f"{value:.0f}개"
+    if factor in {"sidewalk_coverage_percent", "max_slope_percent"}:
+        return f"{value:.1f}%" if value % 1 else f"{value:.0f}%"
+    return f"{value:.1f}"
+
+
+def _criterion_outcome(
+    preference: RoutePreference,
+    selected_value: float,
+    comparison_value: float,
+) -> str:
+    difference = selected_value - comparison_value
+    tolerance = _metric_tolerance(preference.factor, selected_value)
+    if abs(difference) <= tolerance:
+        return "similar"
+    better = difference > 0 if preference.direction == "maximize" else difference < 0
+    return "better" if better else "worse"
+
+
+def _criterion_summary(
+    preference: RoutePreference,
+    selected_value: float,
+    comparison_value: float | None,
+    comparison_label: str | None,
+    outcome: str,
+) -> str:
+    factor = preference.factor
+    if comparison_value is None or comparison_label is None:
+        if factor in PROXY_FACTORS:
+            return "비교할 수 있는 다른 유효 경로가 없어 선택 경로의 시설 조건만 확인했습니다."
+        return (
+            f"추천 경로 {_criterion_value_text(factor, selected_value)} · "
+            "비교할 수 있는 다른 유효 경로가 없습니다."
+        )
+    if factor in PROXY_FACTORS:
+        basis = PROXY_EVIDENCE_LABELS[factor]
+        relation = {
+            "better": f"추천 경로가 {comparison_label}보다 유리합니다.",
+            "similar": f"추천 경로와 {comparison_label}의 조건이 비슷합니다.",
+            "worse": f"{comparison_label}이 추천 경로보다 유리합니다.",
+        }[outcome]
+        return f"{basis}을 종합하면 {relation}"
+    relation = {
+        "better": "요청 조건에 더 유리",
+        "similar": "차이가 거의 없음",
+        "worse": "요청 조건에는 불리",
+    }[outcome]
+    return (
+        f"추천 {_criterion_value_text(factor, selected_value)} · "
+        f"{comparison_label} {_criterion_value_text(factor, comparison_value)} · {relation}"
+    )
+
+
+def _recommendation_criteria(
+    selected: dict[str, object] | None,
+    comparison: dict[str, object] | None,
+    preferences: list[RoutePreference],
+    unsupported: list[UnsupportedPreference],
+    *, is_night: bool = True,
+) -> list[dict[str, str]]:
+    details: list[dict[str, str]] = []
+    unsupported_factors = {item.factor for item in unsupported}
+    comparison_label = (
+        ROUTE_TYPE_LABELS.get(str(comparison["route_type"]), "비교 경로")
+        if comparison else None
+    )
+    if selected is None:
+        for preference in preferences:
+            if preference.factor in unsupported_factors:
+                continue
+            confidence, confidence_reason = CRITERION_CONFIDENCE.get(
+                preference.factor,
+                ("low", "검증된 품질 기준이 등록되지 않은 조건입니다."),
+            )
+            details.append({
+                "factor": preference.factor,
+                "label": CRITERION_LABELS.get(
+                    preference.factor, preference.factor.replace("_", " ")
+                ),
+                "outcome": "unavailable",
+                "summary": "추천 경로가 확정되지 않아 조건별 비교를 표시하지 않습니다.",
+                "confidence": confidence,
+                "confidence_reason": confidence_reason,
+            })
+    if selected is not None:
+        for preference in preferences:
+            if preference.factor in unsupported_factors:
+                continue
+            value = selected["metrics"].get(preference.factor)
+            if value is None:
+                continue
+            other = comparison["metrics"].get(preference.factor) if comparison else None
+            outcome = (
+                _criterion_outcome(preference, float(value), float(other))
+                if other is not None else "not_compared"
+            )
+            confidence, confidence_reason = CRITERION_CONFIDENCE.get(
+                preference.factor,
+                ("low", "검증된 품질 기준이 등록되지 않은 조건입니다."),
+            )
+            details.append({
+                "factor": preference.factor,
+                "label": CRITERION_LABELS.get(
+                    preference.factor, preference.factor.replace("_", " ")
+                ),
+                "outcome": outcome,
+                "summary": _criterion_summary(
+                    preference,
+                    float(value),
+                    float(other) if other is not None else None,
+                    comparison_label,
+                    outcome,
+                ),
+                "confidence": confidence,
+                "confidence_reason": confidence_reason,
+            })
+    for item in unsupported:
+        confidence_reason = (
+            "요청을 만족하는 경로 후보가 없습니다."
+            if "hard avoidance" in item.reason
+            else "검증 가능한 측정값이 없어 비교하지 못했습니다."
+        )
+        details.append({
+            "factor": item.factor,
+            "label": CRITERION_LABELS.get(item.factor, item.factor.replace("_", " ")),
+            "outcome": "unavailable",
+            "summary": "자료가 부족해 추천 조건에 반영하지 않았습니다.",
+            "confidence": "low",
+            "confidence_reason": confidence_reason,
+        })
+    if not is_night:
+        for detail in details:
+            if detail["factor"] == "safety_score":
+                for field in ("summary", "confidence_reason"):
+                    detail[field] = detail[field].replace("가로등·CCTV", "CCTV")
+            elif detail["factor"] == "streetlight_score" and any(
+                item.factor == "streetlight_score" and item.reason == "Excluded during daylight"
+                for item in unsupported
+            ):
+                detail["summary"] = "낮에는 가로등 조건을 추천 순위에 반영하지 않습니다."
+                detail["confidence_reason"] = "낮 시간 가로등 제외 정책을 적용했습니다."
+    return details
+
+
 def _secondary_condition_sentence(
     preference: RoutePreference,
     selected: dict[str, object],
     comparison: dict[str, object],
+    comparison_label: str = "다른 길",
 ) -> str | None:
     factor = preference.factor
     chosen = selected["metrics"].get(factor)
@@ -230,26 +483,38 @@ def _secondary_condition_sentence(
         if float(chosen) == 0 and float(other) == 0:
             return "두 경로 모두 지도에 기록된 계단 구간은 0m예요."
         return "선택한 길의 지도상 계단 구간은 0m예요."
+    if factor == "stairs_distance_m":
+        if abs(difference) < 0.5:
+            return "두 경로의 지도상 계단 구간 길이는 같아요."
+        relation = "짧아요" if difference < 0 else "길어요"
+        return f"지도에 기록된 계단 구간은 {comparison_label}보다 약 {abs(difference):.0f}m {relation}"
     if factor == "crosswalk_count":
         if difference == 0:
             return "두 경로의 지도상 횡단보도 수는 같아요."
         direction = "적어요" if difference < 0 else "많아요"
-        return f"지도에 기록된 횡단보도는 다른 길보다 {abs(difference):.0f}개 {direction}"
+        return f"지도에 기록된 횡단보도는 {comparison_label}보다 {abs(difference):.0f}개 {direction}"
     if factor == "sidewalk_coverage_percent":
         if abs(difference) < 0.5:
             return "확인된 보행공간 비율은 두 경로가 거의 같아요."
         direction = "높아요" if difference > 0 else "낮아요"
-        return f"확인된 보행공간 비율은 다른 길보다 {abs(difference):.0f}%p {direction}"
+        return f"확인된 보행공간 비율은 {comparison_label}보다 {abs(difference):.0f}%p {direction}"
+    if factor == "intersection_distance_m":
+        if abs(difference) < 0.5:
+            return "교차로 주변으로 추정된 구간 길이는 두 경로가 같아요."
+        relation = "짧아요" if difference < 0 else "길어요"
+        return f"교차로 주변으로 추정된 구간은 {comparison_label}보다 약 {abs(difference):.0f}m {relation}"
+    if factor == "max_slope_percent":
+        if abs(difference) < 0.1:
+            return "지도에 기록된 최대 경사는 두 경로가 거의 같아요."
+        relation = "낮아요" if difference < 0 else "높아요"
+        return f"지도에 기록된 최대 경사는 {comparison_label}보다 {abs(difference):.1f}%p {relation}"
     if factor in PROXY_FACTORS:
         if abs(difference) <= 1:
             return None
-        subject = {
-            "cctv_score": "CCTV",
-            "streetlight_score": "가로등",
-            "safety_score": "안전 관련 시설",
-        }[factor]
-        relation = "이 길 주변에 더 잘 분포해요" if difference > 0 else "다른 길 주변에 더 잘 분포해요"
-        return f"{subject}는 {relation}."
+        subject = PROXY_EVIDENCE_LABELS[factor]
+        if difference > 0:
+            return f"{subject}을 종합하면 이 길이 더 유리해요."
+        return f"다만 {subject}만 보면 {comparison_label}이 더 유리해요."
     return None
 
 
@@ -257,6 +522,7 @@ def _metric_evidence_note(
     preference: RoutePreference,
     selected: dict[str, object],
     comparison: dict[str, object],
+    comparison_label: str = "비교 경로",
 ) -> str | None:
     factor = preference.factor
     chosen = selected["metrics"].get(factor)
@@ -268,22 +534,37 @@ def _metric_evidence_note(
         if abs(chosen_value - other_value) < 10:
             return (
                 f"거리: 추천 경로 {chosen_value:.1f}m, "
-                f"비교 경로 {other_value:.1f}m."
+                f"{comparison_label} {other_value:.1f}m."
             )
         return (
             f"거리: 추천 경로 {_distance_text(chosen_value)}, "
-            f"비교 경로 {_distance_text(other_value)}."
+            f"{comparison_label} {_distance_text(other_value)}."
         )
     if factor == "stairs_distance_m":
-        return f"지도상 계단 구간: 추천 경로 {chosen_value:.0f}m, 비교 경로 {other_value:.0f}m."
+        return f"지도상 계단 구간: 추천 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
     if factor == "crosswalk_count":
-        return f"OSM 횡단보도 기록: 추천 경로 {chosen_value:.0f}개, 비교 경로 {other_value:.0f}개."
+        return f"OSM 횡단보도 기록: 추천 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
     if factor == "sidewalk_coverage_percent":
-        return f"확인된 보행공간 비율: 추천 경로 {chosen_value:.0f}%, 비교 경로 {other_value:.0f}%."
+        return f"확인된 보행공간 비율: 추천 경로 {chosen_value:.0f}%, {comparison_label} {other_value:.0f}%."
+    if factor == "intersection_distance_m":
+        return (
+            "교차로 주변으로 추정된 구간: "
+            f"추천 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
+        )
+    if factor == "max_slope_percent":
+        return (
+            "지도에 기록된 최대 경사: "
+            f"추천 경로 {chosen_value:.1f}%, {comparison_label} {other_value:.1f}%."
+        )
     if factor in PROXY_FACTORS:
-        label = METRIC_NAMES[factor]
-        relation = "높습니다" if chosen_value > other_value else "낮습니다" if chosen_value < other_value else "같습니다"
-        return f"{label}: 추천 경로의 상대 지표가 비교 경로보다 {relation}." if chosen_value != other_value else f"{label}: 두 경로의 상대 지표가 같습니다."
+        label = PROXY_EVIDENCE_LABELS[factor]
+        if chosen_value == other_value:
+            return f"{label}: 두 경로의 조건이 같습니다."
+        relation = (
+            "추천 경로가 더 유리합니다"
+            if chosen_value > other_value else f"{comparison_label}이 더 유리합니다"
+        )
+        return f"{label}: {relation}."
     return None
 
 
@@ -297,10 +578,12 @@ def _recommendation_explanation(
     *, is_night: bool | None = None,
 ) -> tuple[str, list[str]]:
     night = _is_night(departure_time) if is_night is None else is_night
-    subjects = PROXY_SUBJECTS if night else {**PROXY_SUBJECTS, "safety_score": "CCTV·도움시설의 위치"}
+    priorities = PROXY_PRIORITY_SUMMARIES if night else {
+        **PROXY_PRIORITY_SUMMARIES, "safety_score": "CCTV·도움시설 접근성을 함께 고려해",
+    }
     comparisons = PROXY_COMPARISONS if night else {
         **PROXY_COMPARISONS,
-        "safety_score": "CCTV·도움시설의 위치가 비교한 다른 길보다 조건에 더 잘 맞아",
+        "safety_score": "CCTV·도움시설(경찰·소방·응급의료) 접근성을 종합했을 때",
     }
     notes: list[str] = []
     excluded = [
@@ -322,29 +605,18 @@ def _recommendation_explanation(
         primary = max(supported, key=lambda item: item.weight)
         distance = float(selected["metrics"]["distance_m"])
         priority = PRIORITY_PHRASES.get(primary.factor, "요청 조건을 우선해")
-        if primary.factor in PROXY_SUBJECTS:
-            summary = f"{subjects[primary.factor]}를 고려해 이 길을 추천했어요."
+        if primary.factor in PROXY_PRIORITY_SUMMARIES:
+            summary = (
+                f"{priorities[primary.factor]} "
+                f"약 {_distance_text(distance)} 길을 추천했어요."
+            )
         else:
             summary = f"{priority} 약 {_distance_text(distance)} 길을 골랐어요."
-        eligible = [
-            candidate for candidate in candidates
-            if candidate is not selected
-            and candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0
-            and _route_identity(candidate) != _route_identity(selected)
-            and all(
-                candidate["metrics"].get(item.factor) is not None
-                and float(candidate["metrics"][item.factor]) <= 0
-                for item in supported if item.direction == "avoid"
-            )
-        ]
-        if eligible:
-            comparison = max(
-                eligible,
-                key=lambda item: (
-                    float(item["preference_score"])
-                    if item["preference_score"] is not None else float("-inf"),
-                    -float(item["metrics"]["distance_m"]),
-                ),
+        eligible = _comparison_candidates(selected, candidates, supported)
+        comparison = _comparison_candidate(selected, candidates, supported)
+        if comparison is not None:
+            comparison_label = ROUTE_TYPE_LABELS.get(
+                str(comparison["route_type"]), "비교 경로"
             )
             difference = float(comparison["metrics"]["distance_m"]) - distance
             compared = [selected, *eligible]
@@ -372,14 +644,17 @@ def _recommendation_explanation(
                     summary = f"{premise}, 다른 요청 조건을 반영해 이 길을 추천했어요."
             elif primary.factor == "distance_m":
                 if difference > max(10, distance * 0.01):
-                    summary += f" 비교한 다른 길보다 약 {difference:.0f}m 짧아요."
+                    summary += f" {comparison_label}보다 약 {difference:.0f}m 짧아요."
                 elif difference < -max(10, distance * 0.01):
                     summary += (
-                        f" 비교한 다른 길보다 약 {-difference:.0f}m 더 걸리지만, "
+                        f" {comparison_label}보다 약 {-difference:.0f}m 더 걸리지만, "
                         "다른 요청 조건도 함께 반영했어요."
                     )
                 elif abs(difference) > 0.5:
-                    summary += f" 다른 길과의 거리 차이는 약 {abs(difference):.0f}m로 거의 같아요."
+                    summary += (
+                        f" {comparison_label}과의 거리 차이는 "
+                        f"약 {abs(difference):.0f}m로 거의 같아요."
+                    )
             else:
                 chosen_value = selected["metrics"].get(primary.factor)
                 other_value = comparison["metrics"].get(primary.factor)
@@ -391,31 +666,47 @@ def _recommendation_explanation(
                         else change < -threshold
                     )
                     if better:
-                        if primary.factor in PROXY_SUBJECTS:
+                        if primary.factor in PROXY_PRIORITY_SUMMARIES:
                             summary = (
                                 f"{comparisons[primary.factor]} "
+                                f"{comparison_label}보다 조건이 좋아 "
                                 "이 길을 추천했어요."
                             )
                         elif primary.factor == "crosswalk_count":
                             direction = "적어" if change < 0 else "많아"
                             summary = (
-                                f"지도에 기록된 횡단보도가 다른 길보다 "
+                                f"지도에 기록된 횡단보도가 {comparison_label}보다 "
                                 f"{abs(change):.0f}개 {direction} 이 길을 추천했어요."
                             )
                         elif primary.factor == "sidewalk_coverage_percent":
                             direction = "높아" if change > 0 else "낮아"
                             summary = (
-                                f"확인된 보행공간 비율이 다른 길보다 "
+                                f"확인된 보행공간 비율이 {comparison_label}보다 "
                                 f"{abs(change):.0f}%p {direction} 이 길을 추천했어요."
+                            )
+                        elif primary.factor == "stairs_distance_m":
+                            summary = (
+                                f"지도에 기록된 계단 구간이 {comparison_label}보다 "
+                                f"약 {abs(change):.0f}m 짧아 이 길을 추천했어요."
+                            )
+                        elif primary.factor == "intersection_distance_m":
+                            summary = (
+                                f"교차로 주변으로 추정된 구간이 {comparison_label}보다 "
+                                f"약 {abs(change):.0f}m 짧아 이 길을 추천했어요."
+                            )
+                        elif primary.factor == "max_slope_percent":
+                            summary = (
+                                f"지도에 기록된 최대 경사가 {comparison_label}보다 "
+                                f"{abs(change):.1f}%p 낮아 이 길을 추천했어요."
                             )
                         else:
                             metric_name = METRIC_NAMES.get(primary.factor, "요청 조건")
                             direction = "높아요" if primary.direction == "maximize" else "낮아요"
-                            advantage = f"다른 길보다 {metric_name} 값이 더 {direction}"
+                            advantage = f"{comparison_label}보다 {metric_name} 값이 더 {direction}"
                             summary += f" {advantage}"
             if primary.factor != "distance_m":
                 if difference < -0.5:
-                    summary += f" 다른 길보다 약 {-difference:.0f}m 더 걸어요."
+                    summary += f" {comparison_label}보다 약 {-difference:.0f}m 더 걸어요."
                 elif difference > 0.5 and len(primary_values) > 1:
                     summary += f" 거리도 약 {difference:.0f}m 짧아요."
             secondary = sorted(
@@ -427,11 +718,15 @@ def _recommendation_explanation(
                 reverse=True,
             )
             if secondary:
-                detail = _secondary_condition_sentence(secondary[0], selected, comparison)
+                detail = _secondary_condition_sentence(
+                    secondary[0], selected, comparison, comparison_label,
+                )
                 if detail:
                     summary += f" {detail}"
             for item in supported:
-                evidence = _metric_evidence_note(item, selected, comparison)
+                evidence = _metric_evidence_note(
+                    item, selected, comparison, comparison_label,
+                )
                 if evidence:
                     notes.append(evidence)
         for item in supported:
@@ -463,6 +758,7 @@ def _recommendation_explanation(
         else:
             notes.append(f"{label} 요청은 검증된 측정값이 없어 반영하지 않았습니다.")
     if not night:
+        notes = [note.replace("가로등·CCTV", "CCTV") for note in notes]
         notes.append("낮 시간에는 가로등을 제외하고 CCTV·도움시설 위치만으로 안전 관련 지표를 계산했습니다.")
     notes.append("지도 자료만으로 실제 길 상태나 통행 가능 여부를 보장할 수 없습니다.")
     return summary, notes
@@ -636,6 +932,17 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
         recommendation_status, arguments.departure_time,
         is_night=time_context.is_night,
     )
+    unsupported_factors = {item.factor for item in unsupported}
+    explanation_preferences = [
+        item for item in supported if item.factor not in unsupported_factors
+    ]
+    comparison = _comparison_candidate(
+        selected, candidates, explanation_preferences,
+    )
+    recommendation_criteria = _recommendation_criteria(
+        selected, comparison, effective_preferences, unsupported,
+        is_night=time_context.is_night,
+    )
 
     recommendation_id = (
         save_recommendation(arguments.user_id, candidates)
@@ -654,6 +961,8 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
         "recommendation_factors": _recommendation_factors(
             selected, effective_preferences, unsupported, arguments,
         ),
+        "compared_route_type": comparison["route_type"] if comparison else None,
+        "recommendation_criteria": recommendation_criteria,
         "candidates": candidates,
         "unsupported_preferences": unsupported,
     }

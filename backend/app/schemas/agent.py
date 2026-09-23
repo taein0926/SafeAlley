@@ -68,6 +68,15 @@ class RouteCandidate(BaseModel):
     route: RouteFeature
 
 
+class RecommendationCriterion(BaseModel):
+    factor: str
+    label: str
+    outcome: Literal["better", "similar", "worse", "not_compared", "unavailable"]
+    summary: str
+    confidence: Literal["high", "medium", "low"]
+    confidence_reason: str
+
+
 class AgentExecutionResponse(BaseModel):
     tool_call: AgentToolCall
     recommendation_id: str | None = None
@@ -77,6 +86,8 @@ class AgentExecutionResponse(BaseModel):
     recommendation_reason: str | None = None
     recommendation_notes: list[str] = Field(default_factory=list)
     recommendation_factors: list[Literal["distance", "safety", "stairs", "intersection"]] = Field(default_factory=list)
+    compared_route_type: Literal["shortest", "balanced", "safe"] | None = None
+    recommendation_criteria: list[RecommendationCriterion] = Field(default_factory=list)
     candidates: list[RouteCandidate]
     unsupported_preferences: list[UnsupportedPreference]
 

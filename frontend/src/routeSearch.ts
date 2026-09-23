@@ -78,6 +78,22 @@ export type DisplayedRouteCandidate = {
   label: "추천 경로" | "최단 경로" | "안전 경로";
 };
 
+export function criterionOutcomeLabel(
+  outcome: "better" | "similar" | "worse" | "not_compared" | "unavailable",
+): string {
+  return {
+    better: "추천 경로 우세",
+    similar: "차이 거의 없음",
+    worse: "비교 경로 우세",
+    not_compared: "비교 경로 없음",
+    unavailable: "비교 불가",
+  }[outcome];
+}
+
+export function confidenceLabel(confidence: "high" | "medium" | "low"): string {
+  return { high: "근거 높음", medium: "근거 보통", low: "근거 낮음" }[confidence];
+}
+
 export function sliderToUnit(value: number): number {
   return Math.min(100, Math.max(0, value)) / 100;
 }

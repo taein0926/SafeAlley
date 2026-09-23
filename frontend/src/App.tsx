@@ -16,6 +16,7 @@ import {
 import {
   buildDirectRouteToolCall,
   currentLocalTime,
+  criterionOutcomeLabel,
   estimatedWalkingMinutes,
   isValidDepartureTime,
   resolveBuildingLocation,
@@ -524,9 +525,22 @@ function App() {
           </div>
           {searchResult?.result.recommendation_reason && (
             <section className="route-explanation" role="status" aria-live="polite">
-              <strong>{searchResult.result.recommendation_status === "ready" ? "추천 이유" : "추천 보류 이유"}</strong>
+              <strong>{searchResult.result.recommendation_status === "ready" ? "왜 이 길을 추천했나요?" : "왜 추천하지 않았나요?"}</strong>
               <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />
               <p>{searchResult.result.recommendation_reason}</p>
+              {searchResult.result.recommendation_criteria.length > 0 && (
+                <ul className="criterion-list" aria-label="요청 조건별 비교 결과">
+                  {searchResult.result.recommendation_criteria.map((criterion) => (
+                    <li key={criterion.factor} className={`criterion criterion--${criterion.outcome}`}>
+                      <header>
+                        <strong>{criterion.label}</strong>
+                        <span>{criterionOutcomeLabel(criterion.outcome)}</span>
+                      </header>
+                      <p>{criterion.summary}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           )}
           <div className="route-cards">
