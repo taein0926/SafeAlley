@@ -389,8 +389,6 @@ function App() {
         }),
       });
       await responseJson(response);
-      if (serial !== selectionRequestSerial.current) return;
-      setSelectionMessage("선택한 경로를 저장했습니다.");
     } catch (error) {
       if (serial !== selectionRequestSerial.current) return;
       setSelectionMessage(
@@ -527,7 +525,7 @@ function App() {
       {displayedCandidates.length > 0 && resultPanelOpen && (
         <aside className="result-panel" aria-label="경로 검색 결과">
           <div className="result-heading">
-            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong>{searchResult?.model && <small>{searchResult.model}</small>}</div>
+            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
             <button className="panel-close" type="button" aria-label="경로 검색 결과 닫기" title="닫기 · 지도 경로를 누르면 다시 열립니다" onClick={() => { setResultPanelOpen(false); setMapInfo(null); }}>×</button>
           </div>
           {searchResult?.result.recommendation_reason && (
@@ -555,7 +553,7 @@ function App() {
               const active = candidate.route_type === selectedRouteType;
               return (
                 <button key={candidate.route_type} type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
-                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong><small>{active ? "선택됨" : "지도에 함께 표시"}</small></span>
+                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong>{active && <small>선택됨</small>}</span>
                   <dl>
                     <div><dt>거리</dt><dd>{formatDistance(candidate.route.properties.total_distance_m)}</dd></div>
                     <div><dt>예상 소요 시간</dt><dd>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "계산 불가" : `약 ${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</dd></div>
