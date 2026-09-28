@@ -108,9 +108,9 @@ function App() {
   const [searchPanelOpen, setSearchPanelOpen] = useState(true);
   const [facilityPanelOpen, setFacilityPanelOpen] = useState(true);
   const [weatherHudHeight, setWeatherHudHeight] = useState(142);
-  const [safetyWeight, setSafetyWeight] = useState(0);
-  const [stairsWeight, setStairsWeight] = useState(0);
-  const [intersectionWeight, setIntersectionWeight] = useState(0);
+  const [safetyWeight, setSafetyWeight] = useState(50);
+  const [stairsWeight, setStairsWeight] = useState(50);
+  const [intersectionWeight, setIntersectionWeight] = useState(50);
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState(
