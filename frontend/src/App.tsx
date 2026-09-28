@@ -114,7 +114,7 @@ function App() {
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState(
-    "밤 10시에 주안역에서 인천사랑병원까지 CCTV가 많은 길로 안내해줘",
+    "밤 10시에 인천사랑병원에서 석암초등학교까지 밝은 길로 안내해줘. 다리 다쳐서 계단은 싫어.",
   );
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
