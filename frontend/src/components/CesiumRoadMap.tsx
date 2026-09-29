@@ -1339,7 +1339,7 @@ export function CesiumRoadMap({
     if (!viewer || viewer.isDestroyed() || !coordinates || coordinates.length < 2) return;
     const sphere = BoundingSphere.fromPoints(coordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
     const canvasBounds = viewer.canvas.getBoundingClientRect();
-    const panel = containerRef.current?.closest(".app-shell")?.querySelector(".result-panel");
+    const panel = containerRef.current?.closest(".app-shell")?.querySelector(".map-info-panel");
     const panelBounds = panel?.getBoundingClientRect();
     const leftInset = panelBounds ? Math.max(0, panelBounds.right - canvasBounds.left + 24) : 0;
     const frustum = viewer.camera.frustum;

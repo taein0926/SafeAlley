@@ -48,7 +48,7 @@ textarea { font: inherit; }
   min-height: 100vh;
 }
 
-.app-shell--route-results { --dock-width: calc(var(--sidebar-width) + var(--detail-width) + var(--panel-gap)); }
+.app-shell--map-info { --dock-width: calc(var(--sidebar-width) + var(--detail-width) + var(--panel-gap)); }
 .map-stage { position: absolute; inset: 0 0 0 var(--sidebar-width); }
 .app-shell--sidebar-closed .map-stage { left: 0; }
 .sidebar-content { position: relative; width: 100%; height: 100%; }
@@ -61,7 +61,7 @@ textarea { font: inherit; }
 .search-empty p { font-size: .8rem; line-height: 1.8; }
 .reopen-results { width: calc(100% - 40px); margin: 20px; padding: 12px; border: 1px solid #547386; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; }
 
-.result-panel,
+.map-info-panel,
 .map-status,
 .facility-controls {
   position: absolute;
@@ -354,13 +354,8 @@ textarea { font: inherit; }
 .route-review-warning { color: #ffe0aa; background: rgba(126, 72, 13, 0.27); }
 
 .result-panel {
-  left: calc(var(--sidebar-width) + var(--panel-gap));
-  top: 12px;
-  bottom: 12px;
-  width: var(--detail-width);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-radius: 12px;
+  position: relative;
+  width: 100%;
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -368,6 +363,8 @@ textarea { font: inherit; }
 }
 
 .result-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.result-heading > div { flex: 1; }
+.result-back { display: grid; place-items: center; }
 .result-heading div { display: grid; gap: 4px; min-width: 0; }
 .result-heading span,
 .result-heading small { color: #78958f; font-size: 0.78rem; }
@@ -421,7 +418,14 @@ textarea { font: inherit; }
 .selection-message { margin: 11px 0 0; color: #8acdbd; font-size: 0.8rem; }
 
 .map-info-panel {
-  position: relative;
+  left: calc(var(--sidebar-width) + var(--panel-gap));
+  top: 12px;
+  bottom: 12px;
+  width: var(--detail-width);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 12px;
+  pointer-events: auto;
   padding: 24px 20px;
 }
 
@@ -486,7 +490,7 @@ textarea { font: inherit; }
 
 /* Floating UI follows the applied map time, not an unsubmitted time input. */
 .app-shell[data-theme="day"] { color: #183744; color-scheme: light; background: #eaf0f5; }
-.app-shell[data-theme="day"] :is(.result-panel, .map-status, .facility-controls, .search-panel-handle) {
+.app-shell[data-theme="day"] :is(.map-info-panel, .map-status, .facility-controls, .search-panel-handle) {
   color: #183744;
   border-color: rgba(40, 84, 100, .22);
   background: rgba(250, 253, 255, .96);

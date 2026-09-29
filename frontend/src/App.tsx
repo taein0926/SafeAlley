@@ -175,6 +175,7 @@ function App() {
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
   const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
+  const showRouteResults = displayedCandidates.length > 0 && resultPanelOpen;
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
     const locations: DraftMapLocation[] = [];
@@ -206,6 +207,7 @@ function App() {
     setMode("direct");
     setSearchPanelOpen(true);
     setBuildingSelectionPending(true);
+    setResultPanelOpen(false);
     setMapSelectionNotice({ kind: "instruction", text: "건물 위치를 확인하고 있습니다..." });
     try {
       const location = await resolveBuildingLocation(selection, reversePlace);
@@ -240,6 +242,7 @@ function App() {
       return;
     }
     if (mapInfo?.kind !== "help_point" || !mapInfo.routeLocation) return;
+    setResultPanelOpen(false);
     ++buildingRequestSerial.current;
     setBuildingSelectionPending(false);
     setMode("direct");
@@ -415,7 +418,7 @@ function App() {
   }, [selectRoute]);
 
   return (
-    <main className={`app-shell ${displayedCandidates.length > 0 && resultPanelOpen ? "app-shell--route-results" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme={nightMode ? "night" : "day"}>
+    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme={nightMode ? "night" : "day"}>
       <div className="map-stage">
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
@@ -486,7 +489,8 @@ function App() {
           <WeatherHud {...weather} />
         </div>
       </header>
-      <div className="sidebar-scroll">
+      <div className="sidebar-scroll" key={showRouteResults ? "results" : "search"}>
+      {!showRouteResults && (
       <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
         <div className="segmented-control" role="tablist" aria-label="검색 방식">
           <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
@@ -534,39 +538,17 @@ function App() {
         )}
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
-
-      {mapInfo && (
-        <aside className="map-info-panel" aria-label="지도 객체 정보">
-          <header>
-            <div>
-              <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : "장소 상세 정보"}</span>
-              <strong>{mapInfo.title}</strong>
-            </div>
-            <button className="panel-close" type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
-          </header>
-          {(mapInfo.kind === "building" || mapInfo.kind === "help_point") && (
-            <div className="building-location-actions" role="group" aria-label={mapInfo.kind === "building" ? "건물 경로 선택" : "안전지원시설 경로 선택"}>
-              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("origin")}>출발</button>
-              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("destination")}>도착</button>
-            </div>
-          )}
-          <dl>
-            {mapInfo.rows.map((row) => (
-              <div key={`${row.label}-${row.value}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>
-            ))}
-          </dl>
-        </aside>
       )}
+
       {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
       {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
-      </div>
-      </div>
-
-      {displayedCandidates.length > 0 && resultPanelOpen && (
+      {showRouteResults && (
         <aside className="result-panel" aria-label="경로 검색 결과">
           <div className="result-heading">
+            <button className="panel-close result-back" type="button" aria-label="검색창으로 뒤로가기" title="뒤로가기" onClick={() => setResultPanelOpen(false)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>
+            </button>
             <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
-            <button className="panel-close" type="button" aria-label="경로 검색 결과 닫기" title="닫기 · 지도 경로를 누르면 다시 열립니다" onClick={() => setResultPanelOpen(false)}>×</button>
           </div>
           {searchResult?.result.recommendation_reason && (
             <section className="route-explanation" aria-label="경로 추천 이유">
@@ -611,6 +593,30 @@ function App() {
             <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
           ) : null}
           {selectionMessage && <p className="selection-message" aria-live="polite">{selectionMessage}</p>}
+        </aside>
+      )}
+      </div>
+      </div>
+      {mapInfo && (
+        <aside className="map-info-panel" aria-label="지도 객체 정보">
+          <header>
+            <div>
+              <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : "장소 상세 정보"}</span>
+              <strong>{mapInfo.title}</strong>
+            </div>
+            <button className="panel-close" type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
+          </header>
+          {(mapInfo.kind === "building" || mapInfo.kind === "help_point") && (
+            <div className="building-location-actions" role="group" aria-label={mapInfo.kind === "building" ? "건물 경로 선택" : "안전지원시설 경로 선택"}>
+              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("origin")}>출발</button>
+              <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("destination")}>도착</button>
+            </div>
+          )}
+          <dl>
+            {mapInfo.rows.map((row) => (
+              <div key={`${row.label}-${row.value}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>
+            ))}
+          </dl>
         </aside>
       )}
       </div>
