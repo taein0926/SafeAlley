@@ -7,6 +7,7 @@ import { useWeather, WeatherHud } from "./components/WeatherHud";
 import { CCTV_MARKER_IMAGE } from "./facilityMarkers";
 import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
 import { routeMarkerImage } from "./routeMarkers";
+import { createRouteSelectionSaver } from "./routeSelection";
 
 import {
   CesiumRoadMap,
@@ -94,6 +95,7 @@ function emptyDirectLocation(): DirectLocationInput {
 }
 
 function App() {
+  const [saveRouteSelection] = useState(() => createRouteSelectionSaver());
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [roads, setRoads] = useState<RoadMapStatus>({ kind: "loading" });
   const [mode, setMode] = useState<SearchMode>("ai");
@@ -125,8 +127,6 @@ function App() {
   const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
   const [routeDetailOpen, setRouteDetailOpen] = useState(false);
-  const [selectionMessage, setSelectionMessage] = useState("");
-  const selectionRequestSerial = useRef(0);
   const [mapInfo, setMapInfo] = useState<MapInfoSelection | null>(null);
   const userId = useMemo(anonymousUserId, []);
   const weather = useWeather(appliedDepartureTime);
@@ -287,12 +287,10 @@ function App() {
   }
 
   function beginSearch() {
-    ++selectionRequestSerial.current;
     ++buildingRequestSerial.current;
     setBuildingSelectionPending(false);
     setRequestState("loading");
     setErrorMessage("");
-    setSelectionMessage("");
     setSearchResult(null);
     setRouteDetailOpen(false);
     setSelectedRouteType(null);
@@ -383,30 +381,21 @@ function App() {
     setResultPanelOpen(true);
     setMapInfo(null);
     if (routeType === selectedRouteType) return;
-    const serial = ++selectionRequestSerial.current;
     setSelectedRouteType(routeType);
     setRouteDetailOpen(false);
-    setSelectionMessage("");
     const recommendationId = searchResult?.result.recommendation_id;
     if (!recommendationId) return;
     try {
-      const response = await fetch("/api/agent/route-selections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          recommendation_id: recommendationId,
-          user_id: userId,
-          selected_route_type: routeType,
-        }),
+      await saveRouteSelection({
+        recommendation_id: recommendationId,
+        user_id: userId,
+        selected_route_type: routeType,
       });
-      await responseJson(response);
     } catch (error) {
-      if (serial !== selectionRequestSerial.current) return;
-      setSelectionMessage(
-        error instanceof Error ? `선택 저장 실패: ${error.message}` : "선택 저장 실패",
-      );
+      // Saving feedback must not interrupt the route already shown on the map.
+      console.warn("경로 선택 기록 저장 재시도 실패:", error);
     }
-  }, [searchResult, selectedRouteType, userId]);
+  }, [searchResult, selectedRouteType, userId, saveRouteSelection]);
 
   const handleMapInfoChange = useCallback((selection: MapInfoSelection | null) => {
     if (selection?.kind === "route_segment" && selection.routeType) {
@@ -592,7 +581,6 @@ function App() {
           {selectedCandidate?.route.properties.unverified_major_road_count ? (
             <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
           ) : null}
-          {selectionMessage && <p className="selection-message" aria-live="polite">{selectionMessage}</p>}
         </aside>
       )}
       </div>

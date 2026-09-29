@@ -364,7 +364,7 @@ textarea { font: inherit; }
 
 .result-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
 .result-heading > div { flex: 1; }
-.result-back { display: grid; place-items: center; }
+.result-back { order: 1; display: grid; place-items: center; }
 .result-heading div { display: grid; gap: 4px; min-width: 0; }
 .result-heading span,
 .result-heading small { color: #78958f; font-size: 0.78rem; }
@@ -415,7 +415,6 @@ textarea { font: inherit; }
 .route-card-title { display: flex; justify-content: space-between; align-items: center; }
 .route-card-title strong { font-size: 1rem; }
 .route-card-title em { padding: 4px 8px; border-radius: 99px; color: #4fe0ae; background: rgba(79, 224, 174, 0.1); font-size: 0.76rem; font-style: normal; }
-.selection-message { margin: 11px 0 0; color: #8acdbd; font-size: 0.8rem; }
 
 .map-info-panel {
   left: calc(var(--sidebar-width) + var(--panel-gap));

@@ -1,6 +1,7 @@
 from app.repositories.personalization_repository import (
     get_learned_preferences,
     record_selection,
+    selection_transaction,
     upsert_learned_preferences,
 )
 from app.schemas.agent import LearnedRoutePreference, RoutePreference
@@ -54,16 +55,22 @@ def learn_from_selection(
     user_id: str,
     selected_route_type: str,
 ) -> list[LearnedRoutePreference]:
-    candidates, selected = record_selection(
+    with selection_transaction(user_id) as connection:
+        return _learn_from_selection(recommendation_id, user_id, selected_route_type, connection)
+
+
+def _learn_from_selection(recommendation_id, user_id, selected_route_type, connection):
+    candidates, selected, changed = record_selection(
         recommendation_id,
         user_id,
         selected_route_type,
+        connection,
     )
-    existing = get_learned_preferences(user_id)
+    existing = get_learned_preferences(user_id, connection)
     updates: dict[str, float] = {}
 
     # New display metrics are not automatically learnable preferences.
-    for factor in LEARNABLE_DIRECTIONS:
+    for factor in LEARNABLE_DIRECTIONS if changed else ():
         if factor not in METRIC_REGISTRY:
             continue
         values = [
@@ -81,8 +88,9 @@ def learn_from_selection(
             6,
         )
 
-    upsert_learned_preferences(user_id, updates)
-    learned = get_learned_preferences(user_id)
+    if updates:
+        upsert_learned_preferences(user_id, updates, connection)
+    learned = get_learned_preferences(user_id, connection)
     return [
         LearnedRoutePreference(
             factor=factor,

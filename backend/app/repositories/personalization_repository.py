@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager, nullcontext
 from uuid import UUID, uuid4
 
 from psycopg.rows import dict_row
@@ -39,9 +40,24 @@ def save_recommendation(
     return recommendation_id
 
 
-def get_learned_preferences(user_id: str) -> dict[str, tuple[float, int]]:
+@contextmanager
+def selection_transaction(user_id: str):
+    """Commit feedback and learning together, serializing choices for one user."""
     try:
         with connect_database() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (user_id,)
+            )
+            yield connection
+    except PersonalizationRepositoryError:
+        raise
+    except Exception as exc:
+        raise PersonalizationRepositoryError("Failed to save route selection") from exc
+
+
+def get_learned_preferences(user_id: str, connection=None) -> dict[str, tuple[float, int]]:
+    try:
+        with nullcontext(connection) if connection is not None else connect_database() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -65,14 +81,15 @@ def record_selection(
     recommendation_id: str,
     user_id: str,
     selected_route_type: str,
-) -> tuple[list[dict[str, object]], dict[str, object]]:
+    connection=None,
+) -> tuple[list[dict[str, object]], dict[str, object], bool]:
     try:
         UUID(recommendation_id)
     except ValueError as exc:
         raise PersonalizationRepositoryError("Invalid recommendation id") from exc
 
     try:
-        with connect_database() as connection:
+        with nullcontext(connection) if connection is not None else connect_database() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(
                     """
@@ -114,6 +131,9 @@ def record_selection(
                     ON CONFLICT (recommendation_id) DO UPDATE SET
                         selected_route_type = EXCLUDED.selected_route_type,
                         selected_metrics = EXCLUDED.selected_metrics
+                    WHERE route_selection_events.selected_route_type
+                        IS DISTINCT FROM EXCLUDED.selected_route_type
+                    RETURNING recommendation_id
                     """,
                     (
                         recommendation_id,
@@ -122,7 +142,7 @@ def record_selection(
                         json.dumps(selected["metrics"]),
                     ),
                 )
-                return candidates, selected
+                return candidates, selected, cursor.fetchone() is not None
     except PersonalizationRepositoryError:
         raise
     except Exception as exc:
@@ -132,9 +152,10 @@ def record_selection(
 def upsert_learned_preferences(
     user_id: str,
     learned_weights: dict[str, float],
+    connection=None,
 ) -> None:
     try:
-        with connect_database() as connection:
+        with nullcontext(connection) if connection is not None else connect_database() as connection:
             with connection.cursor() as cursor:
                 for factor, weight in learned_weights.items():
                     cursor.execute(
