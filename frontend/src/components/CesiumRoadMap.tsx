@@ -25,6 +25,7 @@ import {
   PolylineOutlineMaterialProperty,
   Rectangle,
   ScreenSpaceEventType,
+  SingleTileImageryProvider,
   Transforms,
   Viewer,
 } from "cesium";
@@ -42,6 +43,7 @@ import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
 import { ROUTE_MARKER_COLORS } from "../routeMarkers";
 import { routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
+import { createStreetlightDensityTexture } from "../streetlightDensity";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -296,6 +298,7 @@ export function CesiumRoadMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const baseLayerRef = useRef<ImageryLayer | null>(null);
+  const streetlightDensityLayerRef = useRef<ImageryLayer | null>(null);
   const routeCandidatesRef = useRef(routeCandidates);
   const selectedRouteTypeRef = useRef(selectedRouteType);
   const refreshRoadsRef = useRef<(() => void) | null>(null);
@@ -324,6 +327,9 @@ export function CesiumRoadMap({
     const viewer = viewerRef.current;
     if (streetlightPrimitivesRef.current) {
       streetlightPrimitivesRef.current.show = facilityVisibility.streetlights;
+    }
+    if (streetlightDensityLayerRef.current) {
+      streetlightDensityLayerRef.current.show = nightModeRef.current && facilityVisibility.streetlights;
     }
     if (cctvPrimitivesRef.current) cctvPrimitivesRef.current.show = facilityVisibility.cctvs;
     if (helpPointPrimitivesRef.current) {
@@ -833,13 +839,33 @@ export function CesiumRoadMap({
             width: lightSize,
             height: lightSize,
             scaleByDistance: new NearFarScalar(250, 1, 12000, 0.3),
-            distanceDisplayCondition: new DistanceDisplayCondition(0, 18000),
+            // At district scale the density raster communicates the pattern with less clutter.
+            distanceDisplayCondition: new DistanceDisplayCondition(0, 4500),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: streetlightEntity,
           });
         }
         viewer.scene.primitives.add(streetlightPrimitives);
         streetlightPrimitivesRef.current = streetlightPrimitives;
+        const densityTexture = createStreetlightDensityTexture(
+          streetlights.features.map((feature) => feature.geometry.coordinates),
+        );
+        if (densityTexture) {
+          const { bounds, dataUrl, width, height } = densityTexture;
+          const densityProvider = new SingleTileImageryProvider({
+            url: dataUrl,
+            tileWidth: width,
+            tileHeight: height,
+            rectangle: Rectangle.fromDegrees(bounds.west, bounds.south, bounds.east, bounds.north),
+            credit: new Credit("가로등 위치 기반 상대 밀도", false),
+          });
+          const densityLayer = new ImageryLayer(densityProvider, {
+            alpha: 0.55,
+            show: nightModeRef.current && facilityVisibilityRef.current.streetlights,
+          });
+          viewer.imageryLayers.add(densityLayer);
+          streetlightDensityLayerRef.current = densityLayer;
+        }
         const cctvPrimitives = new BillboardCollection({ scene: viewer.scene });
         cctvPrimitives.show = facilityVisibilityRef.current.cctvs;
         for (const feature of cctvs.features) {
@@ -1095,6 +1121,7 @@ export function CesiumRoadMap({
       removeRenderErrorListener();
       viewerRef.current = null;
       baseLayerRef.current = null;
+      streetlightDensityLayerRef.current = null;
       streetlightPrimitivesRef.current = null;
       cctvPrimitivesRef.current = null;
       helpPointPrimitivesRef.current = null;
@@ -1124,6 +1151,9 @@ export function CesiumRoadMap({
         light.width = lighting.lightSize;
         light.height = lighting.lightSize;
       }
+    }
+    if (streetlightDensityLayerRef.current) {
+      streetlightDensityLayerRef.current.show = nightMode && facilityVisibilityRef.current.streetlights;
     }
     viewer.scene.requestRender();
   }, [nightMode]);
