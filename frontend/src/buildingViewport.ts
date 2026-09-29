@@ -18,6 +18,7 @@ export function buildingRequestBounds(view: RoadViewport | null): RoadViewport |
 }
 
 const TILE_SIZE = 0.004;
+export const MAX_ROUTE_BUILDING_TILES = 16;
 export type BuildingTile = { key: string; x: number; y: number; bounds: RoadViewport };
 export type BuildingBatch = { tiles: BuildingTile[]; bounds: RoadViewport };
 export type BuildingRequest = { batches: BuildingBatch[]; controller: AbortController };
@@ -77,8 +78,43 @@ export function boundsIntersect(a: RoadViewport, b: RoadViewport): boolean {
   return a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
 }
 
+// Overview: load a bounded corridor instead of every building in the camera bbox.
+export function routeBuildingTiles(view: RoadViewport | null, coordinates: number[][]): BuildingTile[] {
+  if (!view || ![view.west, view.south, view.east, view.north].every(Number.isFinite) ||
+    view.east <= view.west || view.north <= view.south ||
+    view.east - view.west > 0.3 || view.north - view.south > 0.3 ||
+    view.west < -180 || view.east > 180 || view.south < -90 || view.north > 90 ||
+    coordinates.length < 2 || coordinates.some(([x, y]) =>
+      !Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 180 || Math.abs(y) > 90)) return [];
+  const core = new Map<string, BuildingTile>();
+  const neighbours = new Map<string, BuildingTile>();
+  for (let i = 1; i < coordinates.length; i++) {
+    const [ax, ay] = coordinates[i - 1];
+    const [bx, by] = coordinates[i];
+    const steps = Math.min(512, Math.max(1, Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) / (TILE_SIZE / 2))));
+    for (let j = 0; j <= steps; j++) {
+      const x = ax + (bx - ax) * j / steps;
+      const y = ay + (by - ay) * j / steps;
+      for (const tile of buildingTiles({ west: x - 0.001, east: x + 0.001, south: y - 0.001, north: y + 0.001 })) {
+        if (!boundsIntersect(tile.bounds, view)) continue;
+        neighbours.set(tile.key, tile);
+        if (tile.x === Math.floor(x / TILE_SIZE) && tile.y === Math.floor(y / TILE_SIZE)) core.set(tile.key, tile);
+      }
+    }
+  }
+  const spread = (tiles: BuildingTile[], limit: number): BuildingTile[] => {
+    if (limit <= 0) return [];
+    if (tiles.length <= limit) return tiles;
+    if (limit === 1) return [tiles[Math.floor(tiles.length / 2)]];
+    return Array.from({ length: limit }, (_, i) => tiles[Math.round(i * (tiles.length - 1) / (limit - 1))]);
+  };
+  const selected = spread([...core.values()], MAX_ROUTE_BUILDING_TILES);
+  return [...selected, ...spread([...neighbours.values()].filter((tile) => !core.has(tile.key)), MAX_ROUTE_BUILDING_TILES - selected.length)];
+}
+
 export class BuildingViewportRequests {
   readonly visible = new Set<string>();
+  routeFocused = false;
   private loaded = new Map<string, number>();
   private pending: BuildingRequest | null = null;
   private clock = 0;
@@ -86,14 +122,15 @@ export class BuildingViewportRequests {
 
   constructor(limit = 64) { this.limit = limit; }
 
-  plan(view: RoadViewport | null): Decision {
+  plan(view: RoadViewport | null, route: number[][] = []): Decision {
     const bounds = buildingRequestBounds(view);
+    this.routeFocused = !bounds;
+    const tiles = bounds ? buildingTiles(bounds) : routeBuildingTiles(view, route);
     this.visible.clear();
-    if (!bounds) {
+    if (!tiles.length) {
       this.cancelPending(); // Keep cached geometry while zoomed out.
       return { kind: "hidden" };
     }
-    const tiles = buildingTiles(bounds);
     for (const tile of tiles) {
       this.visible.add(tile.key);
       if (this.loaded.has(tile.key)) this.loaded.set(tile.key, ++this.clock);
@@ -103,7 +140,8 @@ export class BuildingViewportRequests {
     const pendingKeys = new Set(this.pending?.batches.flatMap((batch) => batch.tiles.map((tile) => tile.key)));
     if (this.pending && missing.every((tile) => pendingKeys.has(tile.key))) return { kind: "pending" };
     this.cancelPending();
-    const request = { batches: batchTiles(missing), controller: new AbortController() };
+    const batches = this.routeFocused ? missing.map((tile) => ({ tiles: [tile], bounds: tile.bounds })) : batchTiles(missing);
+    const request = { batches, controller: new AbortController() };
     this.pending = request;
     return { kind: "load", request };
   }

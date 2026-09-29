@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isNightDepartureTime } from "./nightMode";
 import { PreferenceSlider } from "./components/PreferenceSlider";
 import { RecommendationIcons } from "./components/RecommendationIcons";
 import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
+import { CCTV_MARKER_IMAGE } from "./facilityMarkers";
+import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
+import { routeMarkerImage } from "./routeMarkers";
 
 import {
   CesiumRoadMap,
@@ -18,6 +21,7 @@ import {
   buildDirectRouteToolCall,
   currentLocalTime,
   criterionOutcomeLabel,
+  selectComparableCriteria,
   estimatedWalkingMinutes,
   isValidDepartureTime,
   resolveBuildingLocation,
@@ -103,11 +107,10 @@ function App() {
     streetlights: import.meta.env.VITE_SHOW_STREETLIGHTS !== "false",
     cctvs: import.meta.env.VITE_SHOW_CCTVS !== "false",
     helpPoints: import.meta.env.VITE_SHOW_HELP_POINTS !== "false",
+    stairsAndBridges: true,
   }));
   const [criteriaOpen, setCriteriaOpen] = useState(false);
   const [searchPanelOpen, setSearchPanelOpen] = useState(true);
-  const [facilityPanelOpen, setFacilityPanelOpen] = useState(true);
-  const [weatherHudHeight, setWeatherHudHeight] = useState(142);
   const [safetyWeight, setSafetyWeight] = useState(50);
   const [stairsWeight, setStairsWeight] = useState(50);
   const [intersectionWeight, setIntersectionWeight] = useState(50);
@@ -121,6 +124,7 @@ function App() {
   const [searchResult, setSearchResult] = useState<RouteSearchResult | null>(null);
   const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
+  const [routeDetailOpen, setRouteDetailOpen] = useState(false);
   const [selectionMessage, setSelectionMessage] = useState("");
   const selectionRequestSerial = useRef(0);
   const [mapInfo, setMapInfo] = useState<MapInfoSelection | null>(null);
@@ -166,6 +170,7 @@ function App() {
   const selectedCandidate = routeCandidates.find(
     (candidate) => candidate.route_type === selectedRouteType,
   );
+  const comparableCriteria = selectComparableCriteria(searchResult?.result.recommendation_criteria ?? []);
   const displayedCandidates = useMemo(() => searchResult
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
@@ -286,6 +291,7 @@ function App() {
     setErrorMessage("");
     setSelectionMessage("");
     setSearchResult(null);
+    setRouteDetailOpen(false);
     setSelectedRouteType(null);
     setBuildingSelectionMode(null);
     setMapSelectionNotice(null);
@@ -370,11 +376,13 @@ function App() {
   }
 
   const selectRoute = useCallback(async (routeType: RouteType) => {
+    setSearchPanelOpen(true);
     setResultPanelOpen(true);
     setMapInfo(null);
     if (routeType === selectedRouteType) return;
     const serial = ++selectionRequestSerial.current;
     setSelectedRouteType(routeType);
+    setRouteDetailOpen(false);
     setSelectionMessage("");
     const recommendationId = searchResult?.result.recommendation_id;
     if (!recommendationId) return;
@@ -403,14 +411,17 @@ function App() {
       return;
     }
     setMapInfo(selection);
+    if (selection) setSearchPanelOpen(true);
   }, [selectRoute]);
 
   return (
-    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""}`} data-theme={nightMode ? "night" : "day"} style={{ "--weather-clearance": `${12 + weatherHudHeight + 16}px` } as CSSProperties}>
+    <main className={`app-shell ${displayedCandidates.length > 0 && resultPanelOpen ? "app-shell--route-results" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme={nightMode ? "night" : "day"}>
+      <div className="map-stage">
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
         routeCandidates={mapCandidates}
         selectedRouteType={selectedRouteType}
+        routeDetailOpen={routeDetailOpen}
         facilityVisibility={facilityVisibility}
         buildingSelectionMode={buildingSelectionMode}
         onBuildingSelect={(selection) => void handleBuildingSelect(selection)}
@@ -419,10 +430,10 @@ function App() {
         onMapInfoChange={handleMapInfoChange}
         nightMode={nightMode}
       />
-      <WeatherHud {...weather} onHeightChange={setWeatherHudHeight} />
+      </div>
 
-      <div className={`facility-panel-shell ${facilityPanelOpen ? "" : "facility-panel-shell--collapsed"}`}>
-      <nav id="facility-controls" className="facility-controls" aria-label="시설 표시" inert={!facilityPanelOpen} aria-hidden={!facilityPanelOpen}>
+      <div className="facility-panel-shell">
+      <nav id="facility-controls" className="facility-controls" aria-label="시설 표시">
         <button
           type="button"
           aria-label="가로등 표시"
@@ -442,7 +453,7 @@ function App() {
             ...current,
             cctvs: !current.cctvs,
           }))}
-        ><span aria-hidden="true">📹</span></button>
+        ><img src={CCTV_MARKER_IMAGE} width="24" height="24" alt="" aria-hidden="true" /></button>
         <button
           type="button"
           aria-label="안전지원시설 표시"
@@ -453,21 +464,30 @@ function App() {
             helpPoints: !current.helpPoints,
           }))}
         ><span aria-hidden="true">🏥</span></button>
+        <button
+          type="button"
+          aria-label="계단·육교 표시"
+          aria-pressed={facilityVisibility.stairsAndBridges}
+          title="계단·육교"
+          onClick={() => setFacilityVisibility((current) => ({
+            ...current,
+            stairsAndBridges: !current.stairsAndBridges,
+          }))}
+        ><img src={STAIRS_MARKER_IMAGE} width="24" height="24" alt="" aria-hidden="true" /></button>
       </nav>
-      <button className="facility-panel-handle" type="button" aria-label={facilityPanelOpen ? "시설 토글 접기" : "시설 토글 열기"} aria-controls="facility-controls" aria-expanded={facilityPanelOpen} onClick={() => setFacilityPanelOpen((open) => !open)}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-          <polyline points={facilityPanelOpen ? "9 5 15 12 9 19" : "15 5 9 12 15 19"} />
-        </svg>
-      </button>
       </div>
 
-      <header className="brand-chip" aria-label="SafeAlley">
-        <strong>SafeAlley</strong>
-        <span className={systemReady ? "system-dot system-dot--ready" : "system-dot"} />
-      </header>
-
       <div className={`search-panel-shell ${searchPanelOpen ? "" : "search-panel-shell--collapsed"}`}>
-      <section id="route-search-panel" className="search-panel" aria-label="경로 검색" inert={!searchPanelOpen} aria-hidden={!searchPanelOpen}>
+      <div id="map-sidebar-content" className="sidebar-content" inert={!searchPanelOpen} aria-hidden={!searchPanelOpen}>
+      <div className="sidebar-primary">
+      <header className="sidebar-header" data-map-status={systemReady ? "ready" : "pending"}>
+        <div className="brand-row">
+          <button type="button" className="brand-chip" aria-label="SafeAlley 새로고침" onClick={() => window.location.reload()}><strong>SafeAlley<span>안전한 길찾기</span></strong></button>
+          <WeatherHud {...weather} />
+        </div>
+      </header>
+      <div className="sidebar-scroll">
+      <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
         <div className="segmented-control" role="tablist" aria-label="검색 방식">
           <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
           <button type="button" role="tab" aria-selected={mode === "direct"} onClick={() => setMode("direct")}>직접 검색</button>
@@ -476,9 +496,9 @@ function App() {
         {mode === "direct" ? (
           <form className="route-form" onSubmit={searchDirect}>
             <div className="place-inputs">
-              <label><span>출발지</span><span className="location-input"><input value={originLocation.displayName} placeholder="주안역" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}>📍</button></span></label>
+              <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeMarkerImage("origin")} width="24" height="24" alt="" aria-hidden="true" /></button></div>
               <i aria-hidden="true" />
-              <label><span>도착지</span><span className="location-input"><input value={destinationLocation.displayName} placeholder="인하대학교" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}>📍</button></span></label>
+              <div className="location-input"><input aria-label="도착지" value={destinationLocation.displayName} placeholder="도착지" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}><img src={routeMarkerImage("destination")} width="24" height="24" alt="" aria-hidden="true" /></button></div>
             </div>
             {mapSelectionNotice && <p className={`map-selection-notice map-selection-notice--${mapSelectionNotice.kind}`} role={mapSelectionNotice.kind === "error" ? "alert" : "status"}>{mapSelectionNotice.text}</p>}
             <button className="criteria-toggle" type="button" aria-expanded={criteriaOpen} onClick={() => setCriteriaOpen((open) => !open)}>
@@ -492,11 +512,10 @@ function App() {
                     <input aria-label="출발 시간" type="time" value={departureTime} onChange={(event) => setDepartureTime(event.target.value)} required />
                     <button type="button" onClick={() => setDepartureTime(currentLocalTime())}>현재 시간</button>
                   </span>
-                  <small>경로 검색을 누르면 선택한 시간의 지도 테마와 야간 추천 기준을 적용합니다.</small>
                 </label>
-                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 CCTV·도움시설 위치 지표를 더 반영합니다. 가로등은 밤에만 포함하며 실제 안전을 보증하지 않습니다." />
-                <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} description="높을수록 계단을 더 피하도록 반영합니다. 계단 없는 경로를 보장하지는 않습니다." />
-                <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} description="높을수록 교차로 주변 지상 구간을 피하고 연결된 육교를 우선 고려합니다. 추가 우회는 같은 안전·계단 설정의 기본 경로 대비 30%·300m 중 작은 값 이내이며, 계단 회피도 함께 적용합니다." />
+                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 안전 시설 우선" />
+                <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} />
+                <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} />
               </div>
             )}
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
@@ -515,70 +534,12 @@ function App() {
         )}
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
-      <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색창 접기" : "검색창 열기"} aria-controls="route-search-panel" aria-expanded={searchPanelOpen} onClick={() => setSearchPanelOpen((open) => !open)}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-          <polyline points={searchPanelOpen ? "15 5 9 12 15 19" : "9 5 15 12 9 19"} />
-        </svg>
-      </button>
-      </div>
-
-      {displayedCandidates.length > 0 && resultPanelOpen && (
-        <aside className="result-panel" aria-label="경로 검색 결과">
-          <div className="result-heading">
-            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
-            <button className="panel-close" type="button" aria-label="경로 검색 결과 닫기" title="닫기 · 지도 경로를 누르면 다시 열립니다" onClick={() => { setResultPanelOpen(false); setMapInfo(null); }}>×</button>
-          </div>
-          {searchResult?.result.recommendation_reason && (
-            <section className="route-explanation" role="status" aria-live="polite">
-              <strong>{searchResult.result.recommendation_status === "ready" ? "왜 이 길을 추천했나요?" : "왜 추천하지 않았나요?"}</strong>
-              <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />
-              <p>{searchResult.result.recommendation_reason}</p>
-              {searchResult.result.recommendation_criteria.length > 0 && (
-                <ul className="criterion-list" aria-label="요청 조건별 비교 결과">
-                  {searchResult.result.recommendation_criteria.map((criterion) => (
-                    <li key={criterion.factor} className={`criterion criterion--${criterion.outcome}`}>
-                      <header>
-                        <strong>{criterion.label}</strong>
-                        <span>{criterionOutcomeLabel(criterion.outcome)}</span>
-                      </header>
-                      <p>{criterion.summary}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
-          <div className="route-cards">
-            {displayedCandidates.map(({ candidate, label }) => {
-              const active = candidate.route_type === selectedRouteType;
-              return (
-                <button key={candidate.route_type} type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
-                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong>{active && <small>선택됨</small>}</span>
-                  <dl>
-                    <div><dt>거리</dt><dd>{formatDistance(candidate.route.properties.total_distance_m)}</dd></div>
-                    <div><dt>예상 소요 시간</dt><dd>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "계산 불가" : `약 ${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</dd></div>
-                    <div><dt>계단 구간</dt><dd>{candidate.route.properties.stairs_segment_count}개</dd></div>
-                    <div><dt>교차로 주변</dt><dd>{candidate.route.properties.intersection_data_available ? formatDistance(candidate.route.properties.intersection_distance_m ?? 0) : "데이터 미연결"}</dd></div>
-                    <div><dt>연결된 육교</dt><dd>{candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}</dd></div>
-                  </dl>
-                </button>
-              );
-            })}
-          </div>
-          {selectedCandidate?.route.properties.streetlight_included === false && <p className="selection-message">낮 시간 안전도: CCTV·도움시설만 반영 · 가로등 제외</p>}
-          {selectedCandidate?.route.properties.intersection_detour_limited && <p className="selection-message">먼 우회를 막기 위해 교차로 회피를 일부 완화했습니다.</p>}
-          {selectedCandidate?.route.properties.unverified_major_road_count ? (
-            <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
-          ) : null}
-          {selectionMessage && <p className="selection-message" aria-live="polite">{selectionMessage}</p>}
-        </aside>
-      )}
 
       {mapInfo && (
         <aside className="map-info-panel" aria-label="지도 객체 정보">
           <header>
             <div>
-              <span>{mapInfo.kind === "route_segment" ? "경로 구간" : "지도 객체"}</span>
+              <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : "장소 상세 정보"}</span>
               <strong>{mapInfo.title}</strong>
             </div>
             <button className="panel-close" type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
@@ -596,7 +557,73 @@ function App() {
           </dl>
         </aside>
       )}
+      {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
+      {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
+      </div>
+      </div>
 
+      {displayedCandidates.length > 0 && resultPanelOpen && (
+        <aside className="result-panel" aria-label="경로 검색 결과">
+          <div className="result-heading">
+            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
+            <button className="panel-close" type="button" aria-label="경로 검색 결과 닫기" title="닫기 · 지도 경로를 누르면 다시 열립니다" onClick={() => setResultPanelOpen(false)}>×</button>
+          </div>
+          {searchResult?.result.recommendation_reason && (
+            <section className="route-explanation" aria-label="경로 추천 이유">
+              <strong>{searchResult.result.recommendation_status === "ready" ? "왜 이 길을 추천했나요?" : "왜 추천하지 않았나요?"}</strong>
+              <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />
+              <p>{searchResult.result.recommendation_reason}</p>
+              {comparableCriteria.length > 0 && (
+                <ul className="criterion-list" aria-label="요청 조건별 비교 결과">
+                  {comparableCriteria.map((criterion) => (
+                    <li key={criterion.factor} className={`criterion criterion--${criterion.outcome}`}>
+                      <header>
+                        <strong>{criterion.label}</strong>
+                        <span>{criterionOutcomeLabel(criterion.outcome)}</span>
+                      </header>
+                      <p>{criterion.summary}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+          <div className="route-cards">
+            {displayedCandidates.map(({ candidate, label }) => {
+              const active = candidate.route_type === selectedRouteType;
+              return (
+                <div key={candidate.route_type} className="route-card-group">
+                <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
+                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
+                  <span className="route-card-primary"><strong>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "시간 미제공" : `${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
+                  <span className="route-card-details">
+                    계단 {candidate.route.properties.stairs_segment_count}개
+                    {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
+                    {" | "}교차로와의 거리 {candidate.route.properties.intersection_data_available ? `${Math.round(candidate.route.properties.intersection_distance_m ?? 0)}m` : "데이터 미연결"}
+                  </span>
+                </button>
+                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "검색 직후 지도 시점으로 돌아가기" : "출발지에서 도착지 방향으로 3D 보기"}>{routeDetailOpen ? "돌아가기" : "자세히 보기"} <span aria-hidden="true">{routeDetailOpen ? "‹" : "›"}</span></button>}
+                </div>
+              );
+            })}
+          </div>
+          {selectedCandidate?.route.properties.unverified_major_road_count ? (
+            <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
+          ) : null}
+          {selectionMessage && <p className="selection-message" aria-live="polite">{selectionMessage}</p>}
+        </aside>
+      )}
+      </div>
+      <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색·결과·상세 패널 접기" : "검색·결과·상세 패널 열기"} aria-controls="map-sidebar-content" aria-expanded={searchPanelOpen} onClick={() => {
+        setSearchPanelOpen((open) => !open);
+        ++buildingRequestSerial.current;
+        setBuildingSelectionPending(false);
+        setBuildingSelectionMode(null);
+        setMapSelectionNotice(null);
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><polyline points={searchPanelOpen ? "15 5 9 12 15 19" : "9 5 15 12 9 19"} /></svg>
+      </button>
+      </div>
     </main>
   );
 }

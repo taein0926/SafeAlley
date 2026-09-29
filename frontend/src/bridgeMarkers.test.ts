@@ -17,5 +17,9 @@ test("connected and reference-only bridge markers are distinct font-independent 
   for (const image of [CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE]) {
     assert.ok(image.startsWith("data:image/svg+xml,"));
     assert.ok(decodeURIComponent(image).includes("<path"));
+    const svg = decodeURIComponent(image.split(",")[1]);
+    assert.match(svg, /fill="#ffffff"/);
+    assert.match(svg, /M5 33h5v-6h5v-6h14v6h5v6h5/);
+    assert.doesNotMatch(svg, /<text|<image|<script/);
   }
 });

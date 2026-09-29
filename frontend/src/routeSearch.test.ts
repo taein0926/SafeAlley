@@ -5,6 +5,7 @@ import {
   buildDirectRouteToolCall,
   confidenceLabel,
   criterionOutcomeLabel,
+  selectComparableCriteria,
   currentLocalTime,
   estimatedWalkingMinutes,
   helpPointRouteLocation,
@@ -15,7 +16,18 @@ import {
   sliderToUnit,
   WALKING_SPEED_MPS,
 } from "./routeSearch.ts";
-import type { ResolvedPlace, RouteCandidate, RouteType } from "./types.ts";
+import type { RecommendationCriterion, ResolvedPlace, RouteCandidate, RouteType } from "./types.ts";
+
+test("comparison display retains only meaningful better/worse outcomes in source order", () => {
+  const criteria: RecommendationCriterion[] = (["similar", "better", "not_compared", "worse", "unavailable"] as const).map((outcome) => ({
+    factor: outcome, label: outcome, outcome, summary: outcome,
+    confidence: "high", confidence_reason: "test",
+  }));
+  assert.deepEqual(selectComparableCriteria(criteria), [criteria[1], criteria[3]]);
+  assert.equal(criteria.length, 5);
+  assert.deepEqual(selectComparableCriteria([criteria[0], criteria[2], criteria[4]]), []);
+  assert.deepEqual(selectComparableCriteria([]), []);
+});
 
 
 const origin: ResolvedPlace = {

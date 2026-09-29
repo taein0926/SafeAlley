@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildingRequestBounds, BuildingViewportRequests, geometryBounds, boundsIntersect } from "./buildingViewport.ts";
+import { buildingRequestBounds, BuildingViewportRequests, geometryBounds, boundsIntersect, routeBuildingTiles, MAX_ROUTE_BUILDING_TILES } from "./buildingViewport.ts";
 import type { BuildingRequest } from "./buildingViewport.ts";
 
 const view = { west: 126.6765, south: 37.461, east: 126.6815, north: 37.465 };
@@ -105,4 +105,55 @@ test("polygon bounds support multi-polygons and buildings on tile boundaries", (
   assert.deepEqual(bounds, { west: 126.68, east: 126.684, south: 37.46, north: 37.464 });
   assert.ok(boundsIntersect(bounds!, { west: 126.684, east: 126.688, south: 37.46, north: 37.464 }));
   assert.equal(geometryBounds([]), null);
+});
+
+const overview = { west: 126.65, east: 126.72, south: 37.43, north: 37.48 };
+const route = [[126.661, 37.441], [126.701, 37.469]];
+
+test("zoomed-out route loads bounded single-tile batches and reuses them", () => {
+  const cache = new BuildingViewportRequests(32);
+  assert.equal(cache.plan(overview).kind, "hidden");
+  const decision = cache.plan(overview, route);
+  assert.equal(cache.routeFocused, true);
+  assert.ok(decision.kind === "load");
+  assert.ok(decision.request.batches.length > 1);
+  assert.ok(decision.request.batches.length <= MAX_ROUTE_BUILDING_TILES);
+  assert.ok(decision.request.batches.every((batch) => batch.tiles.length === 1));
+  assert.equal(cache.plan(overview, route).kind, "pending");
+  finish(cache, decision.request);
+  assert.equal(cache.plan(overview, route).kind, "reuse");
+  cache.plan(view, route);
+  assert.equal(cache.routeFocused, false);
+});
+
+test("route corridor includes endpoints and intermediate geometry, not just vertices", () => {
+  const tiles = routeBuildingTiles(overview, route);
+  assert.ok(tiles.length <= MAX_ROUTE_BUILDING_TILES);
+  for (const [x, y] of [...route, [126.681, 37.455]]) {
+    assert.ok(tiles.some(({ bounds }) => x >= bounds.west && x <= bounds.east && y >= bounds.south && y <= bounds.north));
+  }
+  assert.ok(tiles.every(({ bounds }) => boundsIntersect(bounds, overview)));
+});
+
+test("very long routes remain bounded and retain both ends", () => {
+  const extent = { west: 126.5, east: 126.75, south: 37.4, north: 37.6 };
+  const longRoute = [[126.501, 37.401], [126.749, 37.599]];
+  const tiles = routeBuildingTiles(extent, longRoute);
+  assert.equal(tiles.length, MAX_ROUTE_BUILDING_TILES);
+  for (const [x, y] of longRoute) assert.ok(tiles.some(({ bounds }) => x >= bounds.west && x <= bounds.east && y >= bounds.south && y <= bounds.north));
+});
+
+test("route change cancels stale building batches; invalid or offscreen routes stay hidden", () => {
+  const cache = new BuildingViewportRequests();
+  const first = cache.plan(overview, route);
+  assert.ok(first.kind === "load");
+  const second = cache.plan(overview, [[126.705, 37.431], [126.717, 37.433]]);
+  assert.ok(second.kind === "load");
+  assert.equal(first.request.controller.signal.aborted, true);
+  assert.equal(cache.commit(first.request, first.request.batches[0]), false);
+  for (const invalid of [[], [[NaN, 37], [126, 37]], [[126.9, 37.6], [126.95, 37.65]]]) {
+    assert.deepEqual(routeBuildingTiles(overview, invalid), []);
+  }
+  assert.deepEqual(routeBuildingTiles({ ...overview, east: 130 }, route), []);
+  assert.deepEqual(routeBuildingTiles(null, route), []);
 });

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { koreaDate, koreaTime, matchingWeather, weatherSymbol, type WeatherData } from "./weather.ts";
+import { koreaDate, koreaTime, matchingWeather, weatherRefreshDelay, weatherSymbol, type WeatherData } from "./weather.ts";
 import { isNightDepartureTime } from "./nightMode.ts";
+
+test("unavailable weather retries sooner and returns to normal polling after recovery", () => {
+  assert.equal(weatherRefreshDelay(null), 60_000);
+  assert.equal(weatherRefreshDelay({ forecast_status: "stale" } as WeatherData), 60_000);
+  assert.equal(weatherRefreshDelay({ forecast_status: "unavailable" } as WeatherData), 60_000);
+  assert.equal(weatherRefreshDelay({ forecast_status: "available", solar: null } as WeatherData), 60_000);
+  assert.equal(weatherRefreshDelay({ forecast_status: "available", solar: {} } as WeatherData), 15 * 60_000);
+});
 
 test("Korea date/time use KST even when browser timezone is elsewhere", () => {
   const date = new Date("2026-09-22T15:05:00Z");

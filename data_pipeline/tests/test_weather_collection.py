@@ -44,6 +44,21 @@ def test_both_approved_keys_collect_official_sources(monkeypatch, collection):
     assert collection["grids"] == [(55, 124)]
 
 
+def test_solar_only_does_not_request_kma_or_need_its_configuration(monkeypatch, collection):
+    monkeypatch.setenv("KASI_SERVICE_KEY", "test-key")
+    monkeypatch.setenv("KMA_GRID_NX", "invalid")
+    cli.collect_weather(include_forecast=False)
+    assert collection["forecast"] == [] and collection["grids"] == []
+    assert collection["solar"] == [{"provider": "kasi"}]
+
+
+def test_forecast_only_does_not_request_solar(monkeypatch, collection):
+    monkeypatch.setenv("KMA_SERVICE_KEY", "test-key")
+    cli.collect_weather(include_solar=False)
+    assert collection["forecast"] == [{"provider": "kma"}]
+    assert collection["solar"] == []
+
+
 @pytest.mark.parametrize("failing_source,expected_forecast,expected_solar", [
     ("fetch_forecast", [], [{"provider": "kasi"}]),
     ("fetch_solar", [{"provider": "kma"}], []),

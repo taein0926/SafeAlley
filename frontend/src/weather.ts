@@ -14,6 +14,12 @@ export type WeatherData = {
   is_night: boolean;
 };
 
+export function weatherRefreshDelay(data: WeatherData | null): number {
+  return data?.forecast_status === "available" && data.solar
+    ? 15 * 60_000
+    : 60_000;
+}
+
 export function koreaDate(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }

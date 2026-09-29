@@ -18,7 +18,7 @@ export function stairMarkerPosition(coordinates: number[][]): [number, number] |
   const last = coordinates[coordinates.length - 1];
   return [last[0], last[1]];
 }
-// A font-independent stair pictogram: emoji fonts do not consistently support 🪜.
+// Solid stair profile and ascent arrow remain legible at map-marker size.
 export const STAIRS_MARKER_IMAGE = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect x="1" y="1" width="42" height="42" rx="11" fill="#173944" stroke="#e3f6ff" stroke-width="2"/><path d="M8 34h7v-8h7v-8h7v-8h7" fill="none" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect x="1" y="1" width="42" height="42" rx="9" fill="#ffffff" stroke="#52677d" stroke-width="2"/><path d="M8 35v-7h7v-7h7v-7h7V8h7v27Z" fill="#34495e"/><path d="M8 20 20 8M12 8h8v8" fill="none" stroke="#34495e" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 )}`;

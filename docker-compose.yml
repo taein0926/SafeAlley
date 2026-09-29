@@ -111,7 +111,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safealley-local-only}
       DB_HOST: database
       DB_PORT: 5432
-      WEATHER_REFRESH_SECONDS: ${WEATHER_REFRESH_SECONDS:-3600}
       KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-}
       KMA_GRID_NX: ${KMA_GRID_NX:-}
       KMA_GRID_NY: ${KMA_GRID_NY:-}

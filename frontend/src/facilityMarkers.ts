@@ -5,8 +5,11 @@ function marker(background: string, border: string, pictogram: string): string {
   )}`;
 }
 
-export const CCTV_MARKER_IMAGE = marker("#125363", "#a5f1ff",
-  '<path d="M9 13l23 5-4 10-22-5z" fill="white"/><path d="M30 22l6 1-2 6-6-1M19 27v7h13v-5" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>');
+// Neutral, opaque circular badge stays distinct from the cyan 3D buildings,
+// while the dark pictogram remains legible on both day and night basemaps.
+export const CCTV_MARKER_IMAGE = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="21" fill="#ffffff"/><circle cx="22" cy="22" r="19" fill="#ffffff" stroke="#65717c" stroke-width="1.8"/><g transform="rotate(-25 22 22)" fill="#424b55"><path d="M11 14h21v11H11zM7 17h4v6H7zM9 12h25v3H9z"/><path d="M23 26v6h10v-6" fill="none" stroke="#424b55" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></svg>',
+)}`;
 
 export const POLICE_MARKER_IMAGE = marker("#245bb4", "#d7e8ff",
   '<path d="M22 7l13 5v10c0 7-7 12-13 15-6-3-13-8-13-15V12z" fill="none" stroke="white" stroke-width="2.5"/><path d="M22 13l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z" fill="white"/>');

@@ -14,6 +14,15 @@ test("each facility category selects its own shared icon", () => {
   }
 });
 
+test("CCTV uses a white circular badge and dark camera, distinct from cyan buildings", () => {
+  const svg = decodeURIComponent(CCTV_MARKER_IMAGE.split(",")[1]);
+  assert.match(svg, /<circle cx="22" cy="22" r="21" fill="#ffffff"/);
+  assert.match(svg, /stroke="#65717c"/);
+  assert.match(svg, /fill="#424b55"/);
+  assert.match(svg, /rotate\(-25 22 22\)/);
+  assert.doesNotMatch(svg, /#125363|#a5f1ff|opacity=/);
+});
+
 test("fire stations display white 119 digits on the red badge", () => {
   const svg = decodeURIComponent(FIRE_STATION_MARKER_IMAGE.split(",")[1]);
   assert.match(svg, /fill="#b63038"/);

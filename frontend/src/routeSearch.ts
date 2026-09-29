@@ -1,5 +1,6 @@
 import type {
   AgentExecutionResponse,
+  RecommendationCriterion,
   ResolvedPlace,
   RouteCandidate,
   RouteType,
@@ -88,6 +89,12 @@ export function criterionOutcomeLabel(
     not_compared: "비교 경로 없음",
     unavailable: "비교 불가",
   }[outcome];
+}
+
+export function selectComparableCriteria(
+  criteria: readonly RecommendationCriterion[],
+): RecommendationCriterion[] {
+  return criteria.filter(({ outcome }) => outcome === "better" || outcome === "worse");
 }
 
 export function confidenceLabel(confidence: "high" | "medium" | "low"): string {

@@ -81,31 +81,33 @@ RAW_HELP_POINTS_PATH = (
 )
 
 
-def collect_weather() -> None:
+def collect_weather(*, include_forecast: bool = True, include_solar: bool = True) -> None:
     now = datetime.now(KST)
     kma_key = os.environ.get("KMA_SERVICE_KEY", "").strip()
     kasi_key = os.environ.get("KASI_SERVICE_KEY", "").strip()
     failed = False
     # Independent writes: one source's outage must not block the other source.
     try:
-        if not kma_key:
+        if include_forecast and not kma_key:
             raise ValueError("missing KMA key")
         nx_value, ny_value = os.environ.get("KMA_GRID_NX", "").strip(), os.environ.get("KMA_GRID_NY", "").strip()
-        if bool(nx_value) != bool(ny_value):
+        if include_forecast and bool(nx_value) != bool(ny_value):
             raise ValueError("both KMA grid coordinates are required")
-        nx, ny = (int(nx_value), int(ny_value)) if nx_value else forecast_grid()
-        if not (1 <= nx <= 149 and 1 <= ny <= 253):
-            raise ValueError("invalid grid")
-        print(f"KMA: stored {save_forecasts(fetch_forecast(kma_key, nx, ny, now))} forecast hours (grid {nx},{ny})")
+        if include_forecast:
+            nx, ny = (int(nx_value), int(ny_value)) if nx_value else forecast_grid()
+            if not (1 <= nx <= 149 and 1 <= ny <= 253):
+                raise ValueError("invalid grid")
+            print(f"KMA: stored {save_forecasts(fetch_forecast(kma_key, nx, ny, now))} forecast hours (grid {nx},{ny})")
     except Exception:
         # Never echo exceptions containing secret-bearing URLs or DB DSNs.
         print("Forecast collection failed; check approval, grid, connectivity and migration; cache preserved")
         failed = True
     try:
-        if not kasi_key:
+        if include_solar and not kasi_key:
             raise ValueError("missing KASI key")
-        save_solar(fetch_solar(kasi_key, now.date(), os.environ.get("KASI_LOCATION", "인천")))
-        print("KASI: stored today's official sunrise/sunset")
+        if include_solar:
+            save_solar(fetch_solar(kasi_key, now.date(), os.environ.get("KASI_LOCATION", "인천")))
+            print("KASI: stored today's official sunrise/sunset")
     except Exception:
         print("Solar collection failed; check approval, location, connectivity and migration; cache preserved")
         failed = True
