@@ -439,9 +439,9 @@ function App() {
       <nav id="facility-controls" className="facility-controls" aria-label="시설 표시">
         <button
           type="button"
-          aria-label="가로등 표시"
+          aria-label="가로등 위치와 밀도 밝기 표시"
           aria-pressed={facilityVisibility.streetlights}
-          title="가로등"
+          title={nightMode ? "가로등 위치·밀도 밝기" : "가로등 위치"}
           onClick={() => setFacilityVisibility((current) => ({
             ...current,
             streetlights: !current.streetlights,
