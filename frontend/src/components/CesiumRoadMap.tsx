@@ -860,7 +860,7 @@ export function CesiumRoadMap({
             credit: new Credit("가로등 위치 기반 상대 밀도", false),
           });
           const densityLayer = new ImageryLayer(densityProvider, {
-            alpha: 0.55,
+            alpha: 0.85,
             show: nightModeRef.current && facilityVisibilityRef.current.streetlights,
           });
           viewer.imageryLayers.add(densityLayer);

@@ -422,15 +422,22 @@ function App() {
         onMapInfoChange={handleMapInfoChange}
         nightMode={nightMode}
       />
+      {nightMode && facilityVisibility.streetlights && (
+        <div className="density-legend" role="img" aria-label="등록된 가로등의 상대 밀집도입니다. 색상은 적음, 보통, 많음을 구분하며 실제 조도나 안전을 나타내지 않습니다.">
+          <span>가로등 밀집도</span>
+          <span className="density-legend-gradient" aria-hidden="true" />
+          <span className="density-legend-scale"><span>적음</span><span>보통</span><span>많음</span></span>
+        </div>
+      )}
       </div>
 
       <div className="facility-panel-shell">
       <nav id="facility-controls" className="facility-controls" aria-label="시설 표시">
         <button
           type="button"
-          aria-label="가로등 위치와 밀도 밝기 표시"
+          aria-label="가로등 위치와 상대 밀집도 표시"
           aria-pressed={facilityVisibility.streetlights}
-          title={nightMode ? "가로등 위치·밀도 밝기" : "가로등 위치"}
+          title={nightMode ? "가로등 밀집도 (실제 조도 아님)" : "가로등 위치"}
           onClick={() => setFacilityVisibility((current) => ({
             ...current,
             streetlights: !current.streetlights,
