@@ -46,7 +46,7 @@ def test_intersection_schema_cost_and_reverse_metadata(annotated_test_edge):
         assert p["total_cost"] == pytest.approx(default["properties"]["total_cost"] + 120, abs=0.01)
 
 
-def test_agent_propagates_intersection_and_stair_weights(annotated_test_edge):
+def test_agent_retires_proximity_ranking_but_preserves_stairs(annotated_test_edge):
     response = client.post("/api/agent/execute", json={"tool": "rank_routes", "arguments": {
         "origin": REQUEST["start"], "destination": REQUEST["end"], "source": "test-fixture",
         "intersection_weight": 0.7, "stairs_weight": 0.4,
@@ -54,12 +54,12 @@ def test_agent_propagates_intersection_and_stair_weights(annotated_test_edge):
     }})
     assert response.status_code == 200
     result = response.json()
-    assert result["unsupported_preferences"] == []
+    assert result["unsupported_preferences"][0]["factor"] == "intersection_distance_m"
     for candidate in result["candidates"]:
         p = candidate["route"]["properties"]
-        assert p["cost_weights"]["intersection"] == 0.7
-        assert p["cost_weights"]["stairs"] == 0.4
-        assert p["total_distance_m"] <= p["intersection_distance_limit_m"] + 0.01
+        assert p["cost_weights"]["intersection"] == 0
+        assert p["cost_weights"]["stairs"] == (0.4 if candidate["route_type"] == "custom" else 0)
+        assert "교차로" not in result["recommendation_reason"]
 
 
 @pytest.mark.parametrize("weight", [-0.01, 1.01])

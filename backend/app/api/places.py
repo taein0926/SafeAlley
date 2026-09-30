@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.repositories.place_repository import (
+    PlaceAmbiguousError,
     PlaceNotFoundError,
     PlaceRepositoryError,
 )
@@ -15,10 +16,12 @@ router = APIRouter(prefix="/api/places", tags=["places"])
 def resolve_place_name(
     name: str = Query(min_length=1, max_length=255),
 ) -> dict[str, object]:
-    """Resolve an allowlisted local place name without invoking the LLM."""
+    """Resolve a place/GIS building name without invoking the LLM."""
 
     try:
         return resolve_place(name)
+    except PlaceAmbiguousError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PlaceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlaceRepositoryError as exc:

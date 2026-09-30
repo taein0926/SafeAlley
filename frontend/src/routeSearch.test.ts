@@ -8,7 +8,7 @@ import {
   selectComparableCriteria,
   currentLocalTime,
   estimatedWalkingMinutes,
-  helpPointRouteLocation,
+  formatCrosswalkCount,
   isValidDepartureTime,
   resolveBuildingLocation,
   resolveDirectLocation,
@@ -40,8 +40,16 @@ const origin: ResolvedPlace = {
 };
 const destination = { ...origin, name: "인하대학교", latitude: 37.45 };
 
+test("crosswalk display shows registered counts without claiming complete coverage", () => {
+  assert.equal(formatCrosswalkCount(3), "횡단보도 3개(OSM)");
+  assert.equal(formatCrosswalkCount(0), "횡단보도 0개(OSM)");
+  for (const missing of [null, undefined, NaN, -1, 1.5]) {
+    assert.equal(formatCrosswalkCount(missing), "횡단보도 집계 없음");
+  }
+});
+
 function candidate(routeType: RouteType): RouteCandidate {
-  const routeIndex = { shortest: 1, balanced: 2, safe: 3 }[routeType];
+  const routeIndex = { shortest: 1, balanced: 2, safe: 3, custom: 4 }[routeType];
   return {
     route_type: routeType,
     preference_score: 80,
@@ -143,6 +151,7 @@ test("direct search maps safety ranking and stairs_weight without slope fields",
   assert.deepEqual(payload.arguments.preferences, [
     { factor: "distance_m", direction: "minimize", weight: 30 },
     { factor: "safety_score", direction: "maximize", weight: 70 },
+    { factor: "stairs_distance_m", direction: "minimize", weight: 40 },
   ]);
   assert.equal("slope_weight" in payload.arguments, false);
 });
@@ -165,32 +174,6 @@ test("map-selected coordinates bypass the text place resolver", async () => {
   assert.equal(resolverCalls, 0);
   assert.equal(resolved.source, "map");
   assert.equal(resolved.latitude, 37.45);
-});
-
-test("help point endpoints preserve the facility coordinates without a text lookup", async () => {
-  for (const category of ["police", "fire_station", "hospital"]) {
-    const location = helpPointRouteLocation({ name: " 안전시설 ", address: " 시설 주소 ", category }, [126.681, 37.465]);
-    assert.ok(location);
-    const place = await resolveDirectLocation(location, async () => { throw new Error("unexpected text lookup"); });
-    assert.equal(place.name, "안전시설");
-    assert.equal(place.category, category);
-    assert.equal(place.address, "시설 주소");
-    const request = buildDirectRouteToolCall(place, place, { safety: 50, stairs: 100 }, "test");
-    assert.deepEqual(request.arguments.origin, { latitude: 37.465, longitude: 126.681 });
-    assert.deepEqual(request.arguments.destination, request.arguments.origin);
-    assert.equal(request.arguments.stairs_weight, 1);
-  }
-});
-
-test("unnamed help points use their address or a label while retaining the point", () => {
-  assert.equal(helpPointRouteLocation({ name: " ", address: " 시설 주소 " }, [126.681, 37.465])?.displayName, "시설 주소");
-  assert.equal(helpPointRouteLocation({}, [126.681, 37.465])?.displayName, "안전지원시설");
-});
-
-test("invalid help point coordinates cannot become route endpoints", () => {
-  for (const coordinates of [[], [126.68], [NaN, 37.46], [126.68, Infinity], [181, 37.46], [126.68, 91]]) {
-    assert.equal(helpPointRouteLocation({ name: "시설" }, coordinates), null);
-  }
 });
 
 test("building name or address can be selected without a reverse lookup", async () => {
@@ -240,13 +223,13 @@ test("invalid building coordinates cannot become route endpoints", async () => {
   }
 });
 
-test("intersection slider maps to bounded API weight and proximity ranking, not slope", () => {
+test("crossing slider maps to bounded API weight and OSM crossing preference", () => {
   for (const [slider, expected] of [[0, 0], [50, 0.5], [100, 1], [150, 1], [-10, 0]]) {
-    const payload = buildDirectRouteToolCall(origin, destination, { safety: 70, stairs: 40, intersection: slider }, "user-1");
-    assert.equal(payload.arguments.intersection_weight, expected);
+    const payload = buildDirectRouteToolCall(origin, destination, { safety: 70, stairs: 40, crossing: slider }, "user-1");
+    assert.equal(payload.arguments.crossing_weight, expected);
     assert.equal(payload.arguments.stairs_weight, 0.4);
     assert.equal("slope_weight" in payload.arguments, false);
-    const preference = payload.arguments.preferences.find((p) => p.factor === "intersection_distance_m");
+    const preference = payload.arguments.preferences.find((p) => p.factor === "crosswalk_count");
     assert.equal(preference?.weight ?? 0, expected * 100);
   }
 });
@@ -263,51 +246,51 @@ test("editing a text location uses the place resolver", async () => {
   assert.equal(requestedName, "주안역");
 });
 
-test("a shortest recommendation is compared with the safe route", () => {
+test("a shortest recommendation is compared with the custom route", () => {
   const displayed = selectDisplayedCandidates(
-    [candidate("shortest"), candidate("balanced"), candidate("safe")],
+    [candidate("shortest"), candidate("balanced"), candidate("custom")],
     "shortest",
   );
-  assert.deepEqual(displayed.map((item) => item.label), ["추천 경로", "안전 경로"]);
-  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["shortest", "safe"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["최단 경로", "맞춤 경로"]);
+  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["shortest", "custom"]);
 });
 
 test("a non-shortest recommendation is compared with the shortest route", () => {
   const displayed = selectDisplayedCandidates(
-    [candidate("shortest"), candidate("balanced"), candidate("safe")],
-    "safe",
+    [candidate("shortest"), candidate("balanced"), candidate("custom")],
+    "custom",
   );
-  assert.deepEqual(displayed.map((item) => item.label), ["추천 경로", "최단 경로"]);
-  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["safe", "shortest"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["맞춤 경로", "최단 경로"]);
+  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["custom", "shortest"]);
 });
 
 test("identical segment sequences are displayed only once", () => {
   const shortest = candidate("shortest");
-  const safe = candidate("safe");
+  const safe = candidate("custom");
   safe.route.properties.road_segments = shortest.route.properties.road_segments;
 
   const displayed = selectDisplayedCandidates([shortest, candidate("balanced"), safe], "shortest");
 
-  assert.deepEqual(displayed.map((item) => item.label), ["추천 경로"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["최단 경로"]);
 });
 
-test("a safe alternative is used when recommendation and shortest are the same route", () => {
+test("a custom alternative is used when recommendation and shortest are the same route", () => {
   const shortest = candidate("shortest");
   const balanced = candidate("balanced");
   balanced.route.properties.road_segments = shortest.route.properties.road_segments;
 
   const displayed = selectDisplayedCandidates(
-    [shortest, balanced, candidate("safe")],
+    [shortest, balanced, candidate("custom")],
     "balanced",
   );
 
-  assert.deepEqual(displayed.map((item) => item.label), ["추천 경로", "안전 경로"]);
-  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["balanced", "safe"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["맞춤 경로", "맞춤 경로"]);
+  assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["balanced", "custom"]);
 });
 
 test("geometry is the fallback identity when segment metadata is absent", () => {
   const shortest = candidate("shortest");
-  const safe = candidate("safe");
+  const safe = candidate("custom");
   delete shortest.route.properties.road_segments;
   delete safe.route.properties.road_segments;
   safe.route.geometry.coordinates = shortest.route.geometry.coordinates;

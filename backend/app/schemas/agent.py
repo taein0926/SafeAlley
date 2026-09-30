@@ -32,7 +32,8 @@ class RouteOptimizationArguments(BaseModel):
     source: str | None = Field(default=None, min_length=1, max_length=32)
     user_id: str | None = Field(default=None, min_length=1, max_length=128)
     stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)  # legacy API only
+    crossing_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     preferences: list[RoutePreference] = Field(default_factory=list, max_length=20)
 
     @field_validator("preferences")
@@ -62,7 +63,7 @@ class UnsupportedPreference(BaseModel):
 
 
 class RouteCandidate(BaseModel):
-    route_type: Literal["shortest", "balanced", "safe"]
+    route_type: Literal["shortest", "balanced", "safe", "custom"]
     preference_score: float | None
     metrics: dict[str, float | None]
     route: RouteFeature
@@ -80,13 +81,13 @@ class RecommendationCriterion(BaseModel):
 class AgentExecutionResponse(BaseModel):
     tool_call: AgentToolCall
     recommendation_id: str | None = None
-    selected_route_type: Literal["shortest", "balanced", "safe"] | None
+    selected_route_type: Literal["shortest", "balanced", "safe", "custom"] | None
     selected_route: RouteFeature | None
     recommendation_status: Literal["ready", "field_review_required", "no_supported_preferences"] = "ready"
     recommendation_reason: str | None = None
     recommendation_notes: list[str] = Field(default_factory=list)
-    recommendation_factors: list[Literal["distance", "safety", "stairs", "intersection"]] = Field(default_factory=list)
-    compared_route_type: Literal["shortest", "balanced", "safe"] | None = None
+    recommendation_factors: list[Literal["distance", "safety", "stairs", "crossing"]] = Field(default_factory=list)
+    compared_route_type: Literal["shortest", "balanced", "safe", "custom"] | None = None
     recommendation_criteria: list[RecommendationCriterion] = Field(default_factory=list)
     candidates: list[RouteCandidate]
     unsupported_preferences: list[UnsupportedPreference]
@@ -130,6 +131,7 @@ class ParsedRouteIntent(BaseModel):
             "user_id",
             "stairs_weight",
             "intersection_weight",
+            "crossing_weight",
         }
         invalid = reserved.intersection(factors)
         if invalid:
@@ -178,7 +180,7 @@ class RouteSelectionRequest(BaseModel):
 
     recommendation_id: str = Field(min_length=36, max_length=36)
     user_id: str = Field(min_length=1, max_length=128)
-    selected_route_type: Literal["shortest", "balanced", "safe"]
+    selected_route_type: Literal["shortest", "balanced", "safe", "custom"]
 
 
 class LearnedRoutePreference(BaseModel):
@@ -189,5 +191,5 @@ class LearnedRoutePreference(BaseModel):
 
 class RouteSelectionResponse(BaseModel):
     recommendation_id: str
-    selected_route_type: Literal["shortest", "balanced", "safe"]
+    selected_route_type: Literal["shortest", "balanced", "safe", "custom"]
     preferences: list[LearnedRoutePreference]

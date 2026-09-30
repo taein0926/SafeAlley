@@ -81,8 +81,9 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         extractor=lambda route: _segment_weighted_average(route, "cctv_score"),
     ),
     "crosswalk_count": MetricDefinition(
-        description="Unique OSM crossing nodes traversed by the route",
-        extractor=lambda route: _property_number(route, "total_crosswalk_count"),
+        description="Distinct connected OSM crossing-way groups traversed; not nearby crossing points",
+        extractor=lambda route: _property_number(route, "total_crosswalk_count")
+        if _properties(route).get("crossing_data_available", True) else None,
     ),
     "intersection_distance_m": MetricDefinition(
         description="Ground-level distance near supplied intersection reference points, not a crossing count",

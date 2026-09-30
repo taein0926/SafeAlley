@@ -24,6 +24,7 @@ from app.services.route_service import (
 from app.services.tool_router import execute_tool_call
 from app.repositories.personalization_repository import PersonalizationRepositoryError
 from app.repositories.place_repository import (
+    PlaceAmbiguousError,
     PlaceNotFoundError,
     PlaceRepositoryError,
 )
@@ -72,6 +73,8 @@ def query_agent(request: NaturalLanguageQueryRequest) -> NaturalLanguageQueryRes
         try:
             resolved_origin = resolve_place(interpretation.origin_name)
             resolved_destination = resolve_place(interpretation.destination_name)
+        except PlaceAmbiguousError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PlaceNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PlaceRepositoryError as exc:

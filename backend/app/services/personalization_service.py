@@ -15,7 +15,6 @@ LEARNABLE_DIRECTIONS = {
     "cctv_score": "maximize",
     "crosswalk_count": "minimize",
     "stairs_distance_m": "minimize",
-    "intersection_distance_m": "minimize",
     "sidewalk_coverage_percent": "maximize",
     "max_slope_percent": "minimize",
 }

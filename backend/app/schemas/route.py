@@ -60,6 +60,10 @@ class RouteRoadSegment(BaseModel):
     distance_factor: float
     risk_factor: float
     stairs_penalty: float = 0.0
+    crossing_group: int | None = None
+    crossing_penalty: float = 0.0
+    pedestrian_penalty: float = 0.0
+    centreline_fallback: bool = False
     intersection_penalty: float = 0.0
     intersection_exposure_m: float = 0.0
     grade_separated: bool = False
@@ -72,10 +76,11 @@ class RouteCostWeights(BaseModel):
     risk: float
     stairs: float = 0.0
     intersection: float = 0.0
+    crossing: float = 0.0
 
 
 class RouteProperties(BaseModel):
-    route_type: Literal["shortest", "balanced", "safe"]
+    route_type: Literal["shortest", "balanced", "safe", "custom"]
     crs: Literal["EPSG:4326"]
     total_distance: float
     total_distance_m: float
@@ -89,6 +94,12 @@ class RouteProperties(BaseModel):
     start_snap_distance_m: float
     end_snap_distance_m: float
     total_crosswalk_count: int = 0
+    crossing_data_available: bool = False
+    pedestrian_metadata_coverage_percent: float = 0.0
+    centreline_fallback_distance_m: float = 0.0
+    crossing_baseline_distance_m: float | None = None
+    crossing_distance_limit_m: float | None = None
+    crossing_detour_limited: bool = False
     stairs_distance_m: float = 0
     intersection_distance_m: float = 0
     pedestrian_bridge_count: int = 0

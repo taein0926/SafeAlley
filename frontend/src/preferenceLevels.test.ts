@@ -21,9 +21,9 @@ test("low/medium/high preserve existing route API weights", () => {
     category: null, address: null, source: "test" };
   for (const { value } of PREFERENCE_LEVELS) {
     const { arguments: args } = buildDirectRouteToolCall(place, place,
-      { safety: value, stairs: value, intersection: value }, "test", "22:00");
+      { safety: value, stairs: value, crossing: value }, "test", "22:00");
     assert.equal(args.stairs_weight, value / 100);
-    assert.equal(args.intersection_weight, value / 100);
+    assert.equal(args.crossing_weight, value / 100);
     assert.equal(args.preferences.find((p) => p.factor === "safety_score")?.weight ?? 0, value);
     assert.equal(args.preferences.find((p) => p.factor === "distance_m")?.weight ?? 0, 100 - value);
     assert.equal(args.departure_time, "22:00");

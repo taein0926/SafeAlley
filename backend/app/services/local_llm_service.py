@@ -27,13 +27,15 @@ SYSTEM_PROMPT = """한국어 보행 요청을 JSON으로만 추출한다. 좌표
 시각이 없으면 departure_time은 반드시 null이다. 00:00:00이나 현재 시각을 만들어 넣지 않는다.
 조건은 preferences의 factor/direction으로 모두 보존한다. 요청하지 않은 조건은 만들지 않는다.
 factor: 최단/거리=distance_m, 안전=safety_score, 조명/가로등=streetlight_score,
-CCTV=cctv_score, 횡단보도=crosswalk_count, 계단=stairs_distance_m,
-교차로=intersection_distance_m, 보도=sidewalk_coverage_percent,
+CCTV=cctv_score, 건널목/횡단보도=crosswalk_count, 계단=stairs_distance_m,
+보도/인도=sidewalk_coverage_percent,
 경사/평지/완만한 길=max_slope_percent, 경찰서 접근성=police_accessibility.
 미지원 조건도 snake_case factor로 보존한다. flatness는 쓰지 않는다.
 direction: 적게/짧게/평지=minimize, 많게/밝게/안전하게=maximize, 없이/피해/없는 길=avoid.
 각 조건에 인접한 수식어를 적용: 횡단보도는 적고 CCTV가 많은=각각 minimize, maximize.
-계단 적게=minimize, 계단 없이=avoid. 시간/장소/profile은 factor가 아니다.
+계단 적게=minimize, 계단 없이=avoid. 건널목/횡단보도 회피·가급적 피해=minimize,
+건널목/횡단보도 없이·절대 건너지 않기=avoid. 여기서 건널목은 철도가 아닌 보행 횡단보도다.
+시간/장소/profile은 factor가 아니다.
 중요도가 명시된 경우만 weight(0.1~100)를 출력한다. 기본값 1은 생략한다.
 profile은 서버가 pedestrian으로 채우므로 생략한다. 문장에 없는 장소는 null이다.
 공백/설명 없이 최소 JSON을 출력하되 명시된 조건은 절대 생략하지 않는다.
@@ -90,6 +92,19 @@ def _preserve_explicit_no_stairs(query: str, intent: ParsedRouteIntent) -> None:
         intent.preferences.append(
             RoutePreference(factor="stairs_distance_m", direction="avoid", weight=1)
         )
+
+
+def _preserve_crossing_preference(query: str, intent: ParsedRouteIntent) -> None:
+    match = re.search(r"(?:건널목|횡단보도)(?:은|는|을|를|가|이)?\s*(없이|없는|적게|적은|최소|회피|피해|피하|가급적)", query)
+    if not match:
+        return
+    direction = "avoid" if match.group(1) in {"없이", "없는"} else "minimize"
+    for preference in intent.preferences:
+        if preference.factor == "crosswalk_count":
+            preference.direction = direction
+            return
+    if len(intent.preferences) < 20:
+        intent.preferences.append(RoutePreference(factor="crosswalk_count", direction=direction))
 
 
 def _preserve_explicit_flat_ground(query: str, intent: ParsedRouteIntent) -> None:
@@ -207,6 +222,7 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             intent = ParsedRouteIntent.model_validate_json(content)
             _correct_explicit_pm_time(query, intent)
             _preserve_explicit_no_stairs(query, intent)
+            _preserve_crossing_preference(query, intent)
             _preserve_explicit_flat_ground(query, intent)
             _validate_query_semantics(query, intent)
             return intent

@@ -10,14 +10,14 @@ from app.services.weather_service import RouteTimeContext
 
 
 @pytest.fixture(autouse=True)
-def balanced_route_candidate(monkeypatch) -> None:
+def custom_route_candidate(monkeypatch) -> None:
     monkeypatch.setattr(route_ranking_service, "resolve_route_time", lambda departure: RouteTimeContext(
         departure or time(14), (departure or time(14)) >= time(20) or (departure or time(14)) < time(6), "fallback",
     ))
     monkeypatch.setattr(route_ranking_service, "prepare_route", lambda **_: None)
     monkeypatch.setattr(
         route_ranking_service,
-        "get_balanced_route",
+        "get_custom_route",
         lambda **_: _route("balanced", 115, 55),
     )
 
@@ -74,6 +74,36 @@ def _arguments(
     )
 
 
+@pytest.mark.parametrize("direction, expected", [("minimize", "custom"), ("avoid", None)])
+def test_partial_crossing_cost_is_usable_but_never_claims_hard_avoidance(monkeypatch, direction, expected):
+    shortest = _route("shortest", 100, 20)
+    custom = _route("custom", 110, 20)
+    for route in (shortest, custom):
+        route["properties"].update(crossing_data_available=False, pedestrian_metadata_coverage_percent=100)
+    custom["properties"]["cost_weights"]["crossing"] = 1
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "crosswalk_count", "direction": direction, "weight": 1},
+    ]))
+    assert result["selected_route_type"] == expected
+    assert all(c["metrics"]["crosswalk_count"] is None for c in result["candidates"])
+    if expected:
+        assert result["recommendation_factors"] == ["crossing"]
+        assert "확인할 수 없어요" in result["recommendation_reason"]
+
+
+def test_daytime_secondary_safety_reason_does_not_claim_streetlight_usage(monkeypatch):
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: _route("custom", 110, 90))
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "distance_m", "direction": "minimize", "weight": 50},
+        {"factor": "safety_score", "direction": "maximize", "weight": 50},
+    ], departure_time="12:00:00"))
+    assert "가로등" not in result["recommendation_reason"]
+    assert "CCTV·도움시설" in result["recommendation_reason"]
+
+
 def test_ranking_combines_registered_metrics(monkeypatch) -> None:
     monkeypatch.setattr(
         route_ranking_service,
@@ -82,8 +112,8 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         route_ranking_service,
-        "get_safe_route",
-        lambda **_: _route("safe", 130, 90),
+        "get_custom_route",
+        lambda **_: _route("custom", 130, 90),
     )
 
     result = route_ranking_service.rank_route_candidates(
@@ -95,18 +125,18 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
         )
     )
 
-    assert result["selected_route_type"] == "safe"
+    assert result["selected_route_type"] == "custom"
     assert result["unsupported_preferences"] == []
     assert "가로등과의 거리·주변 밀도·가로등이 드문 구간" in result["recommendation_reason"]
-    assert "균형 길보다 조건이 좋아" in result["recommendation_reason"]
-    assert "균형 길보다 약 15m 더 걸어요" in result["recommendation_reason"]
-    assert result["compared_route_type"] == "balanced"
+    assert "최단 경로보다 조건이 좋아" in result["recommendation_reason"]
+    assert "최단 경로보다 약 30m 더 걸어요" in result["recommendation_reason"]
+    assert result["compared_route_type"] == "shortest"
     criteria = {item["factor"]: item for item in result["recommendation_criteria"]}
     assert criteria["streetlight_score"]["outcome"] == "better"
     assert criteria["streetlight_score"]["confidence"] == "medium"
     assert criteria["distance_m"]["outcome"] == "worse"
     assert criteria["distance_m"]["confidence"] == "high"
-    assert any("추천 경로 130m, 균형 길 115m" in note
+    assert any("추천 경로 130m, 최단 경로 100m" in note
                for note in result["recommendation_notes"])
     assert any("실제 치안" in note for note in result["recommendation_notes"])
 
@@ -114,18 +144,18 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
 def test_cctv_explanation_uses_plain_language_without_claiming_device_count(monkeypatch) -> None:
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: _route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route",
-                        lambda **_: _route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route",
+                        lambda **_: _route("custom", 130, 90))
 
     result = route_ranking_service.rank_route_candidates(
         _arguments([{"factor": "cctv_score", "direction": "maximize", "weight": 1}])
     )
 
     reason = result["recommendation_reason"]
-    assert result["selected_route_type"] == "safe"
+    assert result["selected_route_type"] == "custom"
     assert "CCTV와의 거리·주변 밀도·CCTV가 드문 구간" in reason
-    assert "균형 길보다 조건이 좋아" in reason
-    assert "균형 길보다 약 15m 더 걸어요" in reason
+    assert "최단 경로보다 조건이 좋아" in reason
+    assert "최단 경로보다 약 30m 더 걸어요" in reason
     assert "더 안전" not in reason
     assert "지표" not in reason
     assert "CCTV가 더 많" not in reason
@@ -136,9 +166,9 @@ def test_explanation_does_not_compare_with_excluded_route_or_exaggerate_small_ga
     excluded["properties"]["unverified_major_road_count"] = 5
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: _route("shortest", 1292.5, 45))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route",
-                        lambda **_: _route("safe", 1296.77, 48))
-    monkeypatch.setattr(route_ranking_service, "get_balanced_route", lambda **_: excluded)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route",
+                        lambda **_: _route("custom", 1296.77, 48))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: excluded)
 
     result = route_ranking_service.rank_route_candidates(
         _arguments([{"factor": "distance_m", "direction": "minimize", "weight": 1}])
@@ -147,12 +177,11 @@ def test_explanation_does_not_compare_with_excluded_route_or_exaggerate_small_ga
     assert result["recommendation_status"] == "ready"
     assert result["selected_route_type"] == "shortest"
     assert result["recommendation_reason"] == (
-        "거리를 우선해 약 1.29km 길을 골랐어요. "
-        "안전지표 우선 길과의 거리 차이는 약 4m로 거의 같아요."
+        "거리를 우선해 약 1.29km 길을 골랐어요."
+
     )
     assert any("다른 길 1개" in note for note in result["recommendation_notes"])
-    assert any("추천 경로 1292.5m, 안전지표 우선 길 1296.8m" in note
-               for note in result["recommendation_notes"])
+    assert result["compared_route_type"] is None
     assert all("1959" not in text and "100점" not in text
                for text in [result["recommendation_reason"], *result["recommendation_notes"]])
 
@@ -165,8 +194,8 @@ def test_unknown_metrics_are_reported_without_substitution(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         route_ranking_service,
-        "get_safe_route",
-        lambda **_: _route("safe", 130, 90),
+        "get_custom_route",
+        lambda **_: _route("custom", 130, 90),
     )
 
     result = route_ranking_service.rank_route_candidates(
@@ -199,10 +228,10 @@ def test_registered_metric_without_candidate_data_is_not_scored() -> None:
             "route": _route("shortest", 100, 20),
         },
         {
-            "route_type": "safe",
+            "route_type": "custom",
             "preference_score": None,
             "metrics": {"streetlight_score": 80.0},
-            "route": _route("safe", 120, 80),
+            "route": _route("custom", 120, 80),
         },
     ]
 
@@ -222,9 +251,9 @@ def test_avoid_stairs_is_a_hard_constraint() -> None:
         {"route_type": "shortest", "preference_score": None,
          "metrics": {"distance_m": 100, "stairs_distance_m": 20},
          "route": _route("shortest", 100, 50)},
-        {"route_type": "safe", "preference_score": None,
+        {"route_type": "custom", "preference_score": None,
          "metrics": {"distance_m": 150, "stairs_distance_m": 0},
-         "route": _route("safe", 150, 50)},
+         "route": _route("custom", 150, 50)},
     ]
     selected, unsupported = route_ranking_service.rank_generated_candidates(
         candidates,
@@ -232,7 +261,7 @@ def test_avoid_stairs_is_a_hard_constraint() -> None:
          RoutePreference(factor="distance_m", direction="minimize")],
     )
     assert unsupported == []
-    assert selected["route_type"] == "safe"
+    assert selected["route_type"] == "custom"
     assert candidates[0]["preference_score"] is None
 
 
@@ -241,7 +270,7 @@ def test_equal_step_free_candidates_choose_shortest_and_explain_tie() -> None:
         {"route_type": route_type, "preference_score": None,
          "metrics": {"distance_m": distance, "stairs_distance_m": 0},
          "route": _route(route_type, distance, 50)}
-        for route_type, distance in (("shortest", 100), ("safe", 105))
+        for route_type, distance in (("shortest", 100), ("custom", 105))
     ]
     preference = RoutePreference(factor="stairs_distance_m", direction="avoid")
 
@@ -262,7 +291,7 @@ def test_equal_step_free_candidates_choose_shortest_and_explain_tie() -> None:
 @pytest.mark.parametrize(
     ("factor", "expected"),
     [
-        ("crosswalk_count", "지도 자료상 횡단보도 수가 0개여서"),
+        ("crosswalk_count", "지도 자료상 건널목 수가 0개여서"),
         ("sidewalk_coverage_percent", "확인된 보행공간 비율이 0%여서"),
     ],
 )
@@ -273,7 +302,7 @@ def test_equal_zero_metrics_are_not_claimed_as_ranking_advantages(
         {"route_type": route_type, "preference_score": None,
          "metrics": {"distance_m": distance, factor: 0},
          "route": _route(route_type, distance, 50)}
-        for route_type, distance in (("shortest", 100), ("safe", 105))
+        for route_type, distance in (("shortest", 100), ("custom", 105))
     ]
     preference = RoutePreference(
         factor=factor,
@@ -308,7 +337,7 @@ def test_cctv_and_stairs_explanation_mentions_step_free_tie() -> None:
                      "stairs_distance_m": 0},
          "route": _route(route_type, distance, score)}
         for route_type, distance, score in (
-            ("shortest", 100, 20), ("safe", 130, 90)
+            ("shortest", 100, 20), ("custom", 130, 90)
         )
     ]
     preferences = [
@@ -328,7 +357,7 @@ def test_cctv_and_stairs_explanation_mentions_step_free_tie() -> None:
     notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )[1]
-    assert any("계단 구간: 추천 경로 0m, 빠른 길 0m" in note for note in notes)
+    assert any("계단 구간: 추천 경로 0m, 최단 경로 0m" in note for note in notes)
     assert any("현장에 계단이 없음을 보장하지 않습니다" in note for note in notes)
 
 
@@ -338,7 +367,7 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
          "metrics": {"distance_m": distance, "cctv_score": score},
          "route": _route(route_type, distance, score)}
         for route_type, distance, score in (
-            ("shortest", 100, 20), ("safe", 130, 90)
+            ("shortest", 100, 20), ("custom", 130, 90)
         )
     ]
     preferences = [
@@ -353,9 +382,9 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
     reason, notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )
-    assert "다만 CCTV와의 거리·주변 밀도·분포 공백만 보면 안전지표 우선 길이 더 유리해요" in reason
+    assert "다만 CCTV와의 거리·주변 밀도·분포 공백만 보면 맞춤 경로이 더 유리해요" in reason
     assert "이 길이 더 유리" not in reason
-    assert any("CCTV와의 거리·주변 밀도·분포 공백: 안전지표 우선 길이 더 유리합니다" in note
+    assert any("CCTV와의 거리·주변 밀도·분포 공백: 맞춤 경로이 더 유리합니다" in note
                for note in notes)
 
 
@@ -364,8 +393,8 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
     [
         ("stairs_distance_m", 0, 18, "계단 구간은 다른 길보다 약 18m 짧아요"),
         (
-            "intersection_distance_m", 25, 60,
-            "교차로 주변으로 추정된 구간은 다른 길보다 약 35m 짧아요",
+            "crosswalk_count", 1, 2,
+            "지도에 기록된 건널목은 다른 길보다 1개 적어요",
         ),
         ("max_slope_percent", 2.5, 6.0, "최대 경사는 다른 길보다 3.5%p 낮아요"),
     ],
@@ -406,12 +435,12 @@ def test_proxy_evidence_explains_inputs_without_exposing_abstract_score() -> Non
 @pytest.mark.parametrize(
     ("factor", "selected_value", "other_value", "expected"),
     [
-        ("stairs_distance_m", 0, 18, "계단 구간이 안전지표 우선 길보다 약 18m 짧아"),
+        ("stairs_distance_m", 0, 18, "계단 구간이 맞춤 경로보다 약 18m 짧아"),
         (
-            "intersection_distance_m", 25, 60,
-            "교차로 주변으로 추정된 구간이 안전지표 우선 길보다 약 35m 짧아",
+            "crosswalk_count", 1, 2,
+            "지도에 기록된 건널목이 맞춤 경로보다 1개 적어",
         ),
-        ("max_slope_percent", 2.5, 6.0, "최대 경사가 안전지표 우선 길보다 3.5%p 낮아"),
+        ("max_slope_percent", 2.5, 6.0, "최대 경사가 맞춤 경로보다 3.5%p 낮아"),
     ],
 )
 def test_primary_accessibility_metric_uses_plain_comparison(
@@ -428,10 +457,10 @@ def test_primary_accessibility_metric_uses_plain_comparison(
             "route": _route("shortest", 110, 50),
         },
         {
-            "route_type": "safe",
+            "route_type": "custom",
             "preference_score": None,
             "metrics": {"distance_m": 100, factor: other_value},
-            "route": _route("safe", 100, 50),
+            "route": _route("custom", 100, 50),
         },
     ]
     preference = RoutePreference(factor=factor, direction="minimize")
@@ -454,7 +483,7 @@ def test_distance_primary_does_not_call_a_longer_route_nearly_equal() -> None:
                      "streetlight_score": score},
          "route": _route(route_type, distance, score)}
         for route_type, distance, score in (
-            ("shortest", 100, 20), ("safe", 130, 90)
+            ("shortest", 100, 20), ("custom", 130, 90)
         )
     ]
     preferences = [
@@ -517,8 +546,8 @@ def test_unvalidated_population_metric_is_not_exposed(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         route_ranking_service,
-        "get_safe_route",
-        lambda **_: _route("safe", 130, 90),
+        "get_custom_route",
+        lambda **_: _route("custom", 130, 90),
     )
 
     result = route_ranking_service.rank_route_candidates(
@@ -539,8 +568,8 @@ def test_night_default_policy_prefers_well_lit_safe_route(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         route_ranking_service,
-        "get_safe_route",
-        lambda **_: _route("safe", 130, 90),
+        "get_custom_route",
+        lambda **_: _route("custom", 130, 90),
     )
 
     day_result = route_ranking_service.rank_route_candidates(
@@ -551,12 +580,12 @@ def test_night_default_policy_prefers_well_lit_safe_route(monkeypatch) -> None:
     )
 
     assert day_result["selected_route_type"] == "shortest"
-    assert night_result["selected_route_type"] == "safe"
+    assert night_result["selected_route_type"] == "custom"
 
 
 def test_daytime_ignores_even_explicit_streetlight_preference(monkeypatch):
     monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: _route("custom", 130, 90))
     result = route_ranking_service.rank_route_candidates(_arguments(
         [{"factor": "streetlight_score", "direction": "maximize", "weight": 100}],
         departure_time="14:00:00",
@@ -569,7 +598,7 @@ def test_daytime_ignores_even_explicit_streetlight_preference(monkeypatch):
 
 def test_daytime_safety_explanation_excludes_lighting(monkeypatch):
     monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: _route("custom", 130, 90))
     result = route_ranking_service.rank_route_candidates(_arguments(
         [{"factor": "safety_score", "direction": "maximize"}], departure_time="14:00:00",
     ))
@@ -583,9 +612,9 @@ def test_daytime_safety_explanation_excludes_lighting(monkeypatch):
 def test_solar_night_drives_ranking_before_the_old_20_hour_boundary(monkeypatch):
     monkeypatch.setattr(route_ranking_service, "resolve_route_time", lambda _: RouteTimeContext(time(19), True, "official_solar"))
     monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route", lambda **_: _route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: _route("custom", 130, 90))
     result = route_ranking_service.rank_route_candidates(_arguments([], departure_time="19:00:00"))
-    assert result["selected_route_type"] == "safe"
+    assert result["selected_route_type"] == "custom"
     assert any("밤 시간" in note for note in result["recommendation_notes"])
 
 
@@ -597,8 +626,8 @@ def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> 
     )
     monkeypatch.setattr(
         route_ranking_service,
-        "get_safe_route",
-        lambda **_: _route("safe", 130, 90),
+        "get_custom_route",
+        lambda **_: _route("custom", 130, 90),
     )
 
     response = TestClient(app).post(
@@ -621,8 +650,8 @@ def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> 
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["selected_route_type"] == "safe"
-    assert len(payload["candidates"]) == 3
+    assert payload["selected_route_type"] == "custom"
+    assert len(payload["candidates"]) == 2
     assert payload["recommendation_reason"]
     assert payload["recommendation_notes"]
 
@@ -635,17 +664,17 @@ def test_unverified_major_road_candidates_are_not_final_recommendations(monkeypa
 
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: unverified_route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_balanced_route",
+    monkeypatch.setattr(route_ranking_service, "get_custom_route",
                         lambda **_: unverified_route("balanced", 115, 55))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route",
-                        lambda **_: unverified_route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route",
+                        lambda **_: unverified_route("custom", 130, 90))
 
     result = route_ranking_service.rank_route_candidates(_arguments([]))
 
     assert result["selected_route_type"] is None
     assert result["selected_route"] is None
     assert result["recommendation_status"] == "field_review_required"
-    assert len(result["candidates"]) == 3
+    assert len(result["candidates"]) == 2
     assert "자동 추천을 보류" in result["recommendation_reason"]
     assert any("위험하다는 뜻은 아닙니다" in note for note in result["recommendation_notes"])
     assert result["recommendation_criteria"][0]["outcome"] == "unavailable"
@@ -655,8 +684,8 @@ def test_unverified_major_road_candidates_are_not_final_recommendations(monkeypa
 def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: _route("shortest", 100, 20))
-    monkeypatch.setattr(route_ranking_service, "get_safe_route",
-                        lambda **_: _route("safe", 130, 90))
+    monkeypatch.setattr(route_ranking_service, "get_custom_route",
+                        lambda **_: _route("custom", 130, 90))
 
     result = route_ranking_service.rank_route_candidates(
         _arguments([{"factor": "max_slope_percent", "direction": "minimize", "weight": 1}])
@@ -670,12 +699,12 @@ def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:
 
 def test_reviewed_candidate_can_be_selected_over_unverified_higher_score() -> None:
     reviewed = _route("shortest", 120, 40)
-    unverified = _route("safe", 100, 90)
+    unverified = _route("custom", 100, 90)
     unverified["properties"]["unverified_major_road_count"] = 1
     candidates = [
         {"route_type": "shortest", "preference_score": None,
          "metrics": {"safety_score": 40.0}, "route": reviewed},
-        {"route_type": "safe", "preference_score": None,
+        {"route_type": "custom", "preference_score": None,
          "metrics": {"safety_score": 90.0}, "route": unverified},
     ]
     selected, unsupported = route_ranking_service.rank_generated_candidates(

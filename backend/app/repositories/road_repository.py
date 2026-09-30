@@ -62,6 +62,10 @@ class RoutingRoadSegment:
     pedestrian_bridge_ids: tuple[str, ...] = ()
     pedestrian_reference_version: str | None = None
     help_point_score: float = 0.0
+    crossing_group: int | None = None
+    crossing_cost_units: float = 0.0
+    pedestrian_version: str | None = None
+    centreline_fallback: bool = False
 
 
 class RoadRepositoryError(RuntimeError):
@@ -166,6 +170,7 @@ def find_nearest_road_node(
             SELECT *
             FROM road_segments
             WHERE (%s::text IS NULL OR source = %s)
+              AND COALESCE((properties->'osm_pedestrian'->>'allowed')::boolean, true)
         ),
         node_candidates AS (
             SELECT source_node_id AS node_id, ST_StartPoint(geom) AS geom
@@ -223,8 +228,8 @@ def list_routing_road_segments(
             name,
             source_node_id,
             target_node_id,
-            forward_allowed,
-            reverse_allowed,
+            forward_allowed AND COALESCE((properties->'osm_pedestrian'->>'forward_allowed')::boolean, true) AS forward_allowed,
+            reverse_allowed AND COALESCE((properties->'osm_pedestrian'->>'reverse_allowed')::boolean, true) AS reverse_allowed,
             length_m,
             streetlight_score,
             cctv_score,
@@ -252,8 +257,13 @@ def list_routing_road_segments(
                 AS wheelchair,
             COALESCE(properties->>'handrail', properties->'osm_tags'->>'handrail')
                 AS handrail,
-            COALESCE((properties->>'sidewalk_confirmed')::boolean, false)
+            COALESCE((properties->'osm_pedestrian'->>'sidewalk_confirmed')::boolean,
+                     (properties->>'sidewalk_confirmed')::boolean, false)
                 AS sidewalk_confirmed,
+            (properties->'osm_pedestrian'->>'crossing_group')::bigint AS crossing_group,
+            COALESCE((properties->'osm_pedestrian'->>'crossing_cost_units')::float, 0) AS crossing_cost_units,
+            properties->'osm_pedestrian'->>'version' AS pedestrian_version,
+            COALESCE((properties->'osm_pedestrian'->>'centreline_fallback')::boolean, false) AS centreline_fallback,
             properties->>'walkability_class' AS walkability_class,
             COALESCE((properties->'pedestrian_reference'->>'intersection_exposure_m')::float, 0)
                 AS intersection_exposure_m,
@@ -274,6 +284,7 @@ def list_routing_road_segments(
             ST_AsGeoJSON(ST_Transform(geom, 4326), 9)::json AS geometry
         FROM road_segments
         WHERE (%s::text IS NULL OR source = %s)
+          AND COALESCE((properties->'osm_pedestrian'->>'allowed')::boolean, true)
         ORDER BY id
     """
 
@@ -305,6 +316,10 @@ def list_routing_road_segments(
             crossing_node_ids=tuple(int(value) for value in row["crossing_node_ids"]),
             is_steps=bool(row["is_steps"]),
             sidewalk_confirmed=bool(row["sidewalk_confirmed"]),
+            crossing_group=row["crossing_group"],
+            crossing_cost_units=float(row["crossing_cost_units"]),
+            pedestrian_version=row["pedestrian_version"],
+            centreline_fallback=bool(row["centreline_fallback"]),
             walkability_class=row["walkability_class"],
             field_status=row["field_status"],
             intersection_exposure_m=float(row["intersection_exposure_m"]),

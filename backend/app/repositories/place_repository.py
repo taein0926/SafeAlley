@@ -10,6 +10,10 @@ class PlaceNotFoundError(RuntimeError):
     """Raised when a place cannot be resolved inside the project area."""
 
 
+class PlaceAmbiguousError(ValueError):
+    """The caller must supply a more specific location before routing."""
+
+
 class PlaceRepositoryError(RuntimeError):
     """Raised when the local place index cannot be queried or updated."""
 

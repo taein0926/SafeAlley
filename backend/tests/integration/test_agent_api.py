@@ -9,7 +9,7 @@ from tests.integration.conftest import TEST_USER_ID
 client = TestClient(app)
 
 
-def test_selection_saves_intersection_preference_without_server_error():
+def test_selection_saves_crossing_preference_without_server_error():
     from uuid import uuid4
     from app.db.connection import connect_database
     from app.repositories.personalization_repository import save_recommendation
@@ -17,17 +17,17 @@ def test_selection_saves_intersection_preference_without_server_error():
     user = f"test-intersection-{uuid4()}"
     try:
         recommendation = save_recommendation(user, [
-            {"route_type": name, "metrics": {"intersection_distance_m": exposure}}
-            for name, exposure in [("shortest", 100), ("balanced", 50), ("safe", 0)]
+            {"route_type": name, "metrics": {"crosswalk_count": exposure}}
+            for name, exposure in [("shortest", 2), ("custom", 0)]
         ])
         response = client.post("/api/agent/route-selections", json={
             "recommendation_id": recommendation, "user_id": user,
-            "selected_route_type": "safe",
+            "selected_route_type": "custom",
         })
         assert response.status_code == 200
         learned = {p["factor"]: p for p in response.json()["preferences"]}
-        assert learned["intersection_distance_m"]["observations"] == 1
-        assert learned["intersection_distance_m"]["weight"] > 0.5
+        assert learned["crosswalk_count"]["observations"] == 1
+        assert learned["crosswalk_count"]["weight"] > 0.5
     finally:
         with connect_database() as connection:
             connection.execute("DELETE FROM route_selection_events WHERE user_id = %s", (user,))
@@ -59,8 +59,8 @@ def test_agent_ranks_routes_from_structured_output() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["selected_route_type"] == "safe"
-    assert len(payload["candidates"]) == 3
+    assert payload["selected_route_type"] == "custom"
+    assert len(payload["candidates"]) == 2
     assert payload["unsupported_preferences"] == []
 
 
@@ -84,14 +84,16 @@ def test_agent_propagates_stairs_weight_to_generated_routes() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert all(
-        candidate["route"]["properties"]["cost_weights"]["stairs"] == 1.0
+        candidate["route"]["properties"]["cost_weights"]["stairs"] == (1.0 if candidate["route_type"] == "custom" else 0.0)
         for candidate in payload["candidates"]
     )
     shortest = next(
         candidate for candidate in payload["candidates"]
         if candidate["route_type"] == "shortest"
     )
-    assert shortest["route"]["properties"]["stairs_segment_count"] == 0
+    assert shortest["route"]["properties"]["stairs_segment_count"] == 2
+    custom = next(c for c in payload["candidates"] if c["route_type"] == "custom")
+    assert custom["route"]["properties"]["stairs_segment_count"] == 0
 
 
 def test_agent_validates_stairs_weight_range() -> None:
@@ -185,7 +187,7 @@ def test_natural_language_query_uses_local_interpretation(monkeypatch) -> None:
     payload = response.json()
     assert payload["model"] == "qwen3:4b"
     assert payload["interpretation"]["departure_time"] == "22:00:00"
-    assert payload["result"]["selected_route_type"] == "safe"
+    assert payload["result"]["selected_route_type"] == "custom"
 
 
 def test_natural_language_query_does_not_fallback_when_llm_fails(monkeypatch) -> None:
@@ -258,7 +260,7 @@ def test_natural_language_query_resolves_place_names(monkeypatch) -> None:
     payload = response.json()
     assert payload["resolved_origin"]["name"] == "주안역"
     assert payload["resolved_destination"]["name"] == "인천사랑병원"
-    assert len(payload["result"]["candidates"]) == 3
+    assert len(payload["result"]["candidates"]) == 2
 
 
 def test_route_selection_updates_server_side_preferences() -> None:
@@ -279,14 +281,14 @@ def test_route_selection_updates_server_side_preferences() -> None:
     assert recommendation.status_code == 200
     payload = recommendation.json()
     assert payload["recommendation_id"] is not None
-    assert len(payload["candidates"]) == 3
+    assert len(payload["candidates"]) == 2
 
     selection = client.post(
         "/api/agent/route-selections",
         json={
             "recommendation_id": payload["recommendation_id"],
             "user_id": TEST_USER_ID,
-            "selected_route_type": "safe",
+            "selected_route_type": "custom",
         },
     )
 
@@ -305,7 +307,7 @@ def test_route_selection_updates_server_side_preferences() -> None:
 
     # Map and result-card clicks can change the choice for the same recommendation.
     # The existing unique recommendation record must be updated, not rejected.
-    for route_type in ["shortest", "balanced", "safe"]:
+    for route_type in ["shortest", "custom"]:
         changed = client.post("/api/agent/route-selections", json={
             "recommendation_id": payload["recommendation_id"],
             "user_id": TEST_USER_ID,
@@ -334,7 +336,7 @@ def test_route_selection_rejects_another_user() -> None:
         json={
             "recommendation_id": recommendation["recommendation_id"],
             "user_id": "another-user",
-            "selected_route_type": "safe",
+            "selected_route_type": "custom",
         },
     )
 

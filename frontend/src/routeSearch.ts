@@ -9,7 +9,7 @@ import type {
 export type DirectSearchWeights = {
   safety: number;
   stairs: number;
-  intersection?: number;
+  crossing?: number;
 };
 
 export type DirectLocationInput = {
@@ -20,25 +20,6 @@ export type DirectLocationInput = {
   category?: string;
   address?: string | null;
 };
-
-export function helpPointRouteLocation(
-  properties: Record<string, unknown>,
-  coordinates: readonly number[],
-): DirectLocationInput | null {
-  const [longitude, latitude] = coordinates;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-      Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-  const name = typeof properties.name === "string" ? properties.name.trim() : "";
-  const address = typeof properties.address === "string" ? properties.address.trim() : "";
-  return {
-    displayName: name || address || "안전지원시설",
-    source: "map",
-    latitude,
-    longitude,
-    category: typeof properties.category === "string" ? properties.category : "help_point",
-    address: address || null,
-  };
-}
 
 export type BuildingMapSelection = {
   displayName: string | null;
@@ -76,7 +57,7 @@ export type RouteSearchResult = {
 
 export type DisplayedRouteCandidate = {
   candidate: RouteCandidate;
-  label: "추천 경로" | "최단 경로" | "안전 경로";
+  label: "추천 경로" | "최단 경로" | "맞춤 경로";
 };
 
 export function criterionOutcomeLabel(
@@ -110,6 +91,13 @@ export function currentLocalTime(now = new Date()): string {
 }
 
 export const WALKING_SPEED_MPS = 1.2;
+
+// Registered route crossings only: incomplete OSM coverage must not imply a verified total.
+export function formatCrosswalkCount(count: number | null | undefined): string {
+  return typeof count === "number" && Number.isInteger(count) && count >= 0
+    ? `횡단보도 ${count}개(OSM)`
+    : "횡단보도 집계 없음";
+}
 
 // Display-only estimate, excluding traffic signals and individual walking pace.
 export function estimatedWalkingMinutes(distanceM: number): number | null {
@@ -162,9 +150,11 @@ export function buildDirectRouteToolCall(
   if (safety > 0) {
     preferences.push({ factor: "safety_score", direction: "maximize", weight: safety });
   }
-  const intersection = sliderToUnit(weights.intersection ?? 0);
-  if (intersection > 0) {
-    preferences.push({ factor: "intersection_distance_m", direction: "minimize", weight: intersection * 100 });
+  const stairs = sliderToUnit(weights.stairs);
+  if (stairs > 0) preferences.push({ factor: "stairs_distance_m", direction: "minimize", weight: stairs * 100 });
+  const crossing = sliderToUnit(weights.crossing ?? 0);
+  if (crossing > 0) {
+    preferences.push({ factor: "crosswalk_count", direction: "minimize", weight: crossing * 100 });
   }
 
   return {
@@ -177,7 +167,7 @@ export function buildDirectRouteToolCall(
       user_id: userId,
       departure_time: departureTime,
       stairs_weight: sliderToUnit(weights.stairs),
-      intersection_weight: intersection,
+      crossing_weight: crossing,
       preferences,
     },
   };
@@ -209,24 +199,24 @@ export function selectDisplayedCandidates(
   }
 
   if (!recommended) {
-    return unique((["shortest", "safe"] as RouteType[])
+    return unique((["shortest", "custom"] as RouteType[])
       .map((type) => byType.get(type))
       .filter((candidate): candidate is RouteCandidate => candidate !== undefined)
       .map((candidate) => ({
         candidate,
-        label: candidate.route_type === "shortest" ? "최단 경로" : "안전 경로",
+        label: candidate.route_type === "shortest" ? "최단 경로" : "맞춤 경로",
       })));
   }
 
-  const primary: DisplayedRouteCandidate = { candidate: recommended, label: "추천 경로" };
+  const primary: DisplayedRouteCandidate = { candidate: recommended, label: recommended.route_type === "shortest" ? "최단 경로" : "맞춤 경로" };
   const shortest = byType.get("shortest");
   if (shortest && identity(shortest) !== identity(recommended)) {
     return [primary, { candidate: shortest, label: "최단 경로" }];
   }
 
-  const safe = byType.get("safe");
+  const safe = byType.get("custom");
   return unique([
     primary,
-    ...(safe ? [{ candidate: safe, label: "안전 경로" } as DisplayedRouteCandidate] : []),
+    ...(safe ? [{ candidate: safe, label: "맞춤 경로" } as DisplayedRouteCandidate] : []),
   ]);
 }

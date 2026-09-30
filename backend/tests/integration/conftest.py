@@ -77,6 +77,7 @@ def isolated_test_road_graph():
                             'safety_data_status', 'streetlight-test-v1',
                             'walkability_factor', 1.0,
                             'sidewalk_confirmed', TRUE,
+                            'osm_pedestrian', jsonb_build_object('version', 'test-known-v1', 'allowed', true, 'sidewalk_confirmed', true),
                             'field_status', 'verified_walkable'
                         )
                     FROM transformed

@@ -1,4 +1,4 @@
-export type RouteType = "shortest" | "balanced" | "safe";
+export type RouteType = "shortest" | "balanced" | "safe" | "custom";
 
 export type RouteGeometry = {
   type: "LineString";
@@ -39,6 +39,8 @@ export type RouteCandidate = {
       streetlight_included?: boolean;
       stairs_segment_count: number;
       total_crosswalk_count: number;
+      crossing_data_available?: boolean;
+      crossing_detour_limited?: boolean;
       stairs_distance_m: number;
       intersection_distance_m?: number;
       pedestrian_bridge_count?: number;
@@ -100,7 +102,7 @@ export type RouteQueryResponse = {
     recommendation_status: "ready" | "field_review_required" | "no_supported_preferences";
     recommendation_reason: string | null;
     recommendation_notes: string[];
-    recommendation_factors?: Array<"distance" | "safety" | "stairs" | "intersection">;
+    recommendation_factors?: Array<"distance" | "safety" | "stairs" | "crossing">;
     compared_route_type: RouteType | null;
     recommendation_criteria: RecommendationCriterion[];
     candidates: RouteCandidate[];

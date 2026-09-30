@@ -15,10 +15,10 @@ def test_candidates_reuse_graph_without_changing_routes(stairs, intersection):
         departure_time="14:00:00",
     )
     kwargs = route_ranking_service._route_arguments(arguments)
-    shortest = route_service.get_shortest_route(**kwargs)
-    safe = route_service.get_safe_route(**kwargs)
-    used = {s["id"] for r in (shortest, safe) for s in r["properties"]["road_segments"]}
-    balanced = route_service.get_balanced_route(**kwargs, penalized_segment_ids=used)
+    shortest = route_service.get_shortest_route(**{**kwargs, "stairs_weight": 0, "intersection_weight": 0})
+    context = route_service.prepare_route(**{k:v for k,v in kwargs.items() if k not in {"stairs_weight", "intersection_weight", "departure_time"}})
+    time_context = route_ranking_service.resolve_route_time(arguments.departure_time)
+    custom = route_service.get_custom_route(**kwargs, prepared=context, time_context=time_context, preferences=[])
     with (
         patch.object(route_service, "list_routing_road_segments", wraps=route_service.list_routing_road_segments) as roads,
         patch.object(route_service, "_build_graph", wraps=route_service._build_graph) as build,
@@ -26,7 +26,7 @@ def test_candidates_reuse_graph_without_changing_routes(stairs, intersection):
     ):
         for request_number in range(1, 3):
             actual = route_ranking_service.generate_route_candidates(arguments)
-            assert [c["route"] for c in actual] == [shortest, balanced, safe]
+            assert [c["route"] for c in actual] == [shortest, custom]
             assert roads.call_count == request_number
             assert build.call_count == request_number
             assert snap.call_count == request_number * 2

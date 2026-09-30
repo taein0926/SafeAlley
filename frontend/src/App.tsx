@@ -21,9 +21,8 @@ import {
 import {
   buildDirectRouteToolCall,
   currentLocalTime,
-  criterionOutcomeLabel,
-  selectComparableCriteria,
   estimatedWalkingMinutes,
+  formatCrosswalkCount,
   isValidDepartureTime,
   resolveBuildingLocation,
   resolveDirectLocation,
@@ -115,11 +114,11 @@ function App() {
   const [searchPanelOpen, setSearchPanelOpen] = useState(true);
   const [safetyWeight, setSafetyWeight] = useState(50);
   const [stairsWeight, setStairsWeight] = useState(50);
-  const [intersectionWeight, setIntersectionWeight] = useState(50);
+  const [crossingWeight, setCrossingWeight] = useState(50);
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState(
-    "밤 10시에 인천사랑병원에서 석암초등학교까지 밝은 길로 안내해줘. 다리 다쳐서 계단은 싫어.",
+    "밤 10시에 정부인천지방합동청사에서 두리하나어린이집까지 계단은 피하고 가로등이 많은 길로 안내해줘.",
   );
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -170,7 +169,6 @@ function App() {
   const selectedCandidate = routeCandidates.find(
     (candidate) => candidate.route_type === selectedRouteType,
   );
-  const comparableCriteria = selectComparableCriteria(searchResult?.result.recommendation_criteria ?? []);
   const displayedCandidates = useMemo(() => searchResult
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
@@ -241,25 +239,9 @@ function App() {
       void handleBuildingSelect(mapInfo.buildingSelection, target);
       return;
     }
-    if (mapInfo?.kind !== "help_point" || !mapInfo.routeLocation) return;
-    setResultPanelOpen(false);
-    ++buildingRequestSerial.current;
-    setBuildingSelectionPending(false);
-    setMode("direct");
-    setSearchPanelOpen(true);
-    if (target === "origin") setOriginLocation(mapInfo.routeLocation);
-    else setDestinationLocation(mapInfo.routeLocation);
-    setBuildingSelectionMode(null);
-    setMapInfo(null);
-    setMapSelectionNotice({
-      kind: "success",
-      text: `${target === "origin" ? "출발지" : "도착지"} 시설을 선택했습니다.`,
-    });
   }
 
-  const mapInfoLocationAvailable = mapInfo?.kind === "building"
-    ? Boolean(mapInfo.buildingSelection)
-    : mapInfo?.kind === "help_point" && Boolean(mapInfo.routeLocation);
+  const mapInfoLocationAvailable = mapInfo?.kind === "building" && Boolean(mapInfo.buildingSelection);
 
   function toggleBuildingSelection(target: Exclude<BuildingSelectionMode, null>) {
     ++buildingRequestSerial.current;
@@ -334,7 +316,7 @@ function App() {
         body: JSON.stringify(buildDirectRouteToolCall(
           origin,
           destination,
-          { safety: safetyWeight, stairs: stairsWeight, intersection: intersectionWeight },
+          { safety: safetyWeight, stairs: stairsWeight, crossing: crossingWeight },
           userId,
           departureTime,
         )),
@@ -421,6 +403,7 @@ function App() {
         draftLocations={draftLocations}
         onMapInfoChange={handleMapInfoChange}
         nightMode={nightMode}
+        onResetView={() => setRouteDetailOpen(false)}
       />
       </div>
 
@@ -478,8 +461,7 @@ function App() {
           <WeatherHud {...weather} />
         </div>
       </header>
-      <div className="sidebar-scroll" key={showRouteResults ? "results" : "search"}>
-      {!showRouteResults && (
+      <div className="sidebar-scroll">
       <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
         <div className="segmented-control" role="tablist" aria-label="검색 방식">
           <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
@@ -489,9 +471,9 @@ function App() {
         {mode === "direct" ? (
           <form className="route-form" onSubmit={searchDirect}>
             <div className="place-inputs">
-              <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeMarkerImage("origin")} width="24" height="24" alt="" aria-hidden="true" /></button></div>
+              <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeMarkerImage("origin")} width="32" height="40" alt="" aria-hidden="true" /></button></div>
               <i aria-hidden="true" />
-              <div className="location-input"><input aria-label="도착지" value={destinationLocation.displayName} placeholder="도착지" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}><img src={routeMarkerImage("destination")} width="24" height="24" alt="" aria-hidden="true" /></button></div>
+              <div className="location-input"><input aria-label="도착지" value={destinationLocation.displayName} placeholder="도착지" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}><img src={routeMarkerImage("destination")} width="32" height="40" alt="" aria-hidden="true" /></button></div>
             </div>
             {mapSelectionNotice && <p className={`map-selection-notice map-selection-notice--${mapSelectionNotice.kind}`} role={mapSelectionNotice.kind === "error" ? "alert" : "status"}>{mapSelectionNotice.text}</p>}
             <button className="criteria-toggle" type="button" aria-expanded={criteriaOpen} onClick={() => setCriteriaOpen((open) => !open)}>
@@ -508,7 +490,7 @@ function App() {
                 </label>
                 <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 안전 시설 우선" />
                 <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} />
-                <PreferenceSlider label="교차로 회피" value={intersectionWeight} onChange={setIntersectionWeight} />
+                <PreferenceSlider label="건널목 회피" value={crossingWeight} onChange={setCrossingWeight} />
               </div>
             )}
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
@@ -527,38 +509,11 @@ function App() {
         )}
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
-      )}
 
       {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
       {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
       {showRouteResults && (
         <aside className="result-panel" aria-label="경로 검색 결과">
-          <div className="result-heading">
-            <button className="panel-close result-back" type="button" aria-label="검색창으로 뒤로가기" title="뒤로가기" onClick={() => setResultPanelOpen(false)}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>
-            </button>
-            <div><span>경로 검색 결과</span><strong>{searchResult?.origin?.name ?? originLocation.displayName} → {searchResult?.destination?.name ?? destinationLocation.displayName}</strong></div>
-          </div>
-          {searchResult?.result.recommendation_reason && (
-            <section className="route-explanation" aria-label="경로 추천 이유">
-              <strong>{searchResult.result.recommendation_status === "ready" ? "왜 이 길을 추천했나요?" : "왜 추천하지 않았나요?"}</strong>
-              <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />
-              <p>{searchResult.result.recommendation_reason}</p>
-              {comparableCriteria.length > 0 && (
-                <ul className="criterion-list" aria-label="요청 조건별 비교 결과">
-                  {comparableCriteria.map((criterion) => (
-                    <li key={criterion.factor} className={`criterion criterion--${criterion.outcome}`}>
-                      <header>
-                        <strong>{criterion.label}</strong>
-                        <span>{criterionOutcomeLabel(criterion.outcome)}</span>
-                      </header>
-                      <p>{criterion.summary}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
           <div className="route-cards">
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;
@@ -567,10 +522,11 @@ function App() {
                 <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
                   <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
                   <span className="route-card-primary"><strong>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "시간 미제공" : `${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
+                  {candidate.route_type === searchResult?.result.selected_route_type && <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />}
                   <span className="route-card-details">
                     계단 {candidate.route.properties.stairs_segment_count}개
                     {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
-                    {" | "}교차로와의 거리 {candidate.route.properties.intersection_data_available ? `${Math.round(candidate.route.properties.intersection_distance_m ?? 0)}m` : "데이터 미연결"}
+                    {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
                   </span>
                 </button>
                 {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "검색 직후 지도 시점으로 돌아가기" : "출발지에서 도착지 방향으로 3D 보기"}>{routeDetailOpen ? "돌아가기" : "자세히 보기"} <span aria-hidden="true">{routeDetailOpen ? "‹" : "›"}</span></button>}
@@ -589,13 +545,13 @@ function App() {
         <aside className="map-info-panel" aria-label="지도 객체 정보">
           <header>
             <div>
-              <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : "장소 상세 정보"}</span>
+              <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : mapInfo.kind === "streetlight" ? "가로등 정보" : mapInfo.kind === "cctv" ? "CCTV 정보" : mapInfo.kind === "stairs" ? "계단 정보" : "육교 정보"}</span>
               <strong>{mapInfo.title}</strong>
             </div>
             <button className="panel-close" type="button" aria-label="지도 객체 정보 닫기" onClick={() => setMapInfo(null)}>×</button>
           </header>
-          {(mapInfo.kind === "building" || mapInfo.kind === "help_point") && (
-            <div className="building-location-actions" role="group" aria-label={mapInfo.kind === "building" ? "건물 경로 선택" : "안전지원시설 경로 선택"}>
+          {mapInfo.kind === "building" && (
+            <div className="building-location-actions" role="group" aria-label="건물 경로 선택">
               <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("origin")}>출발</button>
               <button type="button" disabled={!mapInfoLocationAvailable || buildingSelectionPending || requestState === "loading"} onClick={() => selectMapInfoLocation("destination")}>도착</button>
             </div>

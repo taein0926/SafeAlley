@@ -40,6 +40,10 @@ class GraphEdge:
     pedestrian_bridge_ids: tuple[str, ...] = ()
     pedestrian_reference_version: str | None = None
     help_point_score: float = 0.0
+    crossing_group: int | None = None
+    crossing_cost_units: float = 0.0
+    pedestrian_version: str | None = None
+    centreline_fallback: bool = False
 
 
 @dataclass

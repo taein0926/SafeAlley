@@ -66,6 +66,10 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     walkability_factor=segment.walkability_factor,
                     crossing_node_ids=segment.crossing_node_ids,
                     sidewalk_confirmed=segment.sidewalk_confirmed,
+                    crossing_group=segment.crossing_group,
+                    crossing_cost_units=segment.crossing_cost_units,
+                    pedestrian_version=segment.pedestrian_version,
+                    centreline_fallback=segment.centreline_fallback,
                     incline_percent=segment.incline_percent,
                     walkability_class=segment.walkability_class,
                     field_status=segment.field_status,
@@ -101,6 +105,10 @@ def _build_graph(segments: list[RoutingRoadSegment]) -> RoadGraph:
                     walkability_factor=segment.walkability_factor,
                     crossing_node_ids=segment.crossing_node_ids,
                     sidewalk_confirmed=segment.sidewalk_confirmed,
+                    crossing_group=segment.crossing_group,
+                    crossing_cost_units=segment.crossing_cost_units,
+                    pedestrian_version=segment.pedestrian_version,
+                    centreline_fallback=segment.centreline_fallback,
                     incline_percent=segment.incline_percent,
                     walkability_class=segment.walkability_class,
                     field_status=segment.field_status,
@@ -161,13 +169,15 @@ def _route_feature(
     result: PathResult,
     start_node: NearestRoadNode,
     end_node: NearestRoadNode,
-    route_type: Literal["shortest", "balanced", "safe"],
+    route_type: Literal["shortest", "balanced", "safe", "custom"],
     policy: SafetyCostPolicy,
 ) -> dict[str, object]:
     average_safety_score = _average_safety_score(result, policy)
     crossing_node_ids = {
         node_id for edge in result.edges for node_id in edge.crossing_node_ids
     }
+    crossing_groups = {edge.crossing_group for edge in result.edges if edge.crossing_group is not None}
+    has_pedestrian_metadata = any(edge.pedestrian_version for edge in result.edges)
     stairs_distance_m = sum(
         edge.distance_m for edge in result.edges if edge.is_steps
     )
@@ -211,12 +221,16 @@ def _route_feature(
                 "risk": policy.risk_weight,
                 "stairs": policy.stairs_weight,
                 "intersection": policy.intersection_weight,
+                "crossing": policy.crossing_weight,
             },
             "start_node_id": start_node.node_id,
             "end_node_id": end_node.node_id,
             "start_snap_distance_m": round(start_node.distance_m, 2),
             "end_snap_distance_m": round(end_node.distance_m, 2),
-            "total_crosswalk_count": len(crossing_node_ids),
+            "total_crosswalk_count": len(crossing_groups) if has_pedestrian_metadata else len(crossing_node_ids),
+            "crossing_data_available": bool(result.edges) and all(edge.pedestrian_version and not edge.centreline_fallback for edge in result.edges),
+            "centreline_fallback_distance_m": round(sum(edge.distance_m for edge in result.edges if edge.centreline_fallback), 2),
+            "pedestrian_metadata_coverage_percent": round(sum(edge.distance_m for edge in result.edges if edge.pedestrian_version) / result.total_distance_m * 100, 2) if result.total_distance_m else 0.0,
             "stairs_distance_m": round(stairs_distance_m, 2),
             "intersection_distance_m": round(sum(
                 min(edge.distance_m, max(0.0, edge.intersection_exposure_m))
@@ -270,6 +284,10 @@ def _route_feature(
                     "streetlight_data_available": edge.streetlight_data_available,
                     "walkability_factor": edge.walkability_factor,
                     "crossing_node_ids": list(edge.crossing_node_ids),
+                    "crossing_group": edge.crossing_group,
+                    "centreline_fallback": edge.centreline_fallback,
+                    "pedestrian_penalty": round(policy.breakdown(edge).pedestrian_penalty, 2),
+                    "crossing_penalty": round(policy.breakdown(edge).crossing_penalty, 2),
                     "sidewalk_confirmed": edge.sidewalk_confirmed,
                     "incline_percent": edge.incline_percent,
                     "walkability_class": edge.walkability_class,
@@ -285,7 +303,7 @@ def _route_feature(
                     ),
                     "traversal_cost": round(
                         policy.edge_cost(edge)
-                        + edge.distance_m * max(0.0, edge.walkability_factor - 1.0),
+                        + (0.0 if route_type in {"shortest", "custom"} else edge.distance_m * max(0.0, edge.walkability_factor - 1.0)),
                         2,
                     ),
                 }
@@ -303,6 +321,27 @@ class PreparedRoute:
     start_node: NearestRoadNode
     end_node: NearestRoadNode
     intersection_data_available: bool
+
+
+def get_custom_route(*, prepared, preferences, stairs_weight=0.0, crossing_weight=0.0,
+                     time_context, **_):
+    from app.services.routing.custom import custom_policy, find_custom_path
+    policy = custom_policy(preferences, stairs_weight=stairs_weight,
+                           crossing_weight=crossing_weight, is_night=time_context.is_night,
+                           settings=get_settings())
+    try:
+        result, baseline, limit, limited = find_custom_path(
+            prepared.graph, prepared.start_node.node_id, prepared.end_node.node_id, policy, preferences,
+        )
+    except PathNotFoundError as exc:
+        raise RouteNotFoundError(str(exc)) from exc
+    feature = _route_feature(result, prepared.start_node, prepared.end_node, "custom", policy)
+    feature["properties"].update(
+        intersection_data_available=prepared.intersection_data_available,
+        crossing_baseline_distance_m=round(baseline, 2),
+        crossing_distance_limit_m=round(limit, 2), crossing_detour_limited=limited,
+    )
+    return feature
 
 
 def prepare_route(
@@ -332,8 +371,26 @@ def prepare_route(
     if not segments:
         raise RoutingDataNotFoundError("The road graph is empty")
 
+    graph = _build_graph(segments)
+    if any(segment.pedestrian_version for segment in segments):
+        from app.services.routing.snapping import connected_node_pair
+        try:
+            find_path(graph, start_node.node_id, end_node.node_id, lambda e: e.distance_m, 1)
+        except PathNotFoundError:
+            try:
+                pair = connected_node_pair(
+                    graph, (start_longitude, start_latitude), (end_longitude, end_latitude),
+                    get_settings().route_snap_max_distance_m,
+                )
+            except PathNotFoundError as exc:
+                raise RouteNotFoundError(str(exc)) from exc
+            start_node, end_node = [
+                NearestRoadNode(node, graph.nodes[node].x, graph.nodes[node].y,
+                                coordinate[0], coordinate[1], distance)
+                for node, coordinate, distance in pair
+            ]
     return PreparedRoute(
-        graph=_build_graph(segments), start_node=start_node, end_node=end_node,
+        graph=graph, start_node=start_node, end_node=end_node,
         intersection_data_available=any(
             segment.pedestrian_reference_version == "pedestrian-reference-v1"
             for segment in segments
@@ -346,7 +403,7 @@ def _get_route(
     start_latitude: float,
     end_longitude: float,
     end_latitude: float,
-    route_type: Literal["shortest", "balanced", "safe"],
+    route_type: Literal["shortest", "balanced", "safe", "custom"],
     source: str | None = None,
     stairs_weight: float = 0.0,
     penalized_segment_ids: set[int] | None = None,
@@ -390,12 +447,12 @@ def _get_route(
     )
 
     def extra_cost(edge: GraphEdge) -> float:
-        return edge.distance_m * max(0.0, edge.walkability_factor - 1.0)
+        return 0.0 if route_type == "shortest" else edge.distance_m * max(0.0, edge.walkability_factor - 1.0)
 
     def route_cost(edge: GraphEdge) -> float:
         base_cost = (
             policy.edge_cost(edge)
-            + edge.distance_m * max(0.0, edge.walkability_factor - 1.0)
+            + extra_cost(edge)
         )
         if edge.segment_id in penalized_segment_ids:
             return base_cost + edge.distance_m * 10

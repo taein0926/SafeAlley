@@ -1,9 +1,15 @@
 from app.repositories.place_repository import (
+    PlaceAmbiguousError,
     PlaceNotFoundError,
     PlaceRepositoryError,
     cache_geocoded_place,
     find_place,
     get_osm_road_viewbox,
+)
+from app.repositories.building_repository import (
+    BuildingPlaceAmbiguousError,
+    BuildingRepositoryError,
+    find_building_place,
 )
 from app.services.geocoding_service import (
     GeocodingServiceError,
@@ -13,14 +19,28 @@ from app.services.geocoding_service import (
 
 
 def resolve_place(name: str) -> dict[str, object]:
-    """Resolve through PostGIS first, then one bounded and cached OSM fallback."""
+    """Resolve places -> bounded GIS buildings -> bounded, cached Nominatim."""
+
+    name = name.strip()
+    if not name:
+        raise PlaceNotFoundError("검색할 장소명을 입력해주세요.")
 
     local_place = find_place(name)
     if local_place is not None:
         return local_place
 
+    bounds = get_osm_road_viewbox()
     try:
-        geocoded_place = geocode_place(name, get_osm_road_viewbox())
+        building = find_building_place(name, bounds)
+    except BuildingPlaceAmbiguousError as exc:
+        raise PlaceAmbiguousError(str(exc)) from exc
+    except BuildingRepositoryError as exc:
+        raise PlaceRepositoryError("GIS 건물 검색에 연결할 수 없습니다.") from exc
+    if building is not None:
+        return building
+
+    try:
+        geocoded_place = geocode_place(name, bounds)
     except GeocodingServiceError as exc:
         raise PlaceRepositoryError(
             "외부 장소 검색 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."

@@ -13,10 +13,12 @@ class SafetyCostBreakdown:
     risk_factor: float
     stairs_penalty: float
     intersection_penalty: float = 0.0
+    crossing_penalty: float = 0.0
+    pedestrian_penalty: float = 0.0
 
     @property
     def total(self) -> float:
-        return self.distance_factor + self.risk_factor + self.stairs_penalty + self.intersection_penalty
+        return self.distance_factor + self.risk_factor + self.stairs_penalty + self.intersection_penalty + self.crossing_penalty + self.pedestrian_penalty
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,9 @@ class SafetyCostPolicy:
     streetlight_included: bool = True
     cctv_weight: float = 0.40
     help_point_weight: float = 0.20
+    crossing_weight: float = 0.0
+    preference_components: tuple[tuple[str, float], ...] = ()
+    pedestrian_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.distance_weight <= 0:
@@ -40,6 +45,8 @@ class SafetyCostPolicy:
             raise ValueError("Intersection weight must be between zero and one")
         if not 0 <= self.cctv_weight <= 1 or not 0 <= self.help_point_weight <= 1:
             raise ValueError("Facility weights must be between zero and one")
+        if not 0 <= self.crossing_weight <= 1:
+            raise ValueError("Crossing weight must be between zero and one")
 
     def effective_safety_score(self, edge: GraphEdge) -> float:
         if self.streetlight_included:
@@ -55,6 +62,12 @@ class SafetyCostPolicy:
 
     def breakdown(self, edge: GraphEdge) -> SafetyCostBreakdown:
         normalized_risk = (100.0 - self.effective_safety_score(edge)) / 100.0
+        if self.preference_components:
+            total = sum(weight for _, weight in self.preference_components)
+            score = sum((self.effective_safety_score(edge) if factor == "safety_score"
+                         else getattr(edge, factor)) * weight
+                        for factor, weight in self.preference_components) / total
+            normalized_risk = (100 - min(100, max(0, score))) / 100
         return SafetyCostBreakdown(
             distance_factor=edge.distance_m * self.distance_weight,
             risk_factor=edge.distance_m * normalized_risk * self.risk_weight,
@@ -70,6 +83,11 @@ class SafetyCostPolicy:
                 * self.intersection_weight * MAX_INTERSECTION_PENALTY_MULTIPLIER
                 if not edge.grade_separated else 0.0
             ),
+            # 80 m-equivalent cost per complete OSM crossing, not waiting time.
+            crossing_penalty=edge.crossing_cost_units * self.crossing_weight * 80.0,
+            # Unknown centre-line crossings must not be a free avoidance shortcut.
+            pedestrian_penalty=(edge.distance_m * (self.pedestrian_weight + 2 * self.crossing_weight)
+                                if edge.centreline_fallback else 0.0),
         )
 
     def edge_cost(self, edge: GraphEdge) -> float:

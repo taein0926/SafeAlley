@@ -7,8 +7,8 @@ from app.schemas.agent import (
 )
 from app.services.route_metrics import METRIC_REGISTRY, calculate_route_metrics
 from app.services.route_service import (
-    get_balanced_route,
-    get_safe_route,
+    get_custom_route,
+    RouteNotFoundError,
     get_shortest_route,
     prepare_route,
 )
@@ -30,8 +30,7 @@ PRIORITY_PHRASES = {
     "safety_score": "가로등·CCTV·도움시설이 길 주변 어디에 있는지 살펴",
     "streetlight_score": "가로등이 길 주변 어디에 있는지 살펴",
     "cctv_score": "CCTV가 길 주변 어디에 있는지 살펴",
-    "crosswalk_count": "지도에 표시된 횡단보도 수를 비교해",
-    "intersection_distance_m": "교차로 주변 구간을 피하는 조건으로",
+    "crosswalk_count": "OSM 건널목 구간을 줄이는 조건으로",
     "stairs_distance_m": "지도에 표시된 계단 구간을 피하는 조건으로",
     "sidewalk_coverage_percent": "지도에 표시된 보행공간을 참고해",
     "max_slope_percent": "지도에 기록된 경사를 참고해",
@@ -41,8 +40,7 @@ METRIC_NAMES = {
     "safety_score": "안전 관련 시설 지표",
     "streetlight_score": "가로등 위치 지표",
     "cctv_score": "CCTV 위치 지표",
-    "crosswalk_count": "OSM 횡단보도 수",
-    "intersection_distance_m": "교차로 주변 구간 회피",
+    "crosswalk_count": "건널목 수",
     "stairs_distance_m": "계단 구간 회피",
     "stairs": "계단",
     "sidewalk_coverage_percent": "보행공간 비율",
@@ -73,17 +71,17 @@ PROXY_EVIDENCE_LABELS = {
     "cctv_score": "CCTV와의 거리·주변 밀도·분포 공백",
 }
 ROUTE_TYPE_LABELS = {
-    "shortest": "빠른 길",
-    "balanced": "균형 길",
-    "safe": "안전지표 우선 길",
+    "shortest": "최단 경로",
+    "balanced": "이전 경로",
+    "safe": "이전 경로",
+    "custom": "맞춤 경로",
 }
 CRITERION_LABELS = {
     "distance_m": "거리",
     "safety_score": "안전 관련 시설",
     "streetlight_score": "가로등",
     "cctv_score": "CCTV",
-    "crosswalk_count": "횡단보도",
-    "intersection_distance_m": "교차로 주변 구간",
+    "crosswalk_count": "건널목 회피",
     "stairs_distance_m": "계단 구간",
     "sidewalk_coverage_percent": "보행공간",
     "max_slope_percent": "경사",
@@ -102,11 +100,7 @@ CRITERION_CONFIDENCE = {
         "medium",
         "CCTV 공개 좌표의 거리·밀도·분포 공백을 이용한 상대 비교입니다.",
     ),
-    "crosswalk_count": ("low", "OSM에 기록된 횡단보도만 집계해 누락될 수 있습니다."),
-    "intersection_distance_m": (
-        "low",
-        "교차로 대표 좌표 주변 35m의 지상 구간을 추정한 값입니다.",
-    ),
+    "crosswalk_count": ("low", "OSM에 기록된 건널목만 집계해 누락될 수 있습니다."),
     "stairs_distance_m": ("low", "OSM에 계단으로 기록된 도로 구간만 합산했습니다."),
     "sidewalk_coverage_percent": (
         "low",
@@ -171,7 +165,7 @@ def _supported_preferences(
     supported: list[RoutePreference] = []
     unsupported: list[UnsupportedPreference] = []
     for preference in preferences:
-        if preference.factor not in METRIC_REGISTRY:
+        if preference.factor not in METRIC_REGISTRY or preference.factor == "intersection_distance_m":
             unsupported.append(
                 UnsupportedPreference(
                     factor=preference.factor,
@@ -280,11 +274,7 @@ def _comparison_candidates(
         if candidate is not selected
         and candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0
         and _route_identity(candidate) != _route_identity(selected)
-        and all(
-            candidate["metrics"].get(item.factor) is not None
-            and float(candidate["metrics"][item.factor]) <= 0
-            for item in preferences if item.direction == "avoid"
-        )
+        and all(candidate["metrics"].get(p.factor) is not None for p in preferences)
     ]
 
 
@@ -311,7 +301,7 @@ def _metric_tolerance(factor: str, value: float) -> float:
         return max(10.0, value * 0.01)
     if factor in PROXY_FACTORS:
         return 1.0
-    if factor in {"crosswalk_count", "stairs_distance_m", "intersection_distance_m",
+    if factor in {"crosswalk_count", "stairs_distance_m",
                   "sidewalk_coverage_percent"}:
         return 0.5
     if factor == "max_slope_percent":
@@ -320,7 +310,7 @@ def _metric_tolerance(factor: str, value: float) -> float:
 
 
 def _criterion_value_text(factor: str, value: float) -> str:
-    if factor in {"distance_m", "stairs_distance_m", "intersection_distance_m"}:
+    if factor in {"distance_m", "stairs_distance_m"}:
         return _distance_text(value)
     if factor == "crosswalk_count":
         return f"{value:.0f}개"
@@ -472,6 +462,7 @@ def _secondary_condition_sentence(
     selected: dict[str, object],
     comparison: dict[str, object],
     comparison_label: str = "다른 길",
+    *, is_night: bool = True,
 ) -> str | None:
     factor = preference.factor
     chosen = selected["metrics"].get(factor)
@@ -490,19 +481,14 @@ def _secondary_condition_sentence(
         return f"지도에 기록된 계단 구간은 {comparison_label}보다 약 {abs(difference):.0f}m {relation}"
     if factor == "crosswalk_count":
         if difference == 0:
-            return "두 경로의 지도상 횡단보도 수는 같아요."
+            return "두 경로의 지도상 건널목 수는 같아요."
         direction = "적어요" if difference < 0 else "많아요"
-        return f"지도에 기록된 횡단보도는 {comparison_label}보다 {abs(difference):.0f}개 {direction}"
+        return f"지도에 기록된 건널목은 {comparison_label}보다 {abs(difference):.0f}개 {direction}"
     if factor == "sidewalk_coverage_percent":
         if abs(difference) < 0.5:
             return "확인된 보행공간 비율은 두 경로가 거의 같아요."
         direction = "높아요" if difference > 0 else "낮아요"
         return f"확인된 보행공간 비율은 {comparison_label}보다 {abs(difference):.0f}%p {direction}"
-    if factor == "intersection_distance_m":
-        if abs(difference) < 0.5:
-            return "교차로 주변으로 추정된 구간 길이는 두 경로가 같아요."
-        relation = "짧아요" if difference < 0 else "길어요"
-        return f"교차로 주변으로 추정된 구간은 {comparison_label}보다 약 {abs(difference):.0f}m {relation}"
     if factor == "max_slope_percent":
         if abs(difference) < 0.1:
             return "지도에 기록된 최대 경사는 두 경로가 거의 같아요."
@@ -511,7 +497,8 @@ def _secondary_condition_sentence(
     if factor in PROXY_FACTORS:
         if abs(difference) <= 1:
             return None
-        subject = PROXY_EVIDENCE_LABELS[factor]
+        subject = ("CCTV·도움시설 접근성" if factor == "safety_score" and not is_night
+                   else PROXY_EVIDENCE_LABELS[factor])
         if difference > 0:
             return f"{subject}을 종합하면 이 길이 더 유리해요."
         return f"다만 {subject}만 보면 {comparison_label}이 더 유리해요."
@@ -543,14 +530,9 @@ def _metric_evidence_note(
     if factor == "stairs_distance_m":
         return f"지도상 계단 구간: 추천 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
     if factor == "crosswalk_count":
-        return f"OSM 횡단보도 기록: 추천 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
+        return f"OSM 건널목 기록: 추천 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
     if factor == "sidewalk_coverage_percent":
         return f"확인된 보행공간 비율: 추천 경로 {chosen_value:.0f}%, {comparison_label} {other_value:.0f}%."
-    if factor == "intersection_distance_m":
-        return (
-            "교차로 주변으로 추정된 구간: "
-            f"추천 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
-        )
     if factor == "max_slope_percent":
         return (
             "지도에 기록된 최대 경사: "
@@ -599,6 +581,9 @@ def _recommendation_explanation(
             if any("hard avoidance" in item.reason for item in unsupported)
             else "요청 조건을 평가할 자료가 부족해 경로를 자동 추천하지 않았습니다."
         )
+    elif not any(p.factor not in {u.factor for u in unsupported} for p in preferences):
+        distance = float(selected["metrics"]["distance_m"])
+        summary = f"등록된 건널목과 인도 정보를 탐색 비용에 반영해 약 {_distance_text(distance)} 길을 골랐어요. 일부 구간의 건널목 수는 확인할 수 없어요."
     else:
         unsupported_factors = {item.factor for item in unsupported}
         supported = [item for item in preferences if item.factor not in unsupported_factors]
@@ -632,7 +617,7 @@ def _recommendation_explanation(
                 if primary.factor == "stairs_distance_m" and value == 0:
                     premise = "비교한 경로 모두 지도 자료상 계단 구간이 없어서"
                 elif primary.factor == "crosswalk_count" and value == 0:
-                    premise = "비교한 경로 모두 지도 자료상 횡단보도 수가 0개여서"
+                    premise = "비교한 경로 모두 지도 자료상 건널목 수가 0개여서"
                 elif primary.factor == "sidewalk_coverage_percent" and value == 0:
                     premise = "비교한 경로 모두 확인된 보행공간 비율이 0%여서"
                 else:
@@ -652,7 +637,7 @@ def _recommendation_explanation(
                     )
                 elif abs(difference) > 0.5:
                     summary += (
-                        f" {comparison_label}과의 거리 차이는 "
+                        f" 비교 경로({comparison_label})와의 거리 차이는 "
                         f"약 {abs(difference):.0f}m로 거의 같아요."
                     )
             else:
@@ -675,7 +660,7 @@ def _recommendation_explanation(
                         elif primary.factor == "crosswalk_count":
                             direction = "적어" if change < 0 else "많아"
                             summary = (
-                                f"지도에 기록된 횡단보도가 {comparison_label}보다 "
+                                f"지도에 기록된 건널목이 {comparison_label}보다 "
                                 f"{abs(change):.0f}개 {direction} 이 길을 추천했어요."
                             )
                         elif primary.factor == "sidewalk_coverage_percent":
@@ -687,11 +672,6 @@ def _recommendation_explanation(
                         elif primary.factor == "stairs_distance_m":
                             summary = (
                                 f"지도에 기록된 계단 구간이 {comparison_label}보다 "
-                                f"약 {abs(change):.0f}m 짧아 이 길을 추천했어요."
-                            )
-                        elif primary.factor == "intersection_distance_m":
-                            summary = (
-                                f"교차로 주변으로 추정된 구간이 {comparison_label}보다 "
                                 f"약 {abs(change):.0f}m 짧아 이 길을 추천했어요."
                             )
                         elif primary.factor == "max_slope_percent":
@@ -719,7 +699,7 @@ def _recommendation_explanation(
             )
             if secondary:
                 detail = _secondary_condition_sentence(
-                    secondary[0], selected, comparison, comparison_label,
+                    secondary[0], selected, comparison, comparison_label, is_night=night,
                 )
                 if detail:
                     summary += f" {detail}"
@@ -734,7 +714,7 @@ def _recommendation_explanation(
             if value != 0:
                 continue
             if item.factor == "crosswalk_count":
-                notes.append("횡단보도 0개는 OSM에 기록된 지점이 없다는 뜻이며, 실제 부재를 확인한 것은 아닙니다.")
+                notes.append("건널목 0개는 OSM에 기록된 지점이 없다는 뜻이며, 실제 부재를 확인한 것은 아닙니다.")
             elif item.factor == "sidewalk_coverage_percent":
                 notes.append("보행공간 비율 0%는 지도에서 보행공간으로 확인된 구간이 없다는 뜻이며, 실제 보도가 없다는 뜻은 아닙니다.")
             elif item.factor == "stairs_distance_m":
@@ -751,6 +731,8 @@ def _recommendation_explanation(
         label = METRIC_NAMES.get(item.factor, item.factor.replace("_", " "))
         if item.reason == "Excluded during daylight":
             notes.append("낮에는 요청한 가로등 조건을 추천 순위에 반영하지 않았습니다.")
+        elif item.factor == "crosswalk_count" and selected is not None and selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0:
+            notes.append("건널목 회피 비용은 반영했지만 일부 구간의 인도·횡단 연결 정보가 없어 건널목 수 비교는 제공하지 않습니다.")
         elif item.factor == "max_slope_percent":
             notes.append("경사는 전 구간 측정 자료가 없어 추천 조건에 반영하지 않았습니다. DEM은 현재 적재되지 않았습니다.")
         elif "hard avoidance" in item.reason:
@@ -760,6 +742,8 @@ def _recommendation_explanation(
     if not night:
         notes = [note.replace("가로등·CCTV", "CCTV") for note in notes]
         notes.append("낮 시간에는 가로등을 제외하고 CCTV·도움시설 위치만으로 안전 관련 지표를 계산했습니다.")
+    if selected is not None and selected["route"]["properties"].get("centreline_fallback_distance_m", 0) > 0:
+        notes.append("OSM에 분리된 인도가 없는 일부 구간은 기존 도로망을 사용하며 실제 횡단 횟수는 미확인입니다.")
     notes.append("지도 자료만으로 실제 길 상태나 통행 가능 여부를 보장할 수 없습니다.")
     return summary, notes
 
@@ -767,8 +751,9 @@ def _recommendation_explanation(
 def generate_route_candidates(
     arguments: RouteOptimizationArguments,
     *, time_context: RouteTimeContext | None = None,
+    preferences: list[RoutePreference] | None = None,
 ) -> list[dict[str, object]]:
-    """Generate route alternatives independently from preference scoring."""
+    """Generate a distance baseline and a request-aware route on one shared graph."""
 
     route_arguments = _route_arguments(arguments)
     route_arguments["time_context"] = time_context or resolve_route_time(arguments.departure_time)
@@ -779,18 +764,18 @@ def generate_route_candidates(
         end_latitude=arguments.destination.latitude,
         source=arguments.source,
     )
-    shortest_route = get_shortest_route(**route_arguments)
-    safe_route = get_safe_route(**route_arguments)
-    used_segment_ids = {
-        int(segment["id"])
-        for route in (shortest_route, safe_route)
-        for segment in route["properties"].get("road_segments", [])
-    }
-    balanced_route = get_balanced_route(
-        **route_arguments,
-        penalized_segment_ids=used_segment_ids,
-    )
-    routes = [shortest_route, balanced_route, safe_route]
+    # Baseline is unaffected by sliders. Both paths use the same OSM graph/snaps.
+    baseline_arguments = {**route_arguments, "stairs_weight": 0.0, "intersection_weight": 0.0}
+    shortest_route = get_shortest_route(**baseline_arguments)
+    routes = [shortest_route]
+    try:
+        routes.append(get_custom_route(
+            **route_arguments, preferences=preferences if preferences is not None else arguments.preferences,
+            crossing_weight=arguments.crossing_weight,
+        ))
+    except RouteNotFoundError:
+        # A hard avoidance request must not silently fall back to a violating path.
+        pass
     return [
         {
             "route_type": route["properties"]["route_type"],
@@ -808,7 +793,13 @@ def rank_generated_candidates(
 ) -> tuple[dict[str, object] | None, list[UnsupportedPreference]]:
     """Score already-generated alternatives using only complete metric data."""
 
+    hard = [p for p in preferences if p.direction == "avoid"]
+    constrained = [c for c in candidates if all(c["metrics"].get(p.factor) is not None and c["metrics"][p.factor] <= 0 for p in hard)]
+    if hard and constrained:
+        candidates = constrained
     supported, unsupported = _supported_preferences(preferences, candidates)
+    if any(p.direction == "avoid" and p.factor not in {s.factor for s in supported} for p in preferences):
+        return None, unsupported
 
     selected: dict[str, object] | None = None
     if supported:
@@ -871,19 +862,20 @@ def _recommendation_factors(selected, preferences, unsupported, arguments) -> li
             factors.add("safety")
         elif item.factor == "stairs_distance_m" and item.direction in {"minimize", "avoid"}:
             factors.add("stairs")
-        elif item.factor == "intersection_distance_m" and item.direction in {"minimize", "avoid"}:
-            factors.add("intersection")
+        elif item.factor == "crosswalk_count" and item.direction in {"minimize", "avoid"}:
+            factors.add("crossing")
     if arguments.stairs_weight > 0:
         factors.add("stairs")
-    if arguments.intersection_weight > 0 and selected["route"]["properties"].get("intersection_data_available"):
-        factors.add("intersection")
-    return [factor for factor in ("distance", "safety", "stairs", "intersection") if factor in factors]
+    properties = selected["route"]["properties"]
+    if ((arguments.crossing_weight > 0 and properties.get("crossing_data_available"))
+        or (properties.get("cost_weights", {}).get("crossing", 0) > 0
+            and properties.get("pedestrian_metadata_coverage_percent", 0) > 0)):
+        factors.add("crossing")
+    return [factor for factor in ("distance", "safety", "stairs", "crossing") if factor in factors]
 
 
 def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, object]:
     time_context = resolve_route_time(arguments.departure_time)
-    #1. 최단 경로와 안전 경로 후보 생성
-    candidates = generate_route_candidates(arguments, time_context=time_context)
     #2. 사용자 조건이없으면 시간대별 기본 조건 사용
     if arguments.preferences:
         requested_preferences = arguments.preferences
@@ -893,6 +885,11 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
             requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     else:
         requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
+    requested_preferences = list(requested_preferences)
+    present = {p.factor for p in requested_preferences}
+    for factor, strength in (("stairs_distance_m", arguments.stairs_weight), ("crosswalk_count", arguments.crossing_weight)):
+        if strength > 0 and factor not in present:
+            requested_preferences.append(RoutePreference(factor=factor, direction="minimize", weight=strength * 100))
     #3. 야간이면 안전 관련 가중치 적용
     effective_preferences = _apply_time_policy(
         requested_preferences,
@@ -906,11 +903,30 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
     ]
     if not effective_preferences:
         effective_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
+    candidates = generate_route_candidates(arguments, time_context=time_context, preferences=effective_preferences)
     #4. 후보 경로 점수 계산 및 최종 경로 선택
     selected, unsupported = rank_generated_candidates(
         candidates,
         effective_preferences,
     )
+    # The custom path optimizes the request during search, not a candidate-relative
+    # min/max score that changes whenever a hidden alternative is added.
+    custom = next((c for c in candidates if c["route_type"] == "custom"), None)
+    if custom is not None:
+        supported_for_custom, _ = _supported_preferences(effective_preferences, [custom])
+        properties = custom["route"]["properties"]
+        partial_crossing_cost = (
+            any(p.factor == "crosswalk_count" and p.direction == "minimize" for p in effective_preferences)
+            and properties.get("cost_weights", {}).get("crossing", 0) > 0
+            and properties.get("pedestrian_metadata_coverage_percent", 0) > 0
+        )
+        custom_objective = any(p.factor != "distance_m" for p in supported_for_custom) or partial_crossing_cost
+        hard_conditions_met = all(
+            custom["metrics"].get(p.factor) is not None and custom["metrics"][p.factor] <= 0
+            for p in effective_preferences if p.direction == "avoid"
+        )
+        if custom_objective and hard_conditions_met and properties.get("unverified_major_road_count", 0) == 0:
+            selected = custom
     unsupported.extend(daytime_ignored)
     supported, _ = _supported_preferences(effective_preferences, candidates)
     avoidance = [item for item in supported if item.direction == "avoid"]
