@@ -129,6 +129,17 @@ textarea { font: inherit; }
   opacity: 1;
 }
 .facility-controls span { font-size: 1.14rem; line-height: 1; }
+.density-legend {
+  position: absolute; right: 70px; bottom: 30px; z-index: 20; width: 148px;
+  padding: 8px 10px; border: 1px solid rgba(154, 220, 203, .2); border-radius: 10px;
+  color: #e6f0ed; background: rgba(7, 26, 43, .9); box-shadow: 0 12px 32px rgba(0, 0, 0, .25);
+  font-size: .7rem; line-height: 1.4; pointer-events: none;
+}
+.density-legend-gradient {
+  display: block; height: 8px; margin-top: 5px; border-radius: 999px;
+  background: linear-gradient(90deg, #482878, #f5a23d 50%, #b8f25a);
+}
+.density-legend-scale { display: flex; justify-content: space-between; margin-top: 2px; }
 .weather-hud { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 8px 12px; border-radius: 16px; color: #1d5b99; background: #e0edf9; }
 .weather-hud-toprow { display: flex; align-items: center; justify-content: center; gap: 6px 10px; }
 .weather-hud-heading { color: #506a77; font-size: .65rem; text-align: center; white-space: nowrap; }

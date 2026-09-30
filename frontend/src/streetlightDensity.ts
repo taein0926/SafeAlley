@@ -1,5 +1,7 @@
 export type DensityPoint = readonly [longitude: number, latitude: number];
 
+const DENSITY_COLORS = [[72, 40, 120], [245, 162, 61], [184, 242, 90]] as const;
+
 export type DensityBounds = {
   west: number;
   south: number;
@@ -15,10 +17,12 @@ export type StreetlightDensityTexture = {
 };
 
 const DEFAULT_CANVAS_SIZE = 768;
-const DEFAULT_KERNEL_RADIUS = 18;
+const DENSITY_RADIUS_M = 45;
 const MINIMUM_SPAN_DEGREES = 0.001;
-const DENSITY_ALPHA_THRESHOLD = 24;
-const DENSITY_ALPHA_MAXIMUM = 96;
+const DENSITY_ALPHA_THRESHOLD = 20;
+const DENSITY_ALPHA_MINIMUM = 65;
+const DENSITY_ALPHA_MAXIMUM = 150;
+const DENSITY_COLOR_START = 50;
 
 function finitePoint(point: DensityPoint): boolean {
   return Number.isFinite(point[0]) && Number.isFinite(point[1]);
@@ -67,8 +71,30 @@ export function densityDisplayAlpha(sourceAlpha: number): number {
   if (!Number.isFinite(sourceAlpha) || sourceAlpha <= DENSITY_ALPHA_THRESHOLD) return 0;
   return Math.min(
     DENSITY_ALPHA_MAXIMUM,
-    Math.round((sourceAlpha - DENSITY_ALPHA_THRESHOLD) * 1.35),
+    Math.max(DENSITY_ALPHA_MINIMUM, Math.round((sourceAlpha - DENSITY_ALPHA_THRESHOLD) * 1.8)),
   );
+}
+
+export function densityKernelRadii(bounds: DensityBounds, size: number): { x: number; y: number } {
+  const centerLatitude = ((bounds.north + bounds.south) / 2) * (Math.PI / 180);
+  const metersPerLongitudeDegree = 111_320 * Math.cos(centerLatitude);
+  return {
+    x: DENSITY_RADIUS_M * size / ((bounds.east - bounds.west) * metersPerLongitudeDegree),
+    y: DENSITY_RADIUS_M * size / ((bounds.north - bounds.south) * 111_320),
+  };
+}
+
+export function densityDisplayColor(alpha: number): readonly [number, number, number] {
+  const [low, middle, high] = DENSITY_COLORS;
+  const fraction = Math.max(0, Math.min(1, (alpha - DENSITY_COLOR_START) / (DENSITY_ALPHA_MAXIMUM - DENSITY_COLOR_START)));
+  const from = fraction < 0.5 ? low : middle;
+  const to = fraction < 0.5 ? middle : high;
+  const blend = fraction < 0.5 ? fraction * 2 : (fraction - 0.5) * 2;
+  return [
+    Math.round(from[0] + (to[0] - from[0]) * blend),
+    Math.round(from[1] + (to[1] - from[1]) * blend),
+    Math.round(from[2] + (to[2] - from[2]) * blend),
+  ];
 }
 
 function createGlowKernel(radius: number): HTMLCanvasElement {
@@ -80,9 +106,9 @@ function createGlowKernel(radius: number): HTMLCanvasElement {
   if (!context) return kernel;
 
   const gradient = context.createRadialGradient(radius, radius, 0, radius, radius, radius);
-  gradient.addColorStop(0, "rgba(255, 253, 232, 0.05)");
-  gradient.addColorStop(0.28, "rgba(255, 242, 190, 0.025)");
-  gradient.addColorStop(0.65, "rgba(255, 225, 148, 0.009)");
+  gradient.addColorStop(0, "rgba(255, 244, 190, 0.22)");
+  gradient.addColorStop(0.35, "rgba(255, 232, 160, 0.12)");
+  gradient.addColorStop(0.75, "rgba(255, 220, 140, 0.025)");
   gradient.addColorStop(1, "rgba(255, 220, 140, 0)");
   context.fillStyle = gradient;
   context.fillRect(0, 0, diameter, diameter);
@@ -107,15 +133,15 @@ export function createStreetlightDensityTexture(
   const context = canvas.getContext("2d");
   if (!context) return null;
 
-  const kernelRadius = Math.max(10, Math.round(DEFAULT_KERNEL_RADIUS * (size / DEFAULT_CANVAS_SIZE)));
-  const kernel = createGlowKernel(kernelRadius);
+  const kernel = createGlowKernel(32);
+  const kernelRadii = densityKernelRadii(bounds, size);
   context.globalCompositeOperation = "lighter";
   for (const point of valid) {
     const { x, y } = densityCanvasPosition(point, bounds, size, size);
-    context.drawImage(kernel, x - kernelRadius, y - kernelRadius);
+    context.drawImage(kernel, x - kernelRadii.x, y - kernelRadii.y, kernelRadii.x * 2, kernelRadii.y * 2);
   }
 
-  // Remove isolated/low-density glow and retain only meaningful overlaps.
+  // Keep sparse streetlights visible while suppressing near-transparent raster noise.
   // A capped alpha keeps dense cells from obscuring the basemap and route lines.
   const image = context.getImageData(0, 0, size, size);
   for (let offset = 0; offset < image.data.length; offset += 4) {
@@ -127,9 +153,10 @@ export function createStreetlightDensityTexture(
       image.data[offset + 3] = 0;
       continue;
     }
-    image.data[offset] = 255;
-    image.data[offset + 1] = 246;
-    image.data[offset + 2] = 210;
+    const color = densityDisplayColor(alpha);
+    image.data[offset] = color[0];
+    image.data[offset + 1] = color[1];
+    image.data[offset + 2] = color[2];
     image.data[offset + 3] = alpha;
   }
   context.globalCompositeOperation = "source-over";
