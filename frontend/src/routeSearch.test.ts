@@ -41,8 +41,8 @@ const origin: ResolvedPlace = {
 const destination = { ...origin, name: "인하대학교", latitude: 37.45 };
 
 test("crosswalk display shows registered counts without claiming complete coverage", () => {
-  assert.equal(formatCrosswalkCount(3), "횡단보도 3개(OSM)");
-  assert.equal(formatCrosswalkCount(0), "횡단보도 0개(OSM)");
+  assert.equal(formatCrosswalkCount(3), "횡단보도 3개");
+  assert.equal(formatCrosswalkCount(0), "횡단보도 0개");
   for (const missing of [null, undefined, NaN, -1, 1.5]) {
     assert.equal(formatCrosswalkCount(missing), "횡단보도 집계 없음");
   }

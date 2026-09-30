@@ -41,6 +41,7 @@ import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } 
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
 import { routeMarkerImage, routeMarkerLocations } from "../routeMarkers";
+import { selectedRouteGuidePoints } from "../routeGuidePoints";
 import { JUAN_INITIAL_VIEW, zoomTargetHeight } from "../mapNavigation";
 import { routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
@@ -420,6 +421,10 @@ export function CesiumRoadMap({
       });
       viewerRef.current = viewer;
       baseLayerRef.current = baseLayer;
+      // Smooth ground-clamped route edges without raising their geometry.
+      // Modest supersampling avoids an uncapped high-DPI GPU/memory cost.
+      viewer.resolutionScale = 1.25;
+      viewer.scene.postProcessStages.fxaa.enabled = true;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "알 수 없는 오류";
       const message = `Cesium 초기화에 실패했습니다: ${detail}`;
@@ -1230,6 +1235,28 @@ export function CesiumRoadMap({
         routeEntityIdsRef.current.push(casingId, lineId);
       }
     }
+
+    // Navigation dots belong only to the selected route and remain at ground
+    // level. They share the route lifecycle/picking, not a second elevated line.
+    selectedRouteGuidePoints(visibleCandidates, selectedRouteType).forEach((point, index) => {
+      const id = `route-guide-point-${index}`;
+      const entity = viewer.entities.add({
+        id,
+        position: Cartesian3.fromDegrees(point.longitude, point.latitude),
+        point: {
+          pixelSize: 8,
+          color: Color.WHITE,
+          outlineColor: Color.fromCssColorString("#172f47"),
+          outlineWidth: 2,
+          heightReference: HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      mapInfoRef.current.set(entity, {
+        kind: "route_segment", routeType: selectedRouteType!, title: "경로", rows: [],
+      });
+      routeEntityIdsRef.current.push(id);
+    });
 
     const signature = routeGeometrySignature(visibleCandidates);
     if (visibleCandidates.length > 0 && signature !== lastRouteSignatureRef.current) {

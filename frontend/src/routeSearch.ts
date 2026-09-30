@@ -95,7 +95,7 @@ export const WALKING_SPEED_MPS = 1.2;
 // Registered route crossings only: incomplete OSM coverage must not imply a verified total.
 export function formatCrosswalkCount(count: number | null | undefined): string {
   return typeof count === "number" && Number.isInteger(count) && count >= 0
-    ? `횡단보도 ${count}개(OSM)`
+    ? `횡단보도 ${count}개`
     : "횡단보도 집계 없음";
 }
 
