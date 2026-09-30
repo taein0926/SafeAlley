@@ -1,7 +1,7 @@
 // Shared SVG textures keep dense point layers independent of emoji fonts and image requests.
 function marker(background: string, border: string, pictogram: string): string {
   return `data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect x="1" y="1" width="42" height="42" rx="11" fill="${background}" stroke="${border}" stroke-width="2"/>${pictogram}</svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 44 44"><circle cx="22" cy="22" r="21" fill="${background}" stroke="${border}" stroke-width="2"/><g transform="translate(3.3 3.3) scale(0.85)">${pictogram}</g></svg>`,
   )}`;
 }
 

@@ -251,7 +251,7 @@ test("a shortest recommendation is compared with the custom route", () => {
     [candidate("shortest"), candidate("balanced"), candidate("custom")],
     "shortest",
   );
-  assert.deepEqual(displayed.map((item) => item.label), ["최단 경로", "맞춤 경로"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["최단경로", "맞춤경로"]);
   assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["shortest", "custom"]);
 });
 
@@ -260,7 +260,7 @@ test("a non-shortest recommendation is compared with the shortest route", () => 
     [candidate("shortest"), candidate("balanced"), candidate("custom")],
     "custom",
   );
-  assert.deepEqual(displayed.map((item) => item.label), ["맞춤 경로", "최단 경로"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["맞춤경로", "최단경로"]);
   assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["custom", "shortest"]);
 });
 
@@ -271,7 +271,7 @@ test("identical segment sequences are displayed only once", () => {
 
   const displayed = selectDisplayedCandidates([shortest, candidate("balanced"), safe], "shortest");
 
-  assert.deepEqual(displayed.map((item) => item.label), ["최단 경로"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["최단경로"]);
 });
 
 test("a custom alternative is used when recommendation and shortest are the same route", () => {
@@ -284,7 +284,7 @@ test("a custom alternative is used when recommendation and shortest are the same
     "balanced",
   );
 
-  assert.deepEqual(displayed.map((item) => item.label), ["맞춤 경로", "맞춤 경로"]);
+  assert.deepEqual(displayed.map((item) => item.label), ["맞춤경로", "맞춤경로"]);
   assert.deepEqual(displayed.map((item) => item.candidate.route_type), ["balanced", "custom"]);
 });
 

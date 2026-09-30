@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ROUTE_MARKER_COLORS, routeMarkerImage, routeMarkerLocations } from "./routeMarkers.ts";
+import { ROUTE_MARKER_COLORS, routeMarkerImage, routeMarkerLocations, selectedRouteLabelLocation } from "./routeMarkers.ts";
 import type { RouteCandidate } from "./types.ts";
+
+test("route sign follows the selected path midpoint, not the bbox or vertex count", () => {
+  const candidate = (route_type: "custom" | "shortest", coordinates: number[][]) => ({ route_type, route: { geometry: { coordinates } } }) as RouteCandidate;
+  const routes = [candidate("custom", [[126, 37], [126, 37.001], [126, 37.01]]),
+    candidate("shortest", [[127, 37], [127, 37.001], [127.002, 37.001]])];
+  const before = JSON.stringify(routes);
+  const customPoint = selectedRouteLabelLocation(routes, "custom")!;
+  assert.equal(customPoint.longitude, 126);
+  assert.ok(Math.abs(customPoint.latitude - 37.005) < 1e-10);
+  const point = selectedRouteLabelLocation(routes, "shortest")!;
+  assert.equal(point.latitude, 37.001);
+  assert.ok(point.longitude > 127 && point.longitude < 127.002);
+  assert.equal(selectedRouteLabelLocation(routes, null), null);
+  assert.equal(selectedRouteLabelLocation(routes, "safe"), null);
+  assert.equal(JSON.stringify(routes), before);
+  for (const c of [[], [[126, 37]], [[126, 37], [NaN, 37]], [[126, 37], [126, 37]]]) {
+    assert.equal(selectedRouteLabelLocation([candidate("custom", c)], "custom"), null);
+  }
+});
 
 test("map and input pins share labelled start/end silhouettes and colors", () => {
   for (const kind of ["origin", "destination"] as const) {

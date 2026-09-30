@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { browserSpeechEnvironment, SpeechCapture, type SpeechState } from "../speech";
 
-export function SpeechInput({ value, onText, disabled }: {
-  value: string; onText: (text: string) => void; disabled: boolean;
+export function SpeechInput({ value, onText, disabled, children }: {
+  value: string; onText: (text: string) => void; disabled: boolean; children: ReactNode;
 }) {
   const [state, setState] = useState<SpeechState>("idle");
   const [pendingText, setPendingText] = useState("");
@@ -33,20 +33,26 @@ export function SpeechInput({ value, onText, disabled }: {
 
   useEffect(() => { if (disabled) capture.current?.cancel(); }, [disabled]);
 
+  const buttonLabel = state === "recording" ? "녹음 중지" : state === "transcribing" ? "변환 중…" : state === "permission" ? "권한 확인 중…" : "음성 입력";
+
   return <div className="speech-input">
+    <div className="ai-query-editor">
+    {children}
     <div className="speech-actions">
       <button type="button" disabled={!supported || disabled || state === "permission" || state === "transcribing"}
+        aria-label={buttonLabel} title={buttonLabel}
+        aria-busy={state === "permission" || state === "transcribing"}
         aria-pressed={state === "recording"}
         onClick={() => {
           if (state === "recording") capture.current?.stop();
           else { setPendingText(""); void capture.current?.start(current.current.revision); }
         }}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           {state === "recording" ? <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
             : <><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" /></>}
         </svg>
-        {state === "recording" ? "녹음 중지" : state === "transcribing" ? "변환 중…" : state === "permission" ? "권한 확인 중…" : "음성 입력"}
       </button>
+    </div>
     </div>
     {pendingText && <div className="speech-preview"><p>{pendingText}</p><button type="button" disabled={disabled} onClick={() => {
       onText(pendingText); setPendingText("");

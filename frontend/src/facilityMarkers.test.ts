@@ -28,7 +28,16 @@ test("fire stations display white 119 digits on the red badge", () => {
   assert.match(svg, /fill="#b63038"/);
   assert.match(svg, /aria-label="119"/);
   assert.match(svg, /stroke="white"/);
-  assert.doesNotMatch(svg, /<text|<circle/);
+  assert.doesNotMatch(svg, /<text|<rect/);
+});
+
+test("all safety facilities use circular badges with inset pictograms", () => {
+  for (const image of [POLICE_MARKER_IMAGE, FIRE_STATION_MARKER_IMAGE, HOSPITAL_MARKER_IMAGE, GENERIC_HELP_MARKER_IMAGE]) {
+    const svg = decodeURIComponent(image.split(",")[1]);
+    assert.match(svg, /<circle cx="22" cy="22" r="21"/);
+    assert.match(svg, /translate\(3\.3 3\.3\) scale\(0\.85\)/);
+    assert.doesNotMatch(svg, /<rect/);
+  }
 });
 
 test("markers are distinct, self-contained SVG pictograms without font or network dependencies", () => {

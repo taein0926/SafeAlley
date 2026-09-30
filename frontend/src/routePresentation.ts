@@ -8,12 +8,13 @@ export function routePickPriority(routeType: RouteType | undefined, selectedType
   return routeType !== undefined && routeType === selectedType ? 6 : 5;
 }
 
-export function routeLineStyle(routeType: RouteType, selectedType: RouteType | null) {
+export function routeLineStyle(routeType: RouteType, selectedType: RouteType | null, night = false) {
   const selected = routeType === selectedType;
   return {
     color: selected ? ACTIVE_ROUTE_COLOR : ALTERNATIVE_ROUTE_COLOR,
-    width: selected ? 6 : 4,
-    casingWidth: selected ? 10 : 7,
+    width: selected ? 9 : 6,
+    casingWidth: selected ? 15 : 10.5,
+    casingColor: night ? "#ffffff" : "#16365c",
     zIndex: selected ? 4 : 2,
   };
 }

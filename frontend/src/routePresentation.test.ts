@@ -3,6 +3,15 @@ import test from "node:test";
 import { routeLineStyle, routeGeometrySignature, routePickPriority } from "./routePresentation.ts";
 import type { RouteCandidate } from "./types.ts";
 
+test("routes are 1.5 times wider and casing switches with the theme", () => {
+  assert.equal(routeLineStyle("custom", "custom").width, 9);
+  assert.equal(routeLineStyle("custom", "custom").casingWidth, 15);
+  assert.equal(routeLineStyle("shortest", "custom").width, 6);
+  assert.equal(routeLineStyle("shortest", "custom").casingWidth, 10.5);
+  assert.equal(routeLineStyle("custom", "custom", false).casingColor, "#16365c");
+  assert.equal(routeLineStyle("custom", "custom", true).casingColor, "#ffffff");
+});
+
 test("active route is blue above the gray alternative; swapping selection swaps colors", () => {
   assert.equal(routeLineStyle("safe", "safe").color, "#1261ff");
   assert.equal(routeLineStyle("shortest", "safe").color, "#8b96a7");

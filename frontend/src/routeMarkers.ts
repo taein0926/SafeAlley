@@ -4,6 +4,26 @@ import type { RouteCandidate, RouteType } from "./types";
 export const ROUTE_MARKER_COLORS = { origin: "#03c75a", destination: "#f4433e" } as const;
 export type RouteMarkerLocation = { kind: keyof typeof ROUTE_MARKER_COLORS; longitude: number; latitude: number };
 
+// Anchor the selected route sign halfway along its actual polyline, not its bbox.
+export function selectedRouteLabelLocation(candidates: RouteCandidate[], selectedType: RouteType | null): { longitude: number; latitude: number } | null {
+  const c = candidates.find(candidate => candidate.route_type === selectedType)?.route.geometry.coordinates ?? [];
+  if (c.length < 2 || c.some(p => !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90)) return null;
+  const scale = Math.cos(c[0][1] * Math.PI / 180);
+  const lengths = c.slice(1).map((p, i) => Math.hypot((p[0] - c[i][0]) * scale, p[1] - c[i][1]));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  if (!remaining) return null;
+  for (let i = 0; i < lengths.length; i++) {
+    if (lengths[i] <= 0) continue;
+    if (remaining <= lengths[i]) {
+      const fraction = remaining / lengths[i];
+      return { longitude: c[i][0] + (c[i + 1][0] - c[i][0]) * fraction,
+        latitude: c[i][1] + (c[i + 1][1] - c[i][1]) * fraction };
+    }
+    remaining -= lengths[i];
+  }
+  return null;
+}
+
 export function routeMarkerImage(kind: keyof typeof ROUTE_MARKER_COLORS): string {
   const start = kind === "origin";
   const contour = "M20 3.5C11.8 3.5 5.5 9.8 5.5 18c0 7.5 8.5 19.4 14.5 27.5C26 37.4 34.5 25.5 34.5 18c0-8.2-6.3-14.5-14.5-14.5Z";

@@ -31,8 +31,8 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState } from "react";
-import type { RouteCandidate, RouteRoadSegment, RouteType } from "../types";
-import { type BuildingMapSelection } from "../routeSearch";
+import type { RouteCandidate, RouteType } from "../types";
+import { estimatedWalkingMinutes, type BuildingMapSelection } from "../routeSearch";
 export type { BuildingMapSelection } from "../routeSearch";
 import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
 import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
@@ -40,9 +40,9 @@ import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
-import { routeMarkerImage, routeMarkerLocations } from "../routeMarkers";
-import { selectedRouteGuidePoints } from "../routeGuidePoints";
-import { JUAN_INITIAL_VIEW, zoomTargetHeight } from "../mapNavigation";
+import { routeMarkerImage, routeMarkerLocations, selectedRouteLabelLocation } from "../routeMarkers";
+import { CROSSING_GUIDE_IMAGE, selectedRouteGuidePoints } from "../routeGuidePoints";
+import { INITIAL_MAP_VIEW, zoomTargetHeight } from "../mapNavigation";
 import { routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
 import { createStreetlightDensityTexture } from "../streetlightDensity";
@@ -111,23 +111,6 @@ function infoRows(
   return rows
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .map(([label, value]) => ({ label, value: String(value) }));
-}
-
-function routeSegmentInfo(segment: RouteRoadSegment, routeType: RouteType): MapInfoSelection {
-  return {
-    kind: "route_segment",
-    routeType,
-    title: segment.name || "경로 구간",
-    rows: infoRows([
-      ["시설 접근성 지표(상대)", Number(segment.safety_score).toFixed(1)],
-      ["도로 유형", segment.highway],
-      ["거리", `${Math.round(segment.distance_m)}m`],
-      ["계단", segment.is_steps ? "예" : "아니오"],
-      ["가로등 위치 지표(상대)", Number(segment.streetlight_score).toFixed(1)],
-      ["CCTV 위치 지표(상대)", Number(segment.cctv_score).toFixed(1)],
-      ["도움시설 위치 지표(상대)", segment.help_point_score],
-    ]),
-  };
 }
 
 type FeatureCollectionMetadata = {
@@ -445,10 +428,10 @@ export function CesiumRoadMap({
 
     viewer.scene.backgroundColor = Color.fromCssColorString("#071a2b");
     viewer.scene.globe.baseColor = Color.fromCssColorString("#173944");
-    // Juan Station coordinates from the existing /api/places/resolve landmark.
+    // Government complex coordinates from the existing GIS building location.
     // Set the camera before loading layers; late responses must not reset user navigation.
     viewer.camera.setView({
-      destination: Cartesian3.fromDegrees(JUAN_INITIAL_VIEW.longitude, JUAN_INITIAL_VIEW.latitude, JUAN_INITIAL_VIEW.height),
+      destination: Cartesian3.fromDegrees(INITIAL_MAP_VIEW.longitude, INITIAL_MAP_VIEW.latitude, INITIAL_MAP_VIEW.height),
       orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
     });
     viewer.screenSpaceEventHandler.setInputAction(
@@ -1005,8 +988,8 @@ export function CesiumRoadMap({
             position: Cartesian3.fromDegrees(...position),
             billboard: {
               image: STAIRS_MARKER_IMAGE,
-              width: 32,
-              height: 32,
+              width: 24,
+              height: 24,
               heightReference: HeightReference.CLAMP_TO_GROUND,
               pixelOffset: new Cartesian2(0, -12),
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -1046,7 +1029,7 @@ export function CesiumRoadMap({
             position: Cartesian3.fromDegrees(...position),
             billboard: {
               image: connected ? CONNECTED_BRIDGE_IMAGE : REFERENCE_BRIDGE_IMAGE,
-              width: 34, height: 34,
+              width: 24, height: 24,
               heightReference: HeightReference.CLAMP_TO_GROUND,
               // Offset from the nearby stair marker so both remain selectable.
               pixelOffset: new Cartesian2(24, -30),
@@ -1154,56 +1137,19 @@ export function CesiumRoadMap({
     const visibleCandidates = routeCandidates;
 
     for (const candidate of visibleCandidates) {
-      const style = routeLineStyle(candidate.route_type, selectedRouteType);
+      const style = routeLineStyle(candidate.route_type, selectedRouteType, nightMode);
       const casingId = `recommended-route-${candidate.route_type}-casing`;
       const positions = candidate.route.geometry.coordinates.map(([longitude, latitude]) =>
         Cartesian3.fromDegrees(longitude, latitude),
       );
-      const segments = candidate.route.properties.road_segments ?? [];
-      // Selected and alternative routes stay clamped to the terrain; no elevated overlay.
-      if (segments.length > 0) {
-        segments.forEach((segment, index) => {
-          if (segment.coordinates.length < 2) return;
-          const info = routeSegmentInfo(segment, candidate.route_type);
-          const segmentCasingId = `${casingId}-${index}`;
-          const segmentId = `recommended-route-${candidate.route_type}-segment-${index}`;
-          const segmentPositions = segment.coordinates.map(([longitude, latitude]) =>
-            Cartesian3.fromDegrees(longitude, latitude),
-          );
-          const segmentCasing = viewer.entities.add({
-            id: segmentCasingId,
-            name: `${segment.name || "경로 구간"} 외곽선`,
-            polyline: {
-              positions: segmentPositions,
-              width: style.casingWidth,
-              material: Color.WHITE.withAlpha(0.95),
-              clampToGround: true,
-              classificationType: ClassificationType.TERRAIN,
-              zIndex: style.zIndex - 1,
-            },
-          });
-          const segmentEntity = viewer.entities.add({
-            id: segmentId,
-            name: segment.name || "경로 구간",
-            polyline: {
-              positions: segmentPositions,
-              width: style.width,
-              material: Color.fromCssColorString(style.color),
-              clampToGround: true,
-              classificationType: ClassificationType.TERRAIN,
-              zIndex: style.zIndex,
-            },
-          });
-          mapInfoRef.current.set(segmentCasing, info);
-          mapInfoRef.current.set(segmentEntity, info);
-          routeEntityIdsRef.current.push(segmentCasingId, segmentId);
-        });
-      } else {
+      // One continuous casing/line pair per route joins road boundaries cleanly.
+      // Keep the original geometry and terrain clamping; no elevated overlay.
+      if (positions.length >= 2) {
         const info: MapInfoSelection = {
           kind: "route_segment",
           routeType: candidate.route_type,
           title: "경로",
-          rows: infoRows([["거리", `${Math.round(candidate.route.properties.total_distance_m)}m`]]),
+          rows: [],
         };
         const casing = viewer.entities.add({
           id: casingId,
@@ -1211,7 +1157,7 @@ export function CesiumRoadMap({
           polyline: {
             positions,
             width: style.casingWidth,
-            material: Color.WHITE.withAlpha(0.95),
+            material: Color.fromCssColorString(style.casingColor).withAlpha(0.95),
             clampToGround: true,
             classificationType: ClassificationType.TERRAIN,
             zIndex: style.zIndex - 1,
@@ -1236,18 +1182,16 @@ export function CesiumRoadMap({
       }
     }
 
-    // Navigation dots belong only to the selected route and remain at ground
-    // level. They share the route lifecycle/picking, not a second elevated line.
+    // One zebra-crossing icon at each selected crossing's path midpoint.
     selectedRouteGuidePoints(visibleCandidates, selectedRouteType).forEach((point, index) => {
       const id = `route-guide-point-${index}`;
       const entity = viewer.entities.add({
         id,
         position: Cartesian3.fromDegrees(point.longitude, point.latitude),
-        point: {
-          pixelSize: 8,
-          color: Color.WHITE,
-          outlineColor: Color.fromCssColorString("#172f47"),
-          outlineWidth: 2,
+        billboard: {
+          image: CROSSING_GUIDE_IMAGE,
+          width: 24,
+          height: 24,
           heightReference: HeightReference.CLAMP_TO_GROUND,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
@@ -1279,7 +1223,7 @@ export function CesiumRoadMap({
       routeOverviewRef.current = null;
     }
     viewer.scene.requestRender();
-  }, [draftLocations, routeCandidates, selectedRouteType]);
+  }, [draftLocations, routeCandidates, selectedRouteType, nightMode]);
 
   useEffect(() => {
     // Only a mode change moves the camera; manual map movement stays untouched.
@@ -1334,11 +1278,18 @@ export function CesiumRoadMap({
     const pins = (["origin", "destination"] as const).map(kind => {
       const point = points.find(p => p.kind === kind);
       return {
-        element: layer.querySelector<HTMLImageElement>(`[data-pin="${kind}"]`)!,
+        element: layer.querySelector<HTMLElement>(`[data-pin="${kind}"]`)!,
         position: point ? Cartesian3.fromDegrees(point.longitude, point.latitude) : null,
         screen: new Cartesian2(),
+        offsetX: 20,
+        offsetY: 45.5,
       };
     });
+    const labelPoint = selectedRouteLabelLocation(routeCandidates, selectedRouteType);
+    const labelElement = layer.querySelector<HTMLElement>(".route-map-sign")!;
+    pins.push({ element: labelElement,
+      position: labelPoint ? Cartesian3.fromDegrees(labelPoint.longitude, labelPoint.latitude) : null,
+      screen: new Cartesian2(), offsetX: labelElement.offsetWidth / 2, offsetY: labelElement.offsetHeight + 9 });
     const direction = new Cartesian3();
     const normal = new Cartesian3();
     const update = () => {
@@ -1359,9 +1310,9 @@ export function CesiumRoadMap({
         const visibility = visible ? "visible" : "hidden";
         if (pin.element.style.visibility !== visibility) pin.element.style.visibility = visibility;
         if (point && visible) {
-          // Align the tip (20, 45.5) to a device pixel without enlarging the WebGL canvas.
-          const x = Math.round((point.x - 20) * ratio) / ratio;
-          const y = Math.round((point.y - 45.5) * ratio) / ratio;
+          // Align each marker tip to a device pixel without enlarging the canvas.
+          const x = Math.round((point.x - pin.offsetX) * ratio) / ratio;
+          const y = Math.round((point.y - pin.offsetY) * ratio) / ratio;
           const transform = `translate(${x}px, ${y}px)`;
           if (pin.element.style.transform !== transform) pin.element.style.transform = transform;
         }
@@ -1385,7 +1336,7 @@ export function CesiumRoadMap({
       lastRouteDetailOpenRef.current = false;
       onResetView();
       viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(JUAN_INITIAL_VIEW.longitude, JUAN_INITIAL_VIEW.latitude, JUAN_INITIAL_VIEW.height),
+        destination: Cartesian3.fromDegrees(INITIAL_MAP_VIEW.longitude, INITIAL_MAP_VIEW.latitude, INITIAL_MAP_VIEW.height),
         orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
         duration: 0.6,
       });
@@ -1397,6 +1348,9 @@ export function CesiumRoadMap({
     }
     viewer.scene.requestRender();
   }
+
+  const signRoute = routeCandidates.find(candidate => candidate.route_type === selectedRouteType);
+  const signMinutes = signRoute ? estimatedWalkingMinutes(signRoute.route.properties.total_distance_m) : null;
 
   return (
     <>
@@ -1414,11 +1368,12 @@ export function CesiumRoadMap({
       )}
     </div>
     <div ref={routePinsRef} className="route-pins" aria-hidden="true">
+      <div className="route-map-sign"><span>{selectedRouteType === "shortest" ? "최단경로" : "맞춤경로"}</span><strong>{signMinutes === null ? "시간 미제공" : `${signMinutes}분`}</strong></div>
       <img data-pin="origin" src={routeMarkerImage("origin")} width="40" height="50" alt="" draggable={false} />
       <img data-pin="destination" src={routeMarkerImage("destination")} width="40" height="50" alt="" draggable={false} />
     </div>
     <nav className="map-navigation" aria-label="지도 확대 및 위치 이동">
-      <button className="map-home" type="button" aria-label="현재 위치로 이동 · 주안역" title="주안역 초기 화면으로 이동" onClick={() => navigateMap("home")}>
+      <button className="map-home" type="button" aria-label="현재 위치로 이동 · 정부인천지방합동청사" title="정부인천지방합동청사 초기 화면으로 이동" onClick={() => navigateMap("home")}>
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
       </button>
       <div className="map-zoom">

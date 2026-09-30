@@ -5,6 +5,9 @@ import { stairMarkerPosition, STAIRS_MARKER_IMAGE } from "./stairsMarkers.ts";
 test("stair icon has an opaque light badge, solid steps and an ascent arrow", () => {
   const svg = decodeURIComponent(STAIRS_MARKER_IMAGE.split(",")[1]);
   assert.match(svg, /fill="#ffffff"/);
+  assert.match(svg, /<circle cx="22" cy="22" r="21"/);
+  assert.doesNotMatch(svg, /<rect/);
+  assert.match(svg, /translate\(4\.4 4\.4\) scale\(0\.8\)/);
   assert.match(svg, /M8 35v-7h7v-7h7v-7h7V8h7v27Z/);
   assert.match(svg, /M8 20 20 8M12 8h8v8/);
   assert.doesNotMatch(svg, /<text|<image|<script/);

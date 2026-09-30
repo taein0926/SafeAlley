@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isNightDepartureTime } from "./nightMode";
+import { defaultStreetlightVisibility } from "./mapLighting";
 import { PreferenceSlider } from "./components/PreferenceSlider";
 import { RecommendationIcons } from "./components/RecommendationIcons";
 import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
-import { CCTV_MARKER_IMAGE } from "./facilityMarkers";
-import { STAIRS_MARKER_IMAGE } from "./stairsMarkers";
+import { facilityToggleImage } from "./facilityToggleIcons";
 import { routeMarkerImage } from "./routeMarkers";
 import { createRouteSelectionSaver } from "./routeSelection";
 
@@ -104,12 +104,6 @@ function App() {
   const [mapSelectionNotice, setMapSelectionNotice] = useState<MapSelectionNotice>(null);
   const buildingRequestSerial = useRef(0);
   const [buildingSelectionPending, setBuildingSelectionPending] = useState(false);
-  const [facilityVisibility, setFacilityVisibility] = useState<FacilityVisibility>(() => ({
-    streetlights: import.meta.env.VITE_SHOW_STREETLIGHTS !== "false",
-    cctvs: import.meta.env.VITE_SHOW_CCTVS !== "false",
-    helpPoints: import.meta.env.VITE_SHOW_HELP_POINTS !== "false",
-    stairsAndBridges: true,
-  }));
   const [criteriaOpen, setCriteriaOpen] = useState(false);
   const [searchPanelOpen, setSearchPanelOpen] = useState(true);
   const [safetyWeight, setSafetyWeight] = useState(50);
@@ -130,6 +124,20 @@ function App() {
   const userId = useMemo(anonymousUserId, []);
   const weather = useWeather(appliedDepartureTime);
   const nightMode = isNightDepartureTime(weather.time, weather.solar);
+  const defaultStreetlights = defaultStreetlightVisibility(nightMode, import.meta.env.VITE_SHOW_STREETLIGHTS !== "false");
+  const [facilityVisibility, setFacilityVisibility] = useState<FacilityVisibility>(() => ({
+    streetlights: defaultStreetlights,
+    cctvs: import.meta.env.VITE_SHOW_CCTVS !== "false",
+    helpPoints: import.meta.env.VITE_SHOW_HELP_POINTS !== "false",
+    stairsAndBridges: true,
+  }));
+
+  // Reset only on an applied day/night transition, not while editing the time
+  // or refreshing weather within the same theme. Manual toggles remain usable.
+  useEffect(() => {
+    setFacilityVisibility(current => current.streetlights === defaultStreetlights
+      ? current : { ...current, streetlights: defaultStreetlights });
+  }, [nightMode, defaultStreetlights]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -425,7 +433,7 @@ function App() {
             ...current,
             streetlights: !current.streetlights,
           }))}
-        ><span aria-hidden="true">💡</span></button>
+        ><img src={facilityToggleImage("streetlights")} width="24" height="24" alt="" aria-hidden="true" /></button>
         <button
           type="button"
           aria-label="CCTV 표시"
@@ -435,7 +443,7 @@ function App() {
             ...current,
             cctvs: !current.cctvs,
           }))}
-        ><img src={CCTV_MARKER_IMAGE} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><img src={facilityToggleImage("cctvs")} width="24" height="24" alt="" aria-hidden="true" /></button>
         <button
           type="button"
           aria-label="안전지원시설 표시"
@@ -445,7 +453,7 @@ function App() {
             ...current,
             helpPoints: !current.helpPoints,
           }))}
-        ><span aria-hidden="true">🏥</span></button>
+        ><img src={facilityToggleImage("helpPoints")} width="24" height="24" alt="" aria-hidden="true" /></button>
         <button
           type="button"
           aria-label="계단·육교 표시"
@@ -455,7 +463,7 @@ function App() {
             ...current,
             stairsAndBridges: !current.stairsAndBridges,
           }))}
-        ><img src={STAIRS_MARKER_IMAGE} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><img src={facilityToggleImage("stairsAndBridges")} width="24" height="24" alt="" aria-hidden="true" /></button>
       </nav>
       </div>
 
@@ -505,11 +513,9 @@ function App() {
         ) : (
           <form className="route-form" onSubmit={searchWithAi}>
             <div className="ai-query">
-              <div className="ai-query-heading">
-                <label htmlFor="ai-route-query">AI 경로 요청</label>
-                <SpeechInput value={query} onText={setQuery} disabled={requestState === "loading" || !searchPanelOpen} />
-              </div>
-              <textarea id="ai-route-query" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
+              <SpeechInput value={query} onText={setQuery} disabled={requestState === "loading" || !searchPanelOpen}>
+                <textarea id="ai-route-query" aria-label="AI 경로 요청" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
+              </SpeechInput>
             </div>
             <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
           </form>

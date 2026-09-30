@@ -1,9 +1,13 @@
 // Dim only the basemap, not UI, route lines or facility markers.
+export function defaultStreetlightVisibility(night: boolean, configuredDefault = true): boolean {
+  return night && configuredDefault;
+}
+
 export function mapLighting(night: boolean) {
   return night
-    ? { brightness: 0.26, saturation: 0.45, contrast: 1.08, lightSize: 38,
+    ? { brightness: 0.5, saturation: 0.45, contrast: 1.08, lightSize: 38,
         background: "#030812", ground: "#07111e" }
-    : { brightness: 0.748, saturation: 0.78, contrast: 1.04, lightSize: 30,
+    : { brightness: 1.0, saturation: 0.78, contrast: 1.04, lightSize: 30,
         background: "#071a2b", ground: "#17303b" };
 }
 

@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "./mapLighting.ts";
+import { defaultStreetlightVisibility, mapLighting, STREETLIGHT_GLOW_IMAGE } from "./mapLighting.ts";
 
-test("day basemap is subdued and night is darker with stronger light markers", () => {
+test("streetlights default off during day and on at night, respecting configured opt-out", () => {
+  assert.equal(defaultStreetlightVisibility(false), false);
+  assert.equal(defaultStreetlightVisibility(true), true);
+  assert.equal(defaultStreetlightVisibility(false, false), false);
+  assert.equal(defaultStreetlightVisibility(true, false), false);
+});
+
+test("basemap brightness is 100 percent by day and 50 percent at night", () => {
   const day = mapLighting(false);
   const night = mapLighting(true);
-  assert.ok(day.brightness < 1 && day.brightness > 0.5);
-  assert.ok(Math.abs(day.brightness - 0.68 * 1.1) < 1e-12);
-  assert.equal(night.brightness, 0.26);
+  assert.equal(day.brightness, 1);
+  assert.equal(night.brightness, 0.5);
   assert.ok(night.brightness < day.brightness && night.brightness > 0.2);
   assert.ok(night.saturation < day.saturation);
   assert.ok(night.lightSize > day.lightSize);

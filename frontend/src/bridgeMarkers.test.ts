@@ -12,13 +12,18 @@ test("invalid bridge locations are not placed at an invented point", () => {
   }
 });
 
-test("connected and reference-only bridge markers are distinct font-independent icons", () => {
-  assert.notEqual(CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE);
+test("all bridge markers share the stair palette and font-independent circular icon", () => {
+  assert.equal(CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE);
   for (const image of [CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE]) {
     assert.ok(image.startsWith("data:image/svg+xml,"));
     assert.ok(decodeURIComponent(image).includes("<path"));
     const svg = decodeURIComponent(image.split(",")[1]);
     assert.match(svg, /fill="#ffffff"/);
+    assert.match(svg, /stroke="#34495e"/);
+    assert.match(svg, /stroke="#52677d"/);
+    assert.match(svg, /<circle cx="22" cy="22" r="21"/);
+    assert.doesNotMatch(svg, /<rect/);
+    assert.match(svg, /translate\(4\.4 4\.4\) scale\(0\.8\)/);
     assert.match(svg, /M5 33h5v-6h5v-6h14v6h5v6h5/);
     assert.doesNotMatch(svg, /<text|<image|<script/);
   }

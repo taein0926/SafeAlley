@@ -57,7 +57,7 @@ export type RouteSearchResult = {
 
 export type DisplayedRouteCandidate = {
   candidate: RouteCandidate;
-  label: "추천 경로" | "최단 경로" | "맞춤 경로";
+  label: "추천 경로" | "최단경로" | "맞춤경로";
 };
 
 export function criterionOutcomeLabel(
@@ -204,19 +204,19 @@ export function selectDisplayedCandidates(
       .filter((candidate): candidate is RouteCandidate => candidate !== undefined)
       .map((candidate) => ({
         candidate,
-        label: candidate.route_type === "shortest" ? "최단 경로" : "맞춤 경로",
+        label: candidate.route_type === "shortest" ? "최단경로" : "맞춤경로",
       })));
   }
 
-  const primary: DisplayedRouteCandidate = { candidate: recommended, label: recommended.route_type === "shortest" ? "최단 경로" : "맞춤 경로" };
+  const primary: DisplayedRouteCandidate = { candidate: recommended, label: recommended.route_type === "shortest" ? "최단경로" : "맞춤경로" };
   const shortest = byType.get("shortest");
   if (shortest && identity(shortest) !== identity(recommended)) {
-    return [primary, { candidate: shortest, label: "최단 경로" }];
+    return [primary, { candidate: shortest, label: "최단경로" }];
   }
 
   const safe = byType.get("custom");
   return unique([
     primary,
-    ...(safe ? [{ candidate: safe, label: "맞춤 경로" } as DisplayedRouteCandidate] : []),
+    ...(safe ? [{ candidate: safe, label: "맞춤경로" } as DisplayedRouteCandidate] : []),
   ]);
 }
