@@ -6,7 +6,7 @@ import { RecommendationIcons } from "./components/RecommendationIcons";
 import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
 import { facilityToggleImage } from "./facilityToggleIcons";
-import { routeMarkerImage } from "./routeMarkers";
+import { routeInputMarkerImage } from "./routeMarkers";
 import { createRouteSelectionSaver } from "./routeSelection";
 
 import {
@@ -184,6 +184,14 @@ function App() {
   const showRouteResults = displayedCandidates.length > 0 && resultPanelOpen;
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
+    // Keep pins at the coordinates used for THIS search, including AI/text results.
+    // Editing the next query must not move pins belonging to the displayed route.
+    if (searchResult) {
+      return (["origin", "destination"] as const).flatMap(kind => {
+        const place = searchResult[kind];
+        return place ? [{ kind, latitude: place.latitude, longitude: place.longitude }] : [];
+      });
+    }
     const locations: DraftMapLocation[] = [];
     for (const [kind, location] of [
       ["origin", originLocation],
@@ -202,7 +210,7 @@ function App() {
       }
     }
     return locations;
-  }, [destinationLocation, originLocation]);
+  }, [destinationLocation, originLocation, searchResult]);
 
   const handleBuildingSelect = useCallback(async (
     selection: BuildingMapSelection,
@@ -486,9 +494,9 @@ function App() {
         {mode === "direct" ? (
           <form className="route-form" onSubmit={searchDirect}>
             <div className="place-inputs">
-              <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeMarkerImage("origin")} width="32" height="40" alt="" aria-hidden="true" /></button></div>
+              <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지 입력" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeInputMarkerImage("origin")} width="28" height="35" alt="" aria-hidden="true" /></button></div>
               <i aria-hidden="true" />
-              <div className="location-input"><input aria-label="도착지" value={destinationLocation.displayName} placeholder="도착지" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}><img src={routeMarkerImage("destination")} width="32" height="40" alt="" aria-hidden="true" /></button></div>
+              <div className="location-input"><input aria-label="도착지" value={destinationLocation.displayName} placeholder="도착지 입력" onChange={(event) => editLocation("destination", event.target.value)} required /><button type="button" aria-label="도착지 지도 선택" aria-pressed={buildingSelectionMode === "destination"} title="지도에서 도착지 건물 선택" onClick={() => toggleBuildingSelection("destination")}><img src={routeInputMarkerImage("destination")} width="28" height="35" alt="" aria-hidden="true" /></button></div>
             </div>
             {mapSelectionNotice && <p className={`map-selection-notice map-selection-notice--${mapSelectionNotice.kind}`} role={mapSelectionNotice.kind === "error" ? "alert" : "status"}>{mapSelectionNotice.text}</p>}
             <button className="criteria-toggle" type="button" aria-expanded={criteriaOpen} onClick={() => setCriteriaOpen((open) => !open)}>

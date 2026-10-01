@@ -1,6 +1,8 @@
 import type { RouteCandidate, RouteType } from "./types";
 
 type XY = readonly [number, number];
+// Temporary district-wide inspection layer. Disable to restore route-only icons.
+export const SHOW_ALL_CROSSING_MARKERS = true;
 export type RouteGuidePoint = { longitude: number; latitude: number; kind: "crossing" };
 
 // Crisp, self-contained zebra-crossing symbol; no external image requests.

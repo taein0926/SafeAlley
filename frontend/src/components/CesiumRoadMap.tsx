@@ -1,5 +1,6 @@
 import {
   BillboardCollection,
+  CallbackProperty,
   BoundingSphere,
   Cartesian3,
   Cartesian2,
@@ -24,28 +25,30 @@ import {
   PerspectiveFrustum,
   Rectangle,
   ScreenSpaceEventType,
-  SingleTileImageryProvider,
+  UrlTemplateImageryProvider,
   Transforms,
   Viewer,
   SceneTransforms,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { RouteCandidate, RouteType } from "../types";
 import { estimatedWalkingMinutes, type BuildingMapSelection } from "../routeSearch";
 export type { BuildingMapSelection } from "../routeSearch";
-import { roadBboxQuery, roadRequestBounds, viewportIsInside, type RoadViewport } from "../roadViewport";
+import { roadBboxQuery, viewportIsInside, type RoadViewport } from "../roadViewport";
+import { isPedestrianOverlayFeature, pedestrianRequestBounds, PEDESTRIAN_OVERLAY_COLOR, PEDESTRIAN_OVERLAY_WIDTH } from "../pedestrianOverlay";
 import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
 import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
-import { routeMarkerImage, routeMarkerLocations, selectedRouteLabelLocation } from "../routeMarkers";
-import { CROSSING_GUIDE_IMAGE, selectedRouteGuidePoints } from "../routeGuidePoints";
+import { routeMarkerImage, routeMarkerLocations, routeAccessConnectors, selectedRouteLabelLocation } from "../routeMarkers";
+import { CROSSING_GUIDE_IMAGE, SHOW_ALL_CROSSING_MARKERS, selectedRouteGuidePoints } from "../routeGuidePoints";
 import { INITIAL_MAP_VIEW, zoomTargetHeight } from "../mapNavigation";
-import { routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
+import { routeCapPath, routeEndCaps, routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
-import { createStreetlightDensityTexture } from "../streetlightDensity";
+import { FacilityViewportCache, type FacilityFeature } from "../facilityViewport";
+import { MapRenderQuality, setRenderResolution, MOVING_RESOLUTION, REST_RESOLUTION } from "../mapRenderQuality";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -281,6 +284,7 @@ export function CesiumRoadMap({
   nightMode,
   onResetView,
 }: CesiumRoadMapProps) {
+  const [allCrossingsReady, setAllCrossingsReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const routePinsRef = useRef<HTMLDivElement>(null);
@@ -290,6 +294,7 @@ export function CesiumRoadMap({
   const selectedRouteTypeRef = useRef(selectedRouteType);
   const refreshRoadsRef = useRef<(() => void) | null>(null);
   const refreshBuildingsRef = useRef<(() => void) | null>(null);
+  const refreshFacilitiesRef = useRef<(() => void) | null>(null);
   const streetlightPrimitivesRef = useRef<BillboardCollection | null>(null);
   const nightModeRef = useRef(nightMode);
   const cctvPrimitivesRef = useRef<BillboardCollection | null>(null);
@@ -333,6 +338,7 @@ export function CesiumRoadMap({
       }
       viewer.scene.requestRender();
     }
+    refreshFacilitiesRef.current?.();
   }, [facilityVisibility]);
 
   useEffect(() => {
@@ -369,11 +375,19 @@ export function CesiumRoadMap({
     let roadRequestSerial = 0;
     let loadedRoadBounds: RoadViewport | null = null;
     let loadedRoadCount = 0;
+    const pedestrianEntities = new Map<string, Entity>();
     let pendingRoadBounds: RoadViewport | null = null;
     let layerStatus: Extract<RoadMapStatus, { kind: "ready" }> | null = null;
     const buildingRequests = new BuildingViewportRequests(32);
     let buildingTimer: ReturnType<typeof setTimeout> | undefined;
     const buildingDataSource = new GeoJsonDataSource("Cached buildings");
+    const renderQuality = new MapRenderQuality();
+    let simplifiedBuildings = false;
+    // Visibility of outlines is an attribute; building meshes/heights/materials
+    // stay static. Never distance-cull the building bodies during navigation.
+    const buildingOutline = new CallbackProperty(
+      () => !simplifiedBuildings && !buildingRequests.routeFocused, false,
+    );
     const buildingTiles = new Map<string, Set<string>>();
     const buildingRecords = new Map<string, { entities: Entity[]; tiles: Set<string> }>();
     let buildingStatus: BuildingMapStatus = { kind: "loading", count: 0 };
@@ -406,7 +420,7 @@ export function CesiumRoadMap({
       baseLayerRef.current = baseLayer;
       // Smooth ground-clamped route edges without raising their geometry.
       // Modest supersampling avoids an uncapped high-DPI GPU/memory cost.
-      viewer.resolutionScale = 1.25;
+      viewer.resolutionScale = REST_RESOLUTION;
       viewer.scene.postProcessStages.fxaa.enabled = true;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "알 수 없는 오류";
@@ -415,6 +429,18 @@ export function CesiumRoadMap({
       onStatusChange({ kind: "error", message });
       return;
     }
+
+    const removeQualityStart = viewer.camera.moveStart.addEventListener(() => renderQuality.start());
+    const removeQualityEnd = viewer.camera.moveEnd.addEventListener(() => renderQuality.stop(performance.now()));
+    // Canvas resizing clears its drawing buffer. Do it BEFORE scene updates and
+    // rendering, so the same frame redraws the cleared buffer before presentation.
+    // postRender resizing would erase the completed frame and flash black.
+    // Preserve projection as well, to avoid false camera movement/load cancellation.
+    const removeQualityRender = viewer.scene.preUpdate.addEventListener(() => {
+      if (cancelled || renderingFailed) return;
+      simplifiedBuildings = renderQuality.simplified(performance.now());
+      setRenderResolution(viewer, simplifiedBuildings ? MOVING_RESOLUTION : REST_RESOLUTION);
+    });
 
     const removeRenderErrorListener = viewer.scene.renderError.addEventListener(
       (_scene, error) => {
@@ -529,12 +555,15 @@ export function CesiumRoadMap({
         east: CesiumMath.toDegrees(rectangle.east),
         north: CesiumMath.toDegrees(rectangle.north),
       } : null;
-      const bounds = view ? roadRequestBounds(view) : null;
-      if (!bounds || routeCandidatesRef.current.length > 0) {
+      const bounds = view ? pedestrianRequestBounds(view) : null;
+      if (!bounds) {
         ++roadRequestSerial;
         roadController?.abort();
         pendingRoadBounds = null;
         loadedRoadBounds = null;
+        for (const entity of pedestrianEntities.values()) viewer.entities.remove(entity);
+        pedestrianEntities.clear();
+        viewer.scene.requestRender();
         publishRoadCount(0);
         return;
       }
@@ -554,15 +583,44 @@ export function CesiumRoadMap({
       publishRoadCount(0);
       try {
         const roads = await loadGeoJson<RoadFeatureCollection>(
-          `/api/safety/roads?source=osm&bbox=${roadBboxQuery(bounds)}`,
-          "화면 주변 안전도 도로",
+          `/api/osm-roads?bbox=${roadBboxQuery(bounds)}`,
+          "화면 주변 OSM 전체 도로",
           controller.signal,
         );
         if (cancelled || renderingFailed || serial !== roadRequestSerial) return;
         loadedRoadBounds = bounds;
-        loadedRoadCount = roads.metadata.count;
-        // Main hides the analysis layer: do not allocate hidden Cesium entities.
-        publishRoadCount(roads.metadata.count);
+        const walking = roads.features.filter(isPedestrianOverlayFeature);
+        const visibleIds = new Set(walking.map((feature) => `pedestrian-overlay-${feature.id}`));
+        // Reuse overlapping geometry on small pans; retain only the padded viewport.
+        viewer.entities.suspendEvents();
+        try {
+          for (const [id, entity] of pedestrianEntities) {
+            if (!visibleIds.has(id)) {
+              viewer.entities.remove(entity);
+              pedestrianEntities.delete(id);
+            }
+          }
+          for (const feature of walking) {
+            const id = `pedestrian-overlay-${feature.id}`;
+            if (pedestrianEntities.has(id)) continue;
+            pedestrianEntities.set(id, viewer.entities.add({
+              id,
+              polyline: {
+                positions: feature.geometry.coordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)),
+                width: PEDESTRIAN_OVERLAY_WIDTH,
+                material: Color.fromCssColorString(PEDESTRIAN_OVERLAY_COLOR),
+                clampToGround: true,
+                classificationType: ClassificationType.TERRAIN,
+                zIndex: 0,
+              },
+            }));
+          }
+        } finally {
+          viewer.entities.resumeEvents();
+        }
+        loadedRoadCount = walking.length;
+        publishRoadCount(loadedRoadCount);
+        viewer.scene.requestRender();
       } catch (error) {
         if (cancelled || serial !== roadRequestSerial || controller.signal.aborted) return;
         loadedRoadBounds = null;
@@ -574,11 +632,18 @@ export function CesiumRoadMap({
     }
 
     function scheduleRoadRefresh() {
-      clearTimeout(roadTimer);
-      roadTimer = setTimeout(() => void refreshVisibleRoads(), 250);
+      // Throttle rather than debounce: long drags should also load new areas.
+      if (roadTimer !== undefined) return;
+      roadTimer = setTimeout(() => {
+        roadTimer = undefined;
+        void refreshVisibleRoads();
+      }, 250);
     }
     refreshRoadsRef.current = scheduleRoadRefresh;
     const removeCameraListener = viewer.camera.moveEnd.addEventListener(scheduleRoadRefresh);
+    const removeRoadChangedListener = viewer.camera.changed.addEventListener(scheduleRoadRefresh);
+    const roadResizeObserver = new ResizeObserver(scheduleRoadRefresh);
+    roadResizeObserver.observe(containerRef.current);
 
     function publishBuildingStatus(status: BuildingMapStatus) {
       if (cancelled || renderingFailed) return;
@@ -602,10 +667,6 @@ export function CesiumRoadMap({
         if (visible) count++;
         for (const entity of record.entities) {
           if (entity.show !== visible) entity.show = visible;
-          const outline = !buildingRequests.routeFocused;
-          if (entity.polygon && entity.polygon.outline?.getValue(JulianDate.now()) !== outline) {
-            entity.polygon.outline = new ConstantProperty(outline);
-          }
         }
       }
       buildingDataSource.show = buildingRequests.visible.size > 0;
@@ -721,7 +782,7 @@ export function CesiumRoadMap({
             entity.polygon.material = new ColorMaterialProperty(
               Color.fromCssColorString("#35b8c8").withAlpha(0.38),
             );
-            entity.polygon.outline = new ConstantProperty(true);
+            entity.polygon.outline = buildingOutline;
             entity.polygon.outlineColor = new ConstantProperty(Color.fromCssColorString("#8be8f0").withAlpha(0.9));
             if (properties?.height_m != null && Number.isFinite(height) && height >= 0) {
               entity.polygon.height = new ConstantProperty(0);
@@ -783,34 +844,18 @@ export function CesiumRoadMap({
     publishBuildingStatus({ kind: "loading", count: 0 });
     scheduleBuildingRefresh();
 
-    async function loadMapLayers() {
-      onStatusChange({ kind: "loading" });
-
-      try {
-        const streetlightRequest = loadGeoJson<StreetlightFeatureCollection>(
-          "/api/streetlights?source=michuhol-public-data",
-          "가로등",
-        );
-        const cctvRequest = loadGeoJson<PointFeatureCollection>(
-          "/api/cctvs?source=michuhol-cctv-ai-ready&safety_only=true",
-          "방범 CCTV",
-        );
-        const helpPointRequest = loadGeoJson<PointFeatureCollection>(
-          "/api/help-points?source=ai-ready-help-points",
-          "AI 안전시설",
-        );
-        const [streetlights, cctvs, helpPoints] = await Promise.all([
-          streetlightRequest,
-          cctvRequest,
-          helpPointRequest,
-        ]);
-
-        if (cancelled || renderingFailed) return;
-        const streetlightPrimitives = new BillboardCollection({ scene: viewer.scene });
-        const lightSize = mapLighting(nightModeRef.current).lightSize;
-        streetlightPrimitives.show = facilityVisibilityRef.current.streetlights;
-        for (const feature of streetlights.features) {
-          const [longitude, latitude] = feature.geometry.coordinates;
+    // Collections persist, but only the padded viewport owns GPU objects.
+    const streetlightPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
+    const cctvPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
+    const helpPointPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
+    const markers = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
+    streetlightPrimitivesRef.current = streetlightPrimitives;
+    cctvPrimitivesRef.current = cctvPrimitives;
+    helpPointPrimitivesRef.current = helpPointPrimitives;
+    function addStreetlight(raw: FacilityFeature): () => void {
+      const feature = raw as PointFeatureCollection["features"][number];
+      const lightSize = mapLighting(nightModeRef.current).lightSize;
+      const [longitude, latitude] = feature.geometry.coordinates;
           const streetlightEntity = new Entity({ name: "가로등" });
           mapInfoRef.current.set(streetlightEntity, {
             kind: "streetlight",
@@ -823,7 +868,7 @@ export function CesiumRoadMap({
               ["출처", feature.properties.source_dataset ?? feature.properties.source],
             ]),
           });
-          streetlightPrimitives.add({
+          const marker = streetlightPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 2),
             image: STREETLIGHT_GLOW_IMAGE,
             width: lightSize,
@@ -834,32 +879,13 @@ export function CesiumRoadMap({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: streetlightEntity,
           });
-        }
-        viewer.scene.primitives.add(streetlightPrimitives);
-        streetlightPrimitivesRef.current = streetlightPrimitives;
-        const densityTexture = createStreetlightDensityTexture(
-          streetlights.features.map((feature) => feature.geometry.coordinates),
-        );
-        if (densityTexture) {
-          const { bounds, dataUrl, width, height } = densityTexture;
-          const densityProvider = new SingleTileImageryProvider({
-            url: dataUrl,
-            tileWidth: width,
-            tileHeight: height,
-            rectangle: Rectangle.fromDegrees(bounds.west, bounds.south, bounds.east, bounds.north),
-            credit: new Credit("가로등 위치 기반 상대 밀도", false),
-          });
-          const densityLayer = new ImageryLayer(densityProvider, {
-            alpha: 0.85,
-            show: nightModeRef.current && facilityVisibilityRef.current.streetlights,
-          });
-          viewer.imageryLayers.add(densityLayer);
-          streetlightDensityLayerRef.current = densityLayer;
-        }
-        const cctvPrimitives = new BillboardCollection({ scene: viewer.scene });
-        cctvPrimitives.show = facilityVisibilityRef.current.cctvs;
-        for (const feature of cctvs.features) {
-          const [longitude, latitude] = feature.geometry.coordinates;
+      return () => { streetlightPrimitives.remove(marker); };
+    }
+
+    function addCctv(raw: FacilityFeature): () => void {
+      const feature = raw as PointFeatureCollection["features"][number];
+
+      const [longitude, latitude] = feature.geometry.coordinates;
           const coordinateQuality = String(feature.properties.coordinate_quality ?? "unknown");
           const recordCount = Number(feature.properties.location_record_count ?? 1);
           const description = pointDescription(
@@ -922,7 +948,7 @@ export function CesiumRoadMap({
             }
             cctvCellEntityIdsRef.current.push(cellId);
           }
-          cctvPrimitives.add({
+          const marker = cctvPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 3),
             image: CCTV_MARKER_IMAGE,
             width: 24,
@@ -932,16 +958,18 @@ export function CesiumRoadMap({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             id: description,
           });
-        }
-        viewer.scene.primitives.add(cctvPrimitives);
-        cctvPrimitivesRef.current = cctvPrimitives;
+      return () => { cctvPrimitives.remove(marker);
+        const cellId = `cctv-cell-${feature.id}`;
+        viewer.entities.removeById(cellId);
+        cctvCellEntityIdsRef.current = cctvCellEntityIdsRef.current.filter((id) => id !== cellId); };
+    }
 
-        const helpPointPrimitives = new BillboardCollection({ scene: viewer.scene });
-        helpPointPrimitives.show = facilityVisibilityRef.current.helpPoints;
-        for (const feature of helpPoints.features) {
-          const [longitude, latitude] = feature.geometry.coordinates;
+    function addHelpPoint(raw: FacilityFeature): () => void {
+      const feature = raw as PointFeatureCollection["features"][number];
+
+      const [longitude, latitude] = feature.geometry.coordinates;
           // Decorative icon only. Drill-picking continues to the building underneath.
-          helpPointPrimitives.add({
+          const marker = helpPointPrimitives.add({
             position: Cartesian3.fromDegrees(longitude, latitude, 4),
             image: helpPointMarkerImage(feature.properties.category),
             width: 32,
@@ -950,37 +978,32 @@ export function CesiumRoadMap({
             distanceDisplayCondition: new DistanceDisplayCondition(0, 18000),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           });
-        }
-        viewer.scene.primitives.add(helpPointPrimitives);
-        helpPointPrimitivesRef.current = helpPointPrimitives;
-        if (renderingFailed) return;
-        layerStatus = {
-          kind: "ready",
-          roadCount: 0,
-          buildingCount: buildingStatus.count,
-          streetlightCount: streetlights.metadata.count,
-          cctvCount: cctvs.metadata.count,
-          cctvRecordCount: cctvs.metadata.record_count ?? cctvs.metadata.count,
-          helpPointCount: helpPoints.metadata.count,
-        };
-        onStatusChange(layerStatus);
-        scheduleRoadRefresh();
-      } catch (error) {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "알 수 없는 지도 오류";
-        setRenderingError(message);
-        onStatusChange({ kind: "error", message });
-      }
+      return () => { helpPointPrimitives.remove(marker); };
     }
 
-    async function loadStairMarkers() {
-      try {
-        const stairs = await loadGeoJson<RoadFeatureCollection>("/api/roads?source=osm&steps_only=true", "계단");
-        if (cancelled || renderingFailed || viewer.isDestroyed()) return;
-        for (const feature of stairs.features) {
-          if (feature.properties.is_steps !== true && feature.properties.highway !== "steps") continue;
+    function addCrossing(raw: FacilityFeature): () => void {
+      const feature = raw as PointFeatureCollection["features"][number];
+
+      const [lon, lat] = feature.geometry.coordinates;
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return () => {};
+          const marker = markers.add({
+            position: Cartesian3.fromDegrees(lon, lat),
+            image: CROSSING_GUIDE_IMAGE,
+            width: 24,
+            height: 24,
+            heightReference: HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: new DistanceDisplayCondition(0, 30000),
+          });
+      return () => { markers.remove(marker); };
+    }
+
+    function addStair(raw: FacilityFeature): () => void {
+      const feature = raw as RoadFeatureCollection["features"][number];
+
+      if (feature.properties.is_steps !== true && feature.properties.highway !== "steps") return () => {};
           const position = stairMarkerPosition(feature.geometry.coordinates);
-          if (!position) continue;
+          if (!position) return () => {};
           const entity = viewer.entities.add({
             id: `stairs-${feature.id}`,
             show: facilityVisibilityRef.current.stairsAndBridges,
@@ -1005,20 +1028,17 @@ export function CesiumRoadMap({
               ["경사로", feature.properties.ramp], ["출처", "OpenStreetMap · 현장 확인 필요"],
             ]),
           });
-        }
-        viewer.scene.requestRender();
-      } catch (error) {
-        if (!cancelled) console.warn("계단 위치 조회 실패", error);
-      }
+      return () => {
+        viewer.entities.remove(entity);
+        mapInfoRef.current.delete(entity);
+        stairBridgeEntityIdsRef.current = stairBridgeEntityIdsRef.current.filter((id) => id !== entity.id); };
     }
 
-    async function loadBridgeMarkers() {
-      try {
-        const bridges = await loadGeoJson<PointFeatureCollection>("/api/pedestrian-bridges", "육교 위치");
-        if (cancelled || renderingFailed || viewer.isDestroyed()) return;
-        for (const feature of bridges.features) {
-          const position = bridgeMarkerPosition(feature.geometry.coordinates);
-          if (!position) continue;
+    function addBridge(raw: FacilityFeature): () => void {
+      const feature = raw as PointFeatureCollection["features"][number];
+
+      const position = bridgeMarkerPosition(feature.geometry.coordinates);
+          if (!position) return () => {};
           const p = feature.properties;
           const connected = p.routing_connected === true;
           const title = String(p.name ?? "보도육교");
@@ -1053,20 +1073,178 @@ export function CesiumRoadMap({
               ["주의", "현장 통행 가능 여부 및 엘리베이터 운행 미확인"],
             ]),
           });
+      return () => {
+        viewer.entities.remove(entity);
+        mapInfoRef.current.delete(entity);
+        stairBridgeEntityIdsRef.current = stairBridgeEntityIdsRef.current.filter((id) => id !== entity.id); };
+    }
+
+
+    function layer(url: string, enabled: () => boolean, create: (feature: FacilityFeature) => () => void) {
+      return { url, enabled, create, cache: new FacilityViewportCache(),
+        active: new Map<string, () => void>() };
+    }
+    const facilityLayers = [
+      layer("/api/streetlights?source=michuhol-public-data", () => facilityVisibilityRef.current.streetlights, addStreetlight),
+      layer("/api/cctvs?source=michuhol-cctv-ai-ready&safety_only=true", () => facilityVisibilityRef.current.cctvs, addCctv),
+      layer("/api/help-points?source=ai-ready-help-points", () => facilityVisibilityRef.current.helpPoints, addHelpPoint),
+      layer("/api/roads?source=osm&steps_only=true", () => facilityVisibilityRef.current.stairsAndBridges, addStair),
+      layer("/api/pedestrian-bridges", () => facilityVisibilityRef.current.stairsAndBridges, addBridge),
+      layer("/api/crossings", () => SHOW_ALL_CROSSING_MARKERS, addCrossing),
+    ];
+    type FacilityLayer = typeof facilityLayers[number];
+    let facilityTimer: ReturnType<typeof setTimeout> | undefined;
+    let cameraMoving = false;
+    let densityTimer: ReturnType<typeof setTimeout> | undefined;
+    let densityStarted = false;
+    let densityWaitStarted = 0;
+
+    function syncFacilities(item: FacilityLayer) {
+      if (cancelled || renderingFailed || viewer.isDestroyed()) return;
+      const features = item.enabled() ? item.cache.features() : [];
+      const ids = new Set(features.map((feature) => String(feature.id)));
+      viewer.entities.suspendEvents();
+      try {
+        for (const [id, dispose] of item.active) if (!ids.has(id)) {
+          dispose(); item.active.delete(id);
         }
+        for (const feature of features) {
+          const id = String(feature.id);
+          if (!item.active.has(id)) item.active.set(id, item.create(feature));
+        }
+      } finally { viewer.entities.resumeEvents(); }
+      if (item === facilityLayers[5]) setAllCrossingsReady(features.length > 0);
+      if (layerStatus) {
+        layerStatus = { ...layerStatus,
+          streetlightCount: facilityLayers[0].active.size,
+          cctvCount: facilityLayers[1].active.size,
+          cctvRecordCount: facilityLayers[1].cache.features().reduce((sum, f) => sum + Number(f.properties.location_record_count ?? 1), 0),
+          helpPointCount: facilityLayers[2].active.size };
+        onStatusChange(layerStatus);
+      }
+      viewer.scene.requestRender();
+    }
+
+    async function refreshFacility(item: FacilityLayer, view: RoadViewport | null) {
+      const request = item.cache.plan(item.enabled() ? view : null);
+      syncFacilities(item);
+      if (!request) return;
+      try {
+        for (const batch of request.batches) {
+          const collection = await loadGeoJson<PointFeatureCollection | RoadFeatureCollection>(
+            `${item.url}${item.url.includes("?") ? "&" : "?"}bbox=${roadBboxQuery(batch.bounds)}`,
+            "화면 주변 시설", request.controller.signal);
+          if (cancelled || renderingFailed || !item.cache.commit(request, batch, collection.features)) return;
+          syncFacilities(item);
+          // Yield between cached batches so map painting/input can run.
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      } catch (error) {
+        if (!request.controller.signal.aborted && !cancelled) {
+          item.cache.fail(request);
+          console.warn("화면 주변 시설 조회 실패", error);
+        }
+      } finally { scheduleDensity(); }
+    }
+
+    async function refreshFacilities() {
+      facilityTimer = undefined;
+      if (cancelled || renderingFailed || viewer.isDestroyed() || cameraMoving) return;
+      const rectangle = viewer.camera.computeViewRectangle();
+      const view = rectangle ? {
+        west: CesiumMath.toDegrees(rectangle.west), south: CesiumMath.toDegrees(rectangle.south),
+        east: CesiumMath.toDegrees(rectangle.east), north: CesiumMath.toDegrees(rectangle.north),
+      } : null;
+      // A slow facility API never blocks the other layers.
+      await Promise.all(facilityLayers.map((item) => refreshFacility(item, view)));
+      scheduleDensity();
+    }
+
+    function scheduleFacilities() {
+      clearTimeout(facilityTimer);
+      facilityTimer = setTimeout(() => void refreshFacilities(), 250);
+      scheduleDensity();
+    }
+
+    // No client rasterization. Load immutable, precomputed tiles only after the first
+    // visible objects have had a chance to paint. A slow optional layer has a bounded wait.
+    function scheduleDensity() {
+      if (cancelled || densityStarted || densityTimer !== undefined || cameraMoving ||
+          !nightModeRef.current || !facilityVisibilityRef.current.streetlights) return;
+      if (!densityWaitStarted) densityWaitStarted = performance.now();
+      densityTimer = setTimeout(() => {
+        densityTimer = undefined;
+        if (cancelled || viewer.isDestroyed() || cameraMoving ||
+            !nightModeRef.current || !facilityVisibilityRef.current.streetlights) return;
+        if ((buildingStatus.kind === "loading" || facilityLayers.some((item) => item.cache.loading) || facilityTimer !== undefined)
+            && performance.now() - densityWaitStarted < 2000) {
+          scheduleDensity(); return;
+        }
+        void loadDensityTiles();
+      }, 300);
+    }
+
+    async function loadDensityTiles() {
+      if (densityStarted) return;
+      densityStarted = true;
+      try {
+        const response = await fetch("/api/streetlight-heatmap/manifest", { signal: layerController.signal });
+        if (!response.ok) throw new Error(`Heatmap manifest HTTP ${response.status}`);
+        const manifest = await response.json() as { version: string; bounds: number[]; minzoom: number; maxzoom: number };
+        if (cancelled || viewer.isDestroyed()) return;
+        const [west, south, east, north] = manifest.bounds;
+        const provider = new UrlTemplateImageryProvider({
+          url: `/api/streetlight-heatmap/${manifest.version}/{z}/{x}/{y}.png`,
+          rectangle: Rectangle.fromDegrees(west, south, east, north),
+          minimumLevel: manifest.minzoom, maximumLevel: manifest.maxzoom,
+          credit: new Credit("가로등 위치 기반 상대 밀도", false),
+        });
+        const densityLayer = new ImageryLayer(provider, {
+          alpha: 0.85, show: nightModeRef.current && facilityVisibilityRef.current.streetlights,
+        });
+        viewer.imageryLayers.add(densityLayer);
+        streetlightDensityLayerRef.current = densityLayer;
         viewer.scene.requestRender();
       } catch (error) {
-        if (!cancelled) console.warn("육교 위치 조회 실패", error);
+        densityStarted = false;
+        if (!cancelled) console.warn("사전 계산 가로등 히트맵 조회 실패", error);
       }
     }
 
-    void loadMapLayers();
-    void loadStairMarkers();
-    void loadBridgeMarkers();
-
+    refreshFacilitiesRef.current = () => {
+      for (const item of facilityLayers) {
+        if (!item.enabled()) item.cache.cancel();
+        syncFacilities(item);
+      }
+      scheduleFacilities();
+    };
+    const removeFacilityMoveStart = viewer.camera.moveStart.addEventListener(() => {
+      cameraMoving = true;
+      clearTimeout(facilityTimer); facilityTimer = undefined;
+      clearTimeout(densityTimer); densityTimer = undefined;
+      densityWaitStarted = 0;
+      for (const item of facilityLayers) item.cache.cancel();
+    });
+    const removeFacilityMoveEnd = viewer.camera.moveEnd.addEventListener(() => {
+      cameraMoving = false; scheduleFacilities();
+    });
+    const facilityResizeObserver = new ResizeObserver(scheduleFacilities);
+    facilityResizeObserver.observe(containerRef.current);
+    layerStatus = { kind: "ready", roadCount: 0, buildingCount: buildingStatus.count,
+      streetlightCount: 0, cctvCount: 0, cctvRecordCount: 0, helpPointCount: 0 };
+    onStatusChange(layerStatus);
+    scheduleRoadRefresh();
+    scheduleFacilities();
     return () => {
       cancelled = true;
       layerController.abort();
+      clearTimeout(facilityTimer);
+      clearTimeout(densityTimer);
+      removeFacilityMoveStart();
+      removeFacilityMoveEnd();
+      facilityResizeObserver.disconnect();
+      for (const item of facilityLayers) item.cache.clear();
+      refreshFacilitiesRef.current = null;
       roadController?.abort();
       buildingRequests.clear();
       clearTimeout(buildingTimer);
@@ -1078,9 +1256,14 @@ export function CesiumRoadMap({
       buildingRecords.clear();
       clearTimeout(roadTimer);
       removeCameraListener();
+      removeRoadChangedListener();
+      roadResizeObserver.disconnect();
       refreshRoadsRef.current = null;
       refreshBuildingsRef.current = null;
       removeRenderErrorListener();
+      removeQualityStart();
+      removeQualityEnd();
+      removeQualityRender();
       viewerRef.current = null;
       baseLayerRef.current = null;
       streetlightDensityLayerRef.current = null;
@@ -1118,6 +1301,7 @@ export function CesiumRoadMap({
       streetlightDensityLayerRef.current.show = nightMode && facilityVisibilityRef.current.streetlights;
     }
     viewer.scene.requestRender();
+    refreshFacilitiesRef.current?.();
   }, [nightMode]);
 
   useEffect(() => {
@@ -1157,7 +1341,7 @@ export function CesiumRoadMap({
           polyline: {
             positions,
             width: style.casingWidth,
-            material: Color.fromCssColorString(style.casingColor).withAlpha(0.95),
+            material: Color.fromCssColorString(style.casingColor),
             clampToGround: true,
             classificationType: ClassificationType.TERRAIN,
             zIndex: style.zIndex - 1,
@@ -1183,7 +1367,7 @@ export function CesiumRoadMap({
     }
 
     // One zebra-crossing icon at each selected crossing's path midpoint.
-    selectedRouteGuidePoints(visibleCandidates, selectedRouteType).forEach((point, index) => {
+    (SHOW_ALL_CROSSING_MARKERS && allCrossingsReady ? [] : selectedRouteGuidePoints(visibleCandidates, selectedRouteType)).forEach((point, index) => {
       const id = `route-guide-point-${index}`;
       const entity = viewer.entities.add({
         id,
@@ -1204,7 +1388,10 @@ export function CesiumRoadMap({
 
     const signature = routeGeometrySignature(visibleCandidates);
     if (visibleCandidates.length > 0 && signature !== lastRouteSignatureRef.current) {
-      const coordinates = visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates);
+      const coordinates = [
+        ...visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates),
+        ...routeMarkerLocations(visibleCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude]),
+      ];
       const longitudes = coordinates.map(([longitude]) => longitude);
       const latitudes = coordinates.map(([, latitude]) => latitude);
       const padding = 0.002;
@@ -1223,7 +1410,7 @@ export function CesiumRoadMap({
       routeOverviewRef.current = null;
     }
     viewer.scene.requestRender();
-  }, [draftLocations, routeCandidates, selectedRouteType, nightMode]);
+  }, [draftLocations, routeCandidates, selectedRouteType, nightMode, allCrossingsReady]);
 
   useEffect(() => {
     // Only a mode change moves the camera; manual map movement stays untouched.
@@ -1243,7 +1430,9 @@ export function CesiumRoadMap({
     const selected = routeCandidates.find((candidate) => candidate.route_type === selectedRouteType);
     const coordinates = selected?.route.geometry.coordinates;
     if (!viewer || viewer.isDestroyed() || !coordinates || coordinates.length < 2) return;
-    const sphere = BoundingSphere.fromPoints(coordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
+    const frameCoordinates = [...coordinates,
+      ...routeMarkerLocations(routeCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude])];
+    const sphere = BoundingSphere.fromPoints(frameCoordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
     const canvasBounds = viewer.canvas.getBoundingClientRect();
     const panel = containerRef.current?.closest(".app-shell")?.querySelector(".map-info-panel");
     const panelBounds = panel?.getBoundingClientRect();
@@ -1253,7 +1442,7 @@ export function CesiumRoadMap({
       const heading = routeCameraHeading(coordinates);
       const transform = Transforms.eastNorthUpToFixedFrame(sphere.center);
       const inverse = Matrix4.inverseTransformation(transform, new Matrix4());
-      const localPoints = coordinates.map(([lon, lat]) => Matrix4.multiplyByPoint(inverse, Cartesian3.fromDegrees(lon, lat), new Cartesian3()));
+      const localPoints = frameCoordinates.map(([lon, lat]) => Matrix4.multiplyByPoint(inverse, Cartesian3.fromDegrees(lon, lat), new Cartesian3()));
       const frame = routeCameraFrame(localPoints, canvasBounds.width, canvasBounds.height, frustum.fovy ?? Math.PI / 3, leftInset, heading);
       // Offset in camera-right space so the result panel is avoided even
       // when the start-to-end direction points south, east or west.
@@ -1268,7 +1457,7 @@ export function CesiumRoadMap({
       });
     }
     viewer.scene.requestRender();
-  }, [routeDetailOpen, routeCandidates, selectedRouteType]);
+  }, [routeDetailOpen, routeCandidates, selectedRouteType, draftLocations]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1292,9 +1481,48 @@ export function CesiumRoadMap({
       screen: new Cartesian2(), offsetX: labelElement.offsetWidth / 2, offsetY: labelElement.offsetHeight + 9 });
     const direction = new Cartesian3();
     const normal = new Cartesian3();
+    const connectors = routeAccessConnectors(routeCandidates, selectedRouteType, draftLocations).map(link => ({
+      element: layer.querySelector<SVGLineElement>(`[data-access-link="${link.kind}"]`)!,
+      from: Cartesian3.fromDegrees(...link.from), to: Cartesian3.fromDegrees(...link.to),
+      fromScreen: new Cartesian2(), toScreen: new Cartesian2(),
+    }));
+    function projectGround(position: Cartesian3, screen: Cartesian2) {
+      const inFront = Cartesian3.dot(Cartesian3.subtract(position, viewer!.camera.positionWC, direction), viewer!.camera.directionWC) > 0;
+      const aboveHorizon = Cartesian3.dot(viewer!.scene.globe.ellipsoid.geodeticSurfaceNormal(position, normal), direction) < 0;
+      return inFront && aboveHorizon ? SceneTransforms.worldToWindowCoordinates(viewer!.scene, position, screen) : undefined;
+    }
+    const caps = routeEndCaps(routeCandidates, selectedRouteType).map((cap, index) => ({
+      element: layer.querySelector<SVGGElement>(`[data-route-cap="${index}"]`)!,
+      position: Cartesian3.fromDegrees(cap.position[0], cap.position[1]),
+      neighbor: Cartesian3.fromDegrees(cap.neighbor[0], cap.neighbor[1]),
+      screen: new Cartesian2(), neighborScreen: new Cartesian2(),
+    }));
     const update = () => {
       if (viewer.isDestroyed()) return;
       const ratio = window.devicePixelRatio || 1;
+      for (const link of connectors) {
+        // Project ground coordinates, never raise the connector above the map.
+        const from = projectGround(link.from, link.fromScreen);
+        const to = projectGround(link.to, link.toScreen);
+        link.element.style.visibility = from && to ? "visible" : "hidden";
+        if (from && to) {
+          link.element.setAttribute("x1", String(from.x)); link.element.setAttribute("y1", String(from.y));
+          link.element.setAttribute("x2", String(to.x)); link.element.setAttribute("y2", String(to.y));
+        }
+      }
+      for (const cap of caps) {
+        const inFront = Cartesian3.dot(Cartesian3.subtract(cap.position, viewer.camera.positionWC, direction), viewer.camera.directionWC) > 0;
+        const aboveHorizon = Cartesian3.dot(viewer.scene.globe.ellipsoid.geodeticSurfaceNormal(cap.position, normal), direction) < 0;
+        const end = inFront && aboveHorizon ? SceneTransforms.worldToWindowCoordinates(viewer.scene, cap.position, cap.screen) : undefined;
+        const inner = end ? SceneTransforms.worldToWindowCoordinates(viewer.scene, cap.neighbor, cap.neighborScreen) : undefined;
+        const visible = end && inner && end.x >= -12 && end.x <= viewer.canvas.clientWidth + 12
+          && end.y >= -12 && end.y <= viewer.canvas.clientHeight + 12;
+        cap.element.style.visibility = visible ? "visible" : "hidden";
+        if (visible && end && inner) {
+          const angle = Math.atan2(end.y - inner.y, end.x - inner.x) * 180 / Math.PI;
+          cap.element.setAttribute("transform", `translate(${end.x} ${end.y}) rotate(${angle})`);
+        }
+      }
       for (const pin of pins) {
         const inFront = pin.position && Cartesian3.dot(
           Cartesian3.subtract(pin.position, viewer.camera.positionWC, direction),
@@ -1324,6 +1552,8 @@ export function CesiumRoadMap({
     return () => {
       remove();
       for (const pin of pins) pin.element.style.visibility = "hidden";
+      for (const cap of caps) cap.element.style.visibility = "hidden";
+      for (const link of connectors) link.element.style.visibility = "hidden";
     };
   }, [draftLocations, routeCandidates, selectedRouteType]);
 
@@ -1368,7 +1598,19 @@ export function CesiumRoadMap({
       )}
     </div>
     <div ref={routePinsRef} className="route-pins" aria-hidden="true">
-      <div className="route-map-sign"><span>{selectedRouteType === "shortest" ? "최단경로" : "맞춤경로"}</span><strong>{signMinutes === null ? "시간 미제공" : `${signMinutes}분`}</strong></div>
+      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        {(["origin", "destination"] as const).map(kind => <line key={kind} data-access-link={kind}
+          stroke={nightMode ? "#c3cad3" : "#919aa6"} strokeWidth="5" strokeDasharray="0 10" strokeLinecap="round"
+          style={{ visibility: "hidden" }} />)}
+        {routeEndCaps(routeCandidates, selectedRouteType).map((cap, index) => {
+          const style = routeLineStyle(cap.routeType, selectedRouteType);
+          return <g key={`${cap.routeType}-${index}`} data-route-cap={index} style={{ visibility: "hidden" }}>
+            <path d={routeCapPath(style.casingWidth)} fill={style.casingColor}/>
+            <path d={routeCapPath(style.width)} fill={style.color}/>
+          </g>;
+        })}
+      </svg>
+      <div className="route-map-sign" style={{ "--route-sign-outline": routeLineStyle(selectedRouteType ?? "custom", selectedRouteType, nightMode).casingColor } as CSSProperties}><span>{selectedRouteType === "shortest" ? "최단경로" : "맞춤경로"}</span><strong>{signMinutes === null ? "시간 미제공" : `${signMinutes}분`}</strong></div>
       <img data-pin="origin" src={routeMarkerImage("origin")} width="40" height="50" alt="" draggable={false} />
       <img data-pin="destination" src={routeMarkerImage("destination")} width="40" height="50" alt="" draggable={false} />
     </div>

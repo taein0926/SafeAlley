@@ -822,6 +822,11 @@ def rank_generated_candidates(
         ]
         if not eligible:
             return None, unsupported
+        # Ranking must not undo the walking-network priority used during search.
+        outside = [c["route"]["properties"].get("nonpreferred_walking_distance_m") for c in eligible]
+        if outside and all(value is not None for value in outside):
+            minimum = min(outside)
+            eligible = [c for c in eligible if c["route"]["properties"]["nonpreferred_walking_distance_m"] <= minimum + .001]
         _score_candidates(eligible, supported)
         if all(
             len({float(candidate["metrics"][item.factor]) for candidate in eligible}) == 1
@@ -925,7 +930,11 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
             custom["metrics"].get(p.factor) is not None and custom["metrics"][p.factor] <= 0
             for p in effective_preferences if p.direction == "avoid"
         )
-        if custom_objective and hard_conditions_met and properties.get("unverified_major_road_count", 0) == 0:
+        selected_outside = selected["route"]["properties"].get("nonpreferred_walking_distance_m") if selected else None
+        custom_outside = properties.get("nonpreferred_walking_distance_m")
+        walking_priority_met = (selected_outside is None or custom_outside is None
+                                or custom_outside <= selected_outside + .001)
+        if custom_objective and hard_conditions_met and walking_priority_met and properties.get("unverified_major_road_count", 0) == 0:
             selected = custom
     unsupported.extend(daytime_ignored)
     supported, _ = _supported_preferences(effective_preferences, candidates)

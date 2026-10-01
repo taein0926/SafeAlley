@@ -15,7 +15,7 @@ def test_bridge_geojson_preserves_unconnected_references_and_provenance(monkeypa
         {"id": "bridge-b", "geometry": {"type": "Point", "coordinates": [126.69, 37.45]},
          "properties": {"name": "미연결 육교", "routing_connected": True}, "routing_connected": False},
     ]
-    monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", lambda: rows)
+    monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", lambda bbox=None: rows)
     response = client.get("/api/pedestrian-bridges")
     assert response.status_code == 200
     result = response.json()
@@ -27,15 +27,24 @@ def test_bridge_geojson_preserves_unconnected_references_and_provenance(monkeypa
 
 
 def test_empty_bridge_dataset_is_valid(monkeypatch):
-    monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", lambda: [])
+    monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", lambda bbox=None: [])
     response = client.get("/api/pedestrian-bridges")
     assert response.status_code == 200
     assert response.json()["features"] == []
     assert response.json()["metadata"]["count"] == 0
 
 
+def test_bridge_bbox_is_validated_and_passed_to_repository(monkeypatch):
+    seen = []
+    monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", lambda bbox=None: seen.append(bbox) or [])
+    assert client.get("/api/pedestrian-bridges?bbox=126.66,37.46,126.67,37.47").status_code == 200
+    assert seen[0].max_latitude == 37.47
+    assert client.get("/api/pedestrian-bridges?bbox=bad").status_code == 400
+    assert len(seen) == 1
+
+
 def test_unavailable_bridge_data_returns_503_not_fake_empty_success(monkeypatch):
-    def fail():
+    def fail(bbox=None):
         raise PedestrianReferenceError("internal connection details")
     monkeypatch.setattr(pedestrian_reference_service, "list_pedestrian_bridges", fail)
     response = client.get("/api/pedestrian-bridges")

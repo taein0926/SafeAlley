@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.agent import router as agent_router
 from app.api.buildings import router as buildings_router
 from app.api.health import router as health_router
+from app.api.heatmap import router as heatmap_router
 from app.api.places import router as places_router
 from app.api.pedestrian_references import router as pedestrian_references_router
 from app.api.roads import router as roads_router
@@ -19,6 +20,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(heatmap_router)
 app.include_router(agent_router)
 app.include_router(places_router)
 app.include_router(pedestrian_references_router)

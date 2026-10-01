@@ -2,7 +2,7 @@
 from dataclasses import replace
 from math import inf
 
-from app.services.routing.astar import find_path
+from app.services.routing.pedestrian_priority import find_pedestrian_first_path
 from app.services.routing.safety_cost import SafetyCostPolicy
 
 
@@ -43,7 +43,7 @@ def find_custom_path(graph, start, goal, policy, preferences):
         return 0.0
 
     def search(active):
-        return find_path(graph, start, goal, lambda e: active.edge_cost(e) + extra(e), 1.0)
+        return find_pedestrian_first_path(graph, start, goal, lambda e: active.edge_cost(e) + extra(e), 1.0)
 
     baseline = search(replace(policy, crossing_weight=0))
     limit = baseline.total_distance_m + min(baseline.total_distance_m * .30, 300)

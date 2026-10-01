@@ -1,8 +1,9 @@
 from app.repositories.pedestrian_reference_repository import list_pedestrian_bridges
+from app.services.road_service import parse_bbox
 
 
-def get_pedestrian_bridge_collection() -> dict:
-    bridges = list_pedestrian_bridges()
+def get_pedestrian_bridge_collection(bbox_value: str | None = None) -> dict:
+    bridges = list_pedestrian_bridges(parse_bbox(bbox_value))
     return {
         "type": "FeatureCollection",
         "features": [

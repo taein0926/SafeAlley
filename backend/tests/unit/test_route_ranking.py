@@ -74,6 +74,19 @@ def _arguments(
     )
 
 
+def test_ranking_and_custom_override_cannot_undo_sidewalk_priority(monkeypatch):
+    walking = _route("shortest", 150, 20)
+    shortcut = _route("custom", 100, 90)
+    walking["properties"]["nonpreferred_walking_distance_m"] = 0
+    shortcut["properties"]["nonpreferred_walking_distance_m"] = 100
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: walking)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: shortcut)
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor":"safety_score", "direction":"maximize", "weight":100},
+    ]))
+    assert result["selected_route_type"] == "shortest"
+
+
 @pytest.mark.parametrize("direction, expected", [("minimize", "custom"), ("avoid", None)])
 def test_partial_crossing_cost_is_usable_but_never_claims_hard_avoidance(monkeypatch, direction, expected):
     shortest = _route("shortest", 100, 20)

@@ -1,4 +1,5 @@
 from typing import Any
+from contextlib import nullcontext
 
 from psycopg.rows import dict_row
 
@@ -46,10 +47,11 @@ def run_streetlight_safety_analysis(
     *,
     streetlight_source: str,
     road_source: str = "osm",
+    connection=None,
 ) -> dict[str, Any]:
     config = StreetlightAnalysisConfig.from_environment()
 
-    with database_connection() as connection:
+    with (nullcontext(connection) if connection is not None else database_connection()) as connection:
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 "SELECT count(*) AS count FROM streetlights WHERE source = %s",

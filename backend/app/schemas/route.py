@@ -97,6 +97,7 @@ class RouteProperties(BaseModel):
     crossing_data_available: bool = False
     pedestrian_metadata_coverage_percent: float = 0.0
     centreline_fallback_distance_m: float = 0.0
+    nonpreferred_walking_distance_m: float = Field(default=0.0, ge=0)
     crossing_baseline_distance_m: float | None = None
     crossing_distance_limit_m: float | None = None
     crossing_detour_limited: bool = False

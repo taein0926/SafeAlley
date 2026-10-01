@@ -95,7 +95,7 @@ def _preserve_explicit_no_stairs(query: str, intent: ParsedRouteIntent) -> None:
 
 
 def _preserve_crossing_preference(query: str, intent: ParsedRouteIntent) -> None:
-    match = re.search(r"(?:건널목|횡단보도)(?:은|는|을|를|가|이)?\s*(없이|없는|적게|적은|최소|회피|피해|피하|가급적)", query)
+    match = re.search(r"(?:건널목|횡단보도)(?:은|는|을|를|가|이)?\s*(없이|없는|적게|적은|덜|최소|회피|피해|피하|가급적)", query)
     if not match:
         return
     direction = "avoid" if match.group(1) in {"없이", "없는"} else "minimize"

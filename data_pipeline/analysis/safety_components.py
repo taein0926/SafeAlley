@@ -1,4 +1,5 @@
 from typing import Any
+from contextlib import nullcontext
 
 from psycopg.rows import dict_row
 
@@ -61,9 +62,10 @@ def run_safety_component_analysis(
     cctv_source: str = "michuhol-cctv-ai-ready",
     help_point_source: str = "ai-ready-help-points",
     road_source: str = "osm",
+    connection=None,
 ) -> dict[str, Any]:
     config = SafetyComponentConfig.from_environment()
-    with database_connection() as connection:
+    with (nullcontext(connection) if connection is not None else database_connection()) as connection:
         with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """

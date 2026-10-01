@@ -7,7 +7,7 @@ VERSION = "osm-pedestrian-juan-v1"
 MAJOR = {"primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link"}
 
 
-def pedestrian_metadata(document: dict, roads: list[dict]) -> dict[int, dict]:
+def pedestrian_metadata(document: dict, roads: list[dict], *, version: str = VERSION) -> dict[int, dict]:
     ways = {e["id"]: e for e in document["elements"] if e["type"] == "way"}
     crossing_nodes = {e["id"] for e in document["elements"]
                       if e["type"] == "node" and e.get("tags", {}).get("highway") == "crossing"}
@@ -36,7 +36,7 @@ def pedestrian_metadata(document: dict, roads: list[dict]) -> dict[int, dict]:
         if (s, t) not in pairs:
             forward, reverse = reverse, forward
         updates[road["id"]] = {
-            "version": VERSION, "allowed": allowed,
+            "version": version, "allowed": allowed,
             "centreline_fallback": highway in MAJOR,
             "forward_allowed": forward, "reverse_allowed": reverse,
             "is_crossing": is_crossing, "crossing_group": None,

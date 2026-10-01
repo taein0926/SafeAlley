@@ -55,6 +55,7 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       - stt_models:/models/stt
+      - map_tiles:/map-tiles:ro
     depends_on:
       database:
         condition: service_healthy
@@ -176,10 +177,12 @@ services:
     volumes:
       - ./data_pipeline/raw:/pipeline/raw
       - ./data_pipeline/processed:/pipeline/processed
+      - map_tiles:/map-tiles
 
 volumes:
   postgis_data:
   stt_models:
+  map_tiles:
 
 networks:
   public:

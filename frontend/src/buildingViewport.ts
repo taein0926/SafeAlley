@@ -36,7 +36,7 @@ export function buildingTiles(bounds: RoadViewport): BuildingTile[] {
 }
 
 // Merge adjacent missing tiles into rectangles. Cached tiles never appear in a request bbox.
-function batchTiles(tiles: BuildingTile[]): BuildingBatch[] {
+export function batchTiles(tiles: BuildingTile[]): BuildingBatch[] {
   const remaining = new Map(tiles.map((tile) => [tile.key, tile]));
   const batches: BuildingBatch[] = [];
   for (const tile of tiles) {

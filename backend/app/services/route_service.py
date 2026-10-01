@@ -11,6 +11,7 @@ from app.repositories.road_repository import (
 )
 
 from app.services.routing.astar import PathNotFoundError, PathResult, find_path
+from app.services.routing.pedestrian_priority import find_pedestrian_first_path, nonpreferred_distance
 from app.services.routing.graph import GraphEdge, GraphNode, RoadGraph
 from app.services.routing.safety_cost import SafetyCostPolicy
 from app.services.routing.intersection import find_intersection_aware_path
@@ -338,6 +339,7 @@ def get_custom_route(*, prepared, preferences, stairs_weight=0.0, crossing_weigh
     feature = _route_feature(result, prepared.start_node, prepared.end_node, "custom", policy)
     feature["properties"].update(
         intersection_data_available=prepared.intersection_data_available,
+        nonpreferred_walking_distance_m=round(nonpreferred_distance(result.edges), 3),
         crossing_baseline_distance_m=round(baseline, 2),
         crossing_distance_limit_m=round(limit, 2), crossing_detour_limited=limited,
     )
@@ -466,7 +468,7 @@ def _get_route(
             )
             result = bounded.path
         else:
-            result = find_path(
+            result = find_pedestrian_first_path(
                 graph=graph,
                 start_node_id=start_node.node_id,
                 goal_node_id=end_node.node_id,
@@ -477,6 +479,7 @@ def _get_route(
         raise RouteNotFoundError(str(exc)) from exc
 
     feature = _route_feature(result, start_node, end_node, route_type, policy)
+    feature["properties"]["nonpreferred_walking_distance_m"] = round(nonpreferred_distance(result.edges), 3)
     feature["properties"]["intersection_data_available"] = context.intersection_data_available
     if bounded is not None:
         feature["properties"].update({

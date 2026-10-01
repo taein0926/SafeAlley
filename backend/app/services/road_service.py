@@ -1,4 +1,27 @@
-from app.repositories.road_repository import BoundingBox, list_road_segments
+from app.repositories.road_repository import BoundingBox, list_road_segments, list_crossing_markers, list_osm_display_roads
+
+
+def get_osm_display_collection(bbox_value: str | None):
+    roads = list_osm_display_roads(parse_bbox(bbox_value))
+    return {
+        "type": "FeatureCollection",
+        "features": [{"type":"Feature","id":r["id"],"geometry":r["geometry"],
+                      "properties":{"highway":r["highway"],"name":r["name"]}} for r in roads],
+        "metadata":{"count":len(roads),"crs":"EPSG:4326","source":"osm","display_only":True},
+    }
+
+
+def get_crossing_feature_collection(bbox_value: str | None = None) -> dict[str, object]:
+    markers = list_crossing_markers(parse_bbox(bbox_value))
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "id": row["id"], "geometry": row["geometry"],
+             "properties": {"source": "osm", "basis": row["basis"]}}
+            for row in markers
+        ],
+        "metadata": {"count": len(markers), "crs": "EPSG:4326", "source": "osm"},
+    }
 
 
 class InvalidBoundingBoxError(ValueError):

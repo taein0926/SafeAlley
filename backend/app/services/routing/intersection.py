@@ -7,7 +7,8 @@ No discounts/negative costs: A*'s distance heuristic remains admissible.
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from app.services.routing.astar import PathResult, find_path
+from app.services.routing.astar import PathResult
+from app.services.routing.pedestrian_priority import find_pedestrian_first_path
 from app.services.routing.graph import GraphEdge, RoadGraph
 from app.services.routing.safety_cost import SafetyCostPolicy
 
@@ -34,7 +35,7 @@ def find_intersection_aware_path(
         return lambda edge: active.edge_cost(edge) + extra_cost(edge)
 
     def search(active: SafetyCostPolicy):
-        return find_path(graph, start_node_id, goal_node_id, cost(active), active.distance_weight)
+        return find_pedestrian_first_path(graph, start_node_id, goal_node_id, cost(active), active.distance_weight)
 
     baseline = search(replace(policy, intersection_weight=0))
     limit = baseline.total_distance_m + min(

@@ -78,6 +78,7 @@ def test_natural_language_crossing_avoidance_is_soft_unless_explicitly_none():
     from app.schemas.agent import ParsedRouteIntent
     from app.services.local_llm_service import _preserve_crossing_preference
     for text, direction in [("건널목은 피해서 안내해줘", "minimize"),
+                            ("횡단보도 덜 건너는 길로 안내해줘", "minimize"),
                             ("횡단보도 없이 가줘", "avoid"),
                             ("건널목을 적게 지나가줘", "minimize")]:
         intent = ParsedRouteIntent(preferences=[])

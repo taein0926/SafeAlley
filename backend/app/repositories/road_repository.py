@@ -72,6 +72,23 @@ class RoadRepositoryError(RuntimeError):
     """Raised when road data cannot be read from PostGIS."""
 
 
+def list_osm_display_roads(bbox: BoundingBox | None = None):
+    where = ""
+    parameters = []
+    if bbox is not None:
+        where = "WHERE geom && ST_Transform(ST_MakeEnvelope(%s,%s,%s,%s,4326),5179)"
+        parameters = [bbox.min_longitude,bbox.min_latitude,bbox.max_longitude,bbox.max_latitude]
+    try:
+        with connect_database() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(f"""SELECT osm_way_id AS id,tags->>'highway' AS highway,
+                    tags->>'name' AS name,ST_AsGeoJSON(ST_Transform(geom,4326),7)::json AS geometry
+                    FROM osm_display_roads {where} ORDER BY osm_way_id""",parameters)
+                return list(cursor.fetchall())
+    except psycopg.Error as exc:
+        raise RoadRepositoryError("OSM display roads are unavailable") from exc
+
+
 def list_road_segments(
     bbox: BoundingBox | None = None,
     source: str | None = None,
@@ -125,6 +142,8 @@ def list_road_segments(
             population_score::double precision AS population_score,
             safety_score::double precision AS safety_score,
             properties->>'highway' AS highway,
+            COALESCE((properties->'osm_pedestrian'->>'allowed')::boolean, true)
+                AS pedestrian_allowed,
             COALESCE(
                 (properties->>'is_steps')::boolean,
                 properties->>'highway' = 'steps',
@@ -152,6 +171,73 @@ def list_road_segments(
                 return list(cursor.fetchall())
     except psycopg.Error as exc:
         raise RoadRepositoryError("Failed to query road segments") from exc
+
+
+def list_crossing_markers(bbox: BoundingBox | None = None) -> list[dict[str, object]]:
+    """Return explicit OSM crossings only; never infer crossings from junctions."""
+    query = """
+        WITH roads AS (
+            SELECT * FROM road_segments WHERE source = 'osm'
+        ), crossing_lines AS (
+            SELECT COALESCE(
+                'group-' || (properties->'osm_pedestrian'->>'crossing_group'),
+                'way-' || (properties->>'osm_way_id'), 'segment-' || id::text
+            ) AS marker_id, geom
+            FROM roads
+            WHERE COALESCE(
+                (properties->'osm_pedestrian'->>'is_crossing')::boolean,
+                properties->'osm_tags'->>'footway' = 'crossing', false
+            )
+        ), merged AS (
+            SELECT marker_id, ST_LineMerge(ST_Collect(geom)) AS geom
+            FROM crossing_lines GROUP BY marker_id
+        ), parts AS (
+            SELECT marker_id, (ST_Dump(geom)).geom AS geom FROM merged
+        ), longest AS (
+            SELECT DISTINCT ON (marker_id) marker_id, geom
+            FROM parts ORDER BY marker_id, ST_Length(geom) DESC, ST_AsEWKB(geom)
+        ), crossing_nodes AS (
+            SELECT DISTINCT ON (node_id) node_id, geom FROM (
+                SELECT source_id::bigint AS node_id, geom
+                FROM public_crosswalks WHERE source = 'osm-crossing-node'
+                UNION ALL
+                SELECT r.source_node_id AS node_id, ST_StartPoint(r.geom) AS geom
+                FROM roads r
+                WHERE (COALESCE(r.properties->'crossing_node_ids', '[]'::jsonb)
+                    || COALESCE(r.properties->'osm_pedestrian'->'crossing_node_ids', '[]'::jsonb))
+                    @> jsonb_build_array(r.source_node_id)
+                UNION ALL
+                SELECT r.target_node_id, ST_EndPoint(r.geom) FROM roads r
+                WHERE (COALESCE(r.properties->'crossing_node_ids', '[]'::jsonb)
+                    || COALESCE(r.properties->'osm_pedestrian'->'crossing_node_ids', '[]'::jsonb))
+                    @> jsonb_build_array(r.target_node_id)
+            ) n ORDER BY node_id, ST_AsEWKB(geom)
+        ), markers AS (
+            SELECT marker_id AS id, 'crossing_line' AS basis,
+                   ST_LineInterpolatePoint(geom, 0.5) AS geom FROM longest
+            UNION ALL
+            SELECT 'node-' || node_id::text, 'crossing_node', n.geom
+            FROM crossing_nodes n
+            WHERE NOT EXISTS (
+                SELECT 1 FROM crossing_lines l WHERE ST_DWithin(l.geom, n.geom, 1)
+            )
+        )
+        SELECT id, basis, ST_AsGeoJSON(ST_Transform(geom, 4326), 9)::json AS geometry
+        FROM markers
+    """
+    parameters = []
+    if bbox is not None:
+        # Filter after grouping so a crossing has a stable midpoint across tiles.
+        query += " WHERE ST_Intersects(geom, ST_Transform(ST_MakeEnvelope(%s,%s,%s,%s,4326),5179))"
+        parameters = [bbox.min_longitude, bbox.min_latitude, bbox.max_longitude, bbox.max_latitude]
+    query += " ORDER BY id"
+    try:
+        with connect_database() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(query, parameters)
+                return list(cursor.fetchall())
+    except psycopg.Error as exc:
+        raise RoadRepositoryError("Failed to query crossing markers") from exc
 
 
 def find_nearest_road_node(
