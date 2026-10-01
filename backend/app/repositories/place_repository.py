@@ -58,7 +58,7 @@ def find_place(name: str) -> dict[str, object] | None:
             )
             OR lower(regexp_replace(COALESCE(address, ''), '\\s+', '', 'g')) LIKE %s
         ORDER BY match_rank, length(name), name, id
-        LIMIT 1
+        LIMIT 10
     """
     partial = f"%{normalized}%"
     parameters = (
@@ -76,10 +76,27 @@ def find_place(name: str) -> dict[str, object] | None:
         with connect_database() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(query, parameters)
-                row = cursor.fetchone()
+                rows = cursor.fetchall()
     except psycopg.Error as exc:
         raise PlaceRepositoryError("Place index is unavailable") from exc
-    return dict(row) if row is not None else None
+    if not rows:
+        return None
+    best_rank = rows[0]["match_rank"]
+    tied = [row for row in rows if row["match_rank"] == best_rank]
+    # A station can share its display name with a nearby police/help point.
+    if normalized.endswith("역"):
+        exact_stations = [
+            row for row in tied
+            if row["category"] == "subway_station"
+            and _normalized(row["name"]) == normalized
+        ]
+        if len(exact_stations) == 1:
+            return {key: value for key, value in exact_stations[0].items() if key != "match_rank"}
+    if len(tied) > 1:
+        raise PlaceAmbiguousError(
+            f"'{name}'에 해당하는 장소가 여러 곳입니다. 장소명이나 주소를 더 구체적으로 입력해 주세요."
+        )
+    return {key: value for key, value in rows[0].items() if key != "match_rank"}
 
 
 def get_osm_road_viewbox() -> tuple[float, float, float, float]:

@@ -1,0 +1,8 @@
+[
+  {"id":"ms-independent-plus-comparison","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 CCTV 많은 길이 좋아. 경찰서 가까운 길보다 짧은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"cctv_score":"maximize","distance_m":"minimize"}},
+  {"id":"ms-neutral-crossing","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 계단 없는 길로 가줘. 횡단보도는 건너도 괜찮아","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"ms-correct-stairs","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 계단 없는 길로 가줘. 아니, 계단이 있어도 괜찮아","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{}},
+  {"id":"ms-correct-cctv","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 CCTV 많은 길로 가줘. 아니, CCTV는 필요 없어","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{}},
+  {"id":"ms-add-distance","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 안전한 길이 좋아. 짧은 길도 좋아","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"safety_score":"maximize","distance_m":"minimize"}},
+  {"id":"ms-unrelated-cancellation","category":"multi_sentence","query":"주안역에서 인천사랑병원까지 짧은 길로 가줘. CCTV는 필요 없어","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"distance_m":"minimize"}}
+]

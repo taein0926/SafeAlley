@@ -302,7 +302,9 @@ function App() {
     setAppliedDepartureTime(result.departureTime ?? currentLocalTime());
     setSearchResult(result);
     setSelectedRouteType(
-      result.result.selected_route_type ?? result.result.candidates[0]?.route_type ?? null,
+      result.result.recommendation_status === "ready"
+        ? result.result.selected_route_type
+        : null,
     );
     setRequestState("idle");
   }
@@ -535,6 +537,11 @@ function App() {
       {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
       {showRouteResults && (
         <aside id="route-results" className="result-panel" aria-label="경로 검색 결과">
+          {searchResult?.result.recommendation_status !== "ready" && (
+            <p className="route-review-warning" role="status">
+              {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
+            </p>
+          )}
           <div className="route-cards">
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;

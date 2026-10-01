@@ -1,0 +1,12 @@
+[
+  {"id":"cp-police-distance","category":"comparison","query":"주안역에서 인천사랑병원까지 경찰서 가까운 길보다 짧은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"distance_m":"minimize"}},
+  {"id":"cp-cctv-stairs","category":"comparison","query":"주안역에서 인천사랑병원까지 CCTV 많은 길보다는 계단 없는 길로 안내해줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"cp-light-cctv","category":"comparison","query":"주안역에서 인천사랑병원까지 가로등 많은 길보다 CCTV 많은 길이 좋아","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"cctv_score":"maximize"}},
+  {"id":"cp-stairs-light","category":"comparison","query":"주안역에서 인천사랑병원까지 계단 적은 길보다 밝은 길로 가고 싶어","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"streetlight_score":"maximize"}},
+  {"id":"cp-crossing-sidewalk","category":"comparison","query":"주안역에서 인천사랑병원까지 횡단보도 적은 길보다 인도가 많은 길로 안내해줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"sidewalk_coverage_percent":"maximize"}},
+  {"id":"cp-slope-cctv","category":"comparison","query":"주안역에서 인천사랑병원까지 평지보다 CCTV가 많은 길이 좋아","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"cctv_score":"maximize"}},
+  {"id":"cp-police-multi","category":"comparison","query":"주안역에서 인천사랑병원까지 경찰서 가까운 길보다는 가로등 많고 짧은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"streetlight_score":"maximize","distance_m":"minimize"}},
+  {"id":"cp-repeat-cctv","category":"comparison","query":"주안역에서 인천사랑병원까지 CCTV 많은 길보다 계단 없는 길이 좋지만 CCTV도 많으면 좋겠어","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"stairs_distance_m":"avoid","cctv_score":"maximize"}},
+  {"id":"cp-separate-sentence","category":"comparison","query":"주안역에서 인천사랑병원까지 CCTV가 많은 길도 중요해. 경찰서 가까운 길보다 짧은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"cctv_score":"maximize","distance_m":"minimize"}},
+  {"id":"cp-no-comparison","category":"multi_condition","query":"주안역에서 인천사랑병원까지 계단 없이 CCTV 많고 짧은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"stairs_distance_m":"avoid","cctv_score":"maximize","distance_m":"minimize"}}
+]
