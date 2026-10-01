@@ -1,0 +1,114 @@
+/* Keep result presentation scoped; selection and ranking remain unchanged. */
+#route-results {
+  --result-surface: #122234;
+  --result-selected: #1b3553;
+  --result-text: #edf3fa;
+  --result-muted: #a7b6c8;
+  --result-line: #34465a;
+  --result-accent: #80b8ff;
+  --result-badge: #274565;
+  --result-badge-line: #577fa8;
+  padding: 20px;
+  color: var(--result-text);
+}
+.app-shell[data-theme="day"] #route-results {
+  --result-surface: #fff;
+  --result-selected: #f2f7ff;
+  --result-text: #202735;
+  --result-muted: #687384;
+  --result-line: #e3e7ed;
+  --result-accent: #1769df;
+  --result-badge: #e6efff;
+  --result-badge-line: #b9d1f6;
+}
+#route-results .route-cards { margin-top: 0; gap: 12px; }
+#route-results .route-card {
+  --card-surface: var(--result-surface);
+  min-width: 0;
+  width: 100%;
+  padding: 18px 16px 14px;
+  border: 1px solid var(--result-line);
+  border-radius: 8px;
+  color: var(--result-text);
+  background: var(--card-surface);
+  box-shadow: none;
+}
+#route-results .route-card--active {
+  --card-surface: var(--result-selected);
+  border-color: var(--result-accent);
+}
+#route-results .route-card:hover { border-color: var(--result-accent); }
+#route-results .route-card-title strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 650;
+}
+#route-results .route-card--active .route-card-title { color: var(--result-accent); padding-right: 96px; }
+#route-results .route-swatch { width: 16px; height: 4px; margin: 0; background: #89919d; }
+#route-results .route-swatch--active { background: var(--result-accent); }
+#route-results .route-card-primary { gap: 10px; margin-top: 10px; }
+#route-results .route-card-primary > strong {
+  color: var(--result-text);
+  font-size: 32px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+}
+#route-results .route-time-unit { margin-left: 3px; font-size: 17px; font-weight: 500; letter-spacing: 0; }
+#route-results .route-card-primary > span { color: var(--result-muted); font-size: 14px; }
+#route-results .recommendation-icons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 16px 0 0;
+}
+#route-results .recommendation-badge {
+  --badge-cutout: var(--result-badge);
+  gap: 5px;
+  padding: 9px 2px 8px;
+  border: 1px solid var(--result-badge-line);
+  border-radius: 8px;
+  color: var(--result-accent);
+  background: var(--result-badge);
+}
+#route-results .recommendation-badge[data-applied="false"] {
+  --badge-cutout: var(--card-surface);
+  border-color: var(--result-line);
+  border-style: dashed;
+  border-radius: 8px;
+  color: var(--result-muted);
+  background: transparent;
+}
+#route-results .recommendation-icons svg { width: 26px; height: 26px; }
+#route-results .recommendation-icons span { font-size: 11px; font-weight: 600; }
+#route-results .recommendation-badge-status { font-size: 10px; font-weight: 500; }
+#route-results .route-card-details {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--result-line);
+  color: var(--result-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+#route-results .route-detail-button {
+  top: 15px;
+  right: 12px;
+  min-height: 32px;
+  width: 96px;
+  white-space: nowrap;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--result-accent);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
+#route-results .route-detail-button:hover { background: var(--result-badge); }
+#route-results :is(.route-card, .route-detail-button):focus-visible {
+  outline: 2px solid var(--result-accent);
+  outline-offset: 3px;
+}

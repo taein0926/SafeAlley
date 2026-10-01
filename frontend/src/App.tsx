@@ -534,15 +534,16 @@ function App() {
       {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
       {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
       {showRouteResults && (
-        <aside className="result-panel" aria-label="경로 검색 결과">
+        <aside id="route-results" className="result-panel" aria-label="경로 검색 결과">
           <div className="route-cards">
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;
+              const walkingMinutes = estimatedWalkingMinutes(candidate.route.properties.total_distance_m);
               return (
                 <div key={candidate.route_type} className="route-card-group">
                 <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
                   <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
-                  <span className="route-card-primary"><strong>{estimatedWalkingMinutes(candidate.route.properties.total_distance_m) === null ? "시간 미제공" : `${estimatedWalkingMinutes(candidate.route.properties.total_distance_m)}분`}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
+                  <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
                   {candidate.route_type === searchResult?.result.selected_route_type && <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />}
                   <span className="route-card-details">
                     계단 {candidate.route.properties.stairs_segment_count}개
@@ -550,7 +551,7 @@ function App() {
                     {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
                   </span>
                 </button>
-                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "검색 직후 지도 시점으로 돌아가기" : "출발지에서 도착지 방향으로 3D 보기"}>{routeDetailOpen ? "돌아가기" : "자세히 보기"} <span aria-hidden="true">{routeDetailOpen ? "‹" : "›"}</span></button>}
+                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "경로 전체가 보이는 시점으로 전환" : "출발지에서 도착지 방향으로 경로를 가까이 보기"}>{routeDetailOpen ? "전체 경로 보기" : "자세히 보기"}</button>}
                 </div>
               );
             })}

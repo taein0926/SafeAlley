@@ -59,14 +59,14 @@ export function useWeather(departureTime: string | null) {
 export function WeatherHud({ data, error, date, time }: ReturnType<typeof useWeather>) {
   const forecast = data?.forecast ?? null;
   const symbol = weatherSymbol(forecast);
-  return <section className="weather-hud" aria-label="출발 시간 날씨" aria-live="polite">
+  return <section id="map-weather" className="weather-hud" aria-label="출발 시간 날씨" aria-live="polite">
     <div className="weather-hud-toprow">
       <div className="weather-hud-heading">미추홀구 · {date.slice(5).replace("-", "/")} {time.slice(0, 5)} 기준</div>
     </div>
     {forecast ? <div className="weather-hud-values">
       <span role="img" aria-label={symbol.label} title={symbol.label}>{symbol.icon}</span>
-      <span title="예보 기온">{forecast.temperature_c === null ? "기온 미제공" : `${forecast.temperature_c}°C`}</span>
-      <span title="예보 풍속">{forecast.wind_speed_ms === null ? "풍속 미제공" : `${forecast.wind_speed_ms} m/s`}</span>
+      <span className="weather-temperature" title="예보 기온">{forecast.temperature_c === null ? "기온 미제공" : `${forecast.temperature_c}°C`}</span>
+      <span className="weather-wind" title="예보 풍속">{forecast.wind_speed_ms === null ? "풍속 미제공" : `${forecast.wind_speed_ms} m/s`}</span>
     </div> : <div className="weather-hud-unavailable">{error ? "날씨 연결 재시도 중…" : !data ? "날씨 확인 중…" : data.forecast_status === "stale" ? "최신 예보 자동 갱신 대기 중…" : "해당 시간 예보 미연결 · 자동 재조회 중"}</div>}
   </section>;
 }

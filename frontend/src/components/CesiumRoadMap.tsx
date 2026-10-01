@@ -35,8 +35,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { RouteCandidate, RouteType } from "../types";
 import { estimatedWalkingMinutes, type BuildingMapSelection } from "../routeSearch";
 export type { BuildingMapSelection } from "../routeSearch";
-import { roadBboxQuery, viewportIsInside, type RoadViewport } from "../roadViewport";
-import { isPedestrianOverlayFeature, pedestrianRequestBounds, PEDESTRIAN_OVERLAY_COLOR, PEDESTRIAN_OVERLAY_WIDTH } from "../pedestrianOverlay";
+import { roadBboxQuery, type RoadViewport } from "../roadViewport";
 import { BuildingViewportRequests, boundsIntersect, geometryBounds } from "../buildingViewport";
 import { STAIRS_MARKER_IMAGE, stairMarkerPosition } from "../stairsMarkers";
 import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } from "../bridgeMarkers";
@@ -60,7 +59,6 @@ export type RoadMapStatus =
   | { kind: "loading" }
   | {
       kind: "ready";
-      roadCount: number;
       buildingCount: number;
       streetlightCount: number;
       cctvCount: number;
@@ -292,7 +290,6 @@ export function CesiumRoadMap({
   const streetlightDensityLayerRef = useRef<ImageryLayer | null>(null);
   const routeCandidatesRef = useRef(routeCandidates);
   const selectedRouteTypeRef = useRef(selectedRouteType);
-  const refreshRoadsRef = useRef<(() => void) | null>(null);
   const refreshBuildingsRef = useRef<(() => void) | null>(null);
   const refreshFacilitiesRef = useRef<(() => void) | null>(null);
   const streetlightPrimitivesRef = useRef<BillboardCollection | null>(null);
@@ -370,13 +367,6 @@ export function CesiumRoadMap({
     let cancelled = false;
     let renderingFailed = false;
     const layerController = new AbortController();
-    let roadController: AbortController | null = null;
-    let roadTimer: ReturnType<typeof setTimeout> | undefined;
-    let roadRequestSerial = 0;
-    let loadedRoadBounds: RoadViewport | null = null;
-    let loadedRoadCount = 0;
-    const pedestrianEntities = new Map<string, Entity>();
-    let pendingRoadBounds: RoadViewport | null = null;
     let layerStatus: Extract<RoadMapStatus, { kind: "ready" }> | null = null;
     const buildingRequests = new BuildingViewportRequests(32);
     let buildingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -539,111 +529,6 @@ export function CesiumRoadMap({
       }
       return collection;
     }
-
-    function publishRoadCount(count: number) {
-      if (!layerStatus || cancelled || renderingFailed) return;
-      layerStatus = { ...layerStatus, roadCount: count };
-      onStatusChange(layerStatus);
-    }
-
-    async function refreshVisibleRoads() {
-      if (cancelled || renderingFailed || !layerStatus || viewer.isDestroyed()) return;
-      const rectangle = viewer.camera.computeViewRectangle();
-      const view = rectangle ? {
-        west: CesiumMath.toDegrees(rectangle.west),
-        south: CesiumMath.toDegrees(rectangle.south),
-        east: CesiumMath.toDegrees(rectangle.east),
-        north: CesiumMath.toDegrees(rectangle.north),
-      } : null;
-      const bounds = view ? pedestrianRequestBounds(view) : null;
-      if (!bounds) {
-        ++roadRequestSerial;
-        roadController?.abort();
-        pendingRoadBounds = null;
-        loadedRoadBounds = null;
-        for (const entity of pedestrianEntities.values()) viewer.entities.remove(entity);
-        pedestrianEntities.clear();
-        viewer.scene.requestRender();
-        publishRoadCount(0);
-        return;
-      }
-      if (view && pendingRoadBounds && viewportIsInside(view, pendingRoadBounds)) return;
-      // Cancel an obsolete in-flight request even when returning to cached bounds.
-      ++roadRequestSerial;
-      roadController?.abort();
-      pendingRoadBounds = null;
-      if (view && loadedRoadBounds && viewportIsInside(view, loadedRoadBounds)) {
-        publishRoadCount(loadedRoadCount);
-        return;
-      }
-      const serial = roadRequestSerial;
-      const controller = new AbortController();
-      roadController = controller;
-      pendingRoadBounds = bounds;
-      publishRoadCount(0);
-      try {
-        const roads = await loadGeoJson<RoadFeatureCollection>(
-          `/api/osm-roads?bbox=${roadBboxQuery(bounds)}`,
-          "화면 주변 OSM 전체 도로",
-          controller.signal,
-        );
-        if (cancelled || renderingFailed || serial !== roadRequestSerial) return;
-        loadedRoadBounds = bounds;
-        const walking = roads.features.filter(isPedestrianOverlayFeature);
-        const visibleIds = new Set(walking.map((feature) => `pedestrian-overlay-${feature.id}`));
-        // Reuse overlapping geometry on small pans; retain only the padded viewport.
-        viewer.entities.suspendEvents();
-        try {
-          for (const [id, entity] of pedestrianEntities) {
-            if (!visibleIds.has(id)) {
-              viewer.entities.remove(entity);
-              pedestrianEntities.delete(id);
-            }
-          }
-          for (const feature of walking) {
-            const id = `pedestrian-overlay-${feature.id}`;
-            if (pedestrianEntities.has(id)) continue;
-            pedestrianEntities.set(id, viewer.entities.add({
-              id,
-              polyline: {
-                positions: feature.geometry.coordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)),
-                width: PEDESTRIAN_OVERLAY_WIDTH,
-                material: Color.fromCssColorString(PEDESTRIAN_OVERLAY_COLOR),
-                clampToGround: true,
-                classificationType: ClassificationType.TERRAIN,
-                zIndex: 0,
-              },
-            }));
-          }
-        } finally {
-          viewer.entities.resumeEvents();
-        }
-        loadedRoadCount = walking.length;
-        publishRoadCount(loadedRoadCount);
-        viewer.scene.requestRender();
-      } catch (error) {
-        if (cancelled || serial !== roadRequestSerial || controller.signal.aborted) return;
-        loadedRoadBounds = null;
-        // Optional analysis data must not disable route search or facility layers.
-        console.warn("화면 주변 도로 조회 실패", error);
-      } finally {
-        if (serial === roadRequestSerial) pendingRoadBounds = null;
-      }
-    }
-
-    function scheduleRoadRefresh() {
-      // Throttle rather than debounce: long drags should also load new areas.
-      if (roadTimer !== undefined) return;
-      roadTimer = setTimeout(() => {
-        roadTimer = undefined;
-        void refreshVisibleRoads();
-      }, 250);
-    }
-    refreshRoadsRef.current = scheduleRoadRefresh;
-    const removeCameraListener = viewer.camera.moveEnd.addEventListener(scheduleRoadRefresh);
-    const removeRoadChangedListener = viewer.camera.changed.addEventListener(scheduleRoadRefresh);
-    const roadResizeObserver = new ResizeObserver(scheduleRoadRefresh);
-    roadResizeObserver.observe(containerRef.current);
 
     function publishBuildingStatus(status: BuildingMapStatus) {
       if (cancelled || renderingFailed) return;
@@ -1230,10 +1115,9 @@ export function CesiumRoadMap({
     });
     const facilityResizeObserver = new ResizeObserver(scheduleFacilities);
     facilityResizeObserver.observe(containerRef.current);
-    layerStatus = { kind: "ready", roadCount: 0, buildingCount: buildingStatus.count,
+    layerStatus = { kind: "ready", buildingCount: buildingStatus.count,
       streetlightCount: 0, cctvCount: 0, cctvRecordCount: 0, helpPointCount: 0 };
     onStatusChange(layerStatus);
-    scheduleRoadRefresh();
     scheduleFacilities();
     return () => {
       cancelled = true;
@@ -1245,7 +1129,6 @@ export function CesiumRoadMap({
       facilityResizeObserver.disconnect();
       for (const item of facilityLayers) item.cache.clear();
       refreshFacilitiesRef.current = null;
-      roadController?.abort();
       buildingRequests.clear();
       clearTimeout(buildingTimer);
       removeBuildingMoveStart();
@@ -1254,11 +1137,6 @@ export function CesiumRoadMap({
       releaseBuildings(buildingDataSource);
       buildingTiles.clear();
       buildingRecords.clear();
-      clearTimeout(roadTimer);
-      removeCameraListener();
-      removeRoadChangedListener();
-      roadResizeObserver.disconnect();
-      refreshRoadsRef.current = null;
       refreshBuildingsRef.current = null;
       removeRenderErrorListener();
       removeQualityStart();
@@ -1306,7 +1184,6 @@ export function CesiumRoadMap({
 
   useEffect(() => {
     routeCandidatesRef.current = routeCandidates;
-    refreshRoadsRef.current?.();
     refreshBuildingsRef.current?.();
   }, [routeCandidates, selectedRouteType]);
 

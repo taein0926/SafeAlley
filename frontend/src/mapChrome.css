@@ -1,0 +1,78 @@
+/* Shared restrained palette for the right-hand controls and weather summary. */
+.app-shell {
+  --chrome-surface: #122234;
+  --chrome-field: #1c2e42;
+  --chrome-text: #edf3fa;
+  --chrome-muted: #a7b6c8;
+  --chrome-line: #34465a;
+  --chrome-accent: #80b8ff;
+  --chrome-active: #243f60;
+}
+.app-shell[data-theme="day"] {
+  --chrome-surface: #fff;
+  --chrome-field: #f5f6f8;
+  --chrome-text: #202735;
+  --chrome-muted: #687384;
+  --chrome-line: #e3e7ed;
+  --chrome-accent: #1769df;
+  --chrome-active: #eaf2ff;
+}
+.app-shell .sidebar-primary .search-empty > span { color: var(--chrome-accent); }
+.app-shell #facility-controls {
+  width: 54px;
+  padding: 5px;
+  gap: 4px;
+  border: 1px solid var(--chrome-line);
+  border-radius: 10px;
+  background: var(--chrome-surface);
+  box-shadow: 0 3px 12px #00000014;
+  backdrop-filter: none;
+}
+.app-shell #facility-controls button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--chrome-muted);
+  background: transparent;
+  opacity: .65;
+  filter: none;
+  box-shadow: none;
+}
+.app-shell #facility-controls button[aria-pressed="true"] {
+  background: var(--chrome-active);
+  border-color: var(--chrome-line);
+  opacity: 1;
+  box-shadow: none;
+}
+.app-shell #facility-controls button:hover { border-color: var(--chrome-accent); opacity: 1; }
+.app-shell #facility-controls button:focus-visible { outline: 2px solid var(--chrome-accent); outline-offset: 1px; }
+.app-shell .map-navigation { right: var(--map-edge); gap: 10px; }
+.app-shell .map-navigation button {
+  width: 40px;
+  height: 40px;
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+  border-color: var(--chrome-line);
+}
+.app-shell .map-navigation :is(.map-home, .map-zoom) { border-radius: 8px; box-shadow: 0 3px 12px #00000014; }
+.app-shell .map-navigation button:hover { color: var(--chrome-accent); background: var(--chrome-active); }
+.app-shell #map-weather {
+  padding: 9px 10px;
+  color: var(--chrome-text);
+  background: var(--chrome-field);
+  border: 1px solid var(--chrome-line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+.app-shell #map-weather .weather-hud-heading {
+  color: var(--chrome-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 400;
+}
+.app-shell #map-weather .weather-hud-values { gap: 8px; margin-top: 5px; }
+.app-shell #map-weather .weather-hud-values > [role="img"] { font-size: 20px; }
+.app-shell #map-weather .weather-temperature { color: var(--chrome-text); font-size: 18px; font-weight: 700; letter-spacing: -.03em; }
+.app-shell #map-weather .weather-wind { color: var(--chrome-muted); font-size: 12px; padding-left: 8px; border-left: 1px solid var(--chrome-line); }
+.app-shell #map-weather .weather-hud-unavailable { color: var(--chrome-muted); font-size: 11px; line-height: 1.5; }
