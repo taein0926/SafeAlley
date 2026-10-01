@@ -1,0 +1,14 @@
+[
+  {"id":"nq-crossing-allow-stairs","category":"negation","query":"도화역에서 수봉공원까지 계단은 지나도 되니까 건널목만 적게 지나는 길로 안내해줘","origin":"도화역","destination":"수봉공원","time":null,"preferences":{"crosswalk_count":"minimize"}},
+  {"id":"nq-allow-cctv-distance","category":"negation","query":"주안역에서 더나눔병원까지 CCTV는 중요하지 않고 최대한 짧게 가고 싶어","origin":"주안역","destination":"더나눔병원","time":null,"preferences":{"distance_m":"minimize"}},
+  {"id":"nq-no-stairs-later-allow","category":"correction","query":"도화역에서 인천사랑병원까지 계단 없는 길을 찾아줘. 생각해 보니 계단은 있어도 괜찮고 인도가 많은 길이 좋아","origin":"도화역","destination":"인천사랑병원","time":null,"preferences":{"sidewalk_coverage_percent":"maximize"}},
+  {"id":"nq-compare-plus-sidewalk","category":"comparison","query":"인천사랑병원에서 도화역까지 경찰서 가까운 길보다 짧고 인도가 많은 길로 가고 싶어","origin":"인천사랑병원","destination":"도화역","time":null,"preferences":{"distance_m":"minimize","sidewalk_coverage_percent":"maximize"}},
+  {"id":"nq-night-three","category":"multi_condition","query":"밤 9시에 주안역에서 수봉공원까지 가로등이 많은 길로 가되 계단은 피하고 멀리 돌아가진 않게 해줘","origin":"주안역","destination":"수봉공원","time":"21:00:00","preferences":{"streetlight_score":"maximize","stairs_distance_m":"avoid","distance_m":"minimize"}},
+  {"id":"nq-two-sentences","category":"multi_sentence","query":"도화역에서 수봉도서관까지 CCTV 많은 길이 좋아. 하지만 횡단보도는 적게 지나고 싶어","origin":"도화역","destination":"수봉도서관","time":null,"preferences":{"cctv_score":"maximize","crosswalk_count":"minimize"}},
+  {"id":"nq-unsupported-only","category":"unsupported","query":"주안역에서 인천사랑병원까지 사람 적게 붐비는 길로 안내해줘","origin":"주안역","destination":"인천사랑병원","time":null,"preferences":{"crowd_density":"minimize"}},
+  {"id":"nq-unsupported-mixed","category":"unsupported","query":"도화역에서 수봉공원까지 엘리베이터가 있는 길을 찾고 계단도 피하고 싶어","origin":"도화역","destination":"수봉공원","time":null,"preferences":{"elevator_accessibility":"maximize","stairs_distance_m":"avoid"}},
+  {"id":"nq-no-invented-time","category":"time","query":"내일 저녁에 주안역에서 더나눔병원까지 CCTV가 많은 길로 가줘","origin":"주안역","destination":"더나눔병원","time":null,"preferences":{"cctv_score":"maximize"}},
+  {"id":"nq-switch-distance","category":"correction","query":"수봉공원에서 도화역까지 밝은 길로 가고 싶어. 아니, 밝기는 상관없고 짧은 길이면 돼","origin":"수봉공원","destination":"도화역","time":null,"preferences":{"distance_m":"minimize"}},
+  {"id":"nq-two-sentence-comparison","category":"multi_sentence","query":"수봉도서관에서 도화역까지 CCTV 많은 길이 좋아. 경찰서가 가까운 길보다 짧은 길도 원해","origin":"수봉도서관","destination":"도화역","time":null,"preferences":{"cctv_score":"maximize","distance_m":"minimize"}},
+  {"id":"nq-stairs-min-not-avoid","category":"direction","query":"주안역에서 수봉공원까지 계단이 아예 없어야 하는 건 아니고 되도록 적은 길로 가줘","origin":"주안역","destination":"수봉공원","time":null,"preferences":{"stairs_distance_m":"minimize"}}
+]

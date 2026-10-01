@@ -1,0 +1,14 @@
+[
+  {"id":"s-vague-evening","category":"time","query":"늦은 저녁에 주안역에서 수봉공원까지 가로등 많은 길로 가줘","origin":"주안역","destination":"수봉공원","preferences":{"streetlight_score":"maximize"}},
+  {"id":"s-vague-morning","category":"time","query":"새벽에 도화역에서 인천사랑병원까지 계단 없는 길로 안내해줘","origin":"도화역","destination":"인천사랑병원","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"s-origin-unset","category":"missing_place","query":"출발지는 아직 미정이고 주안역까지 CCTV 많은 길로 가고 싶어","origin":null,"destination":"주안역","preferences":{"cctv_score":"maximize"}},
+  {"id":"s-destination-unset","category":"missing_place","query":"도화역에서 출발할 거야. 목적지는 아직 정하지 않았어. 계단은 피하고 싶어","origin":"도화역","destination":null,"preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"s-neutral-stairs","category":"neutral","query":"계단은 조금 나와도 괜찮아. 더나눔병원에서 주안역까지 안전한 길로 가줘","origin":"더나눔병원","destination":"주안역","preferences":{"safety_score":"maximize"}},
+  {"id":"s-neutral-cctv","category":"neutral","query":"CCTV 없어도 상관없고 보도가 많은 길이면 돼. 주안역에서 인천사랑병원까지","origin":"주안역","destination":"인천사랑병원","preferences":{"sidewalk_coverage_percent":"maximize"}},
+  {"id":"s-neutral-crossing","category":"neutral","query":"횡단보도는 여러 번 건너도 돼. 수봉공원에서 도화역까지 가로등 많은 길로 안내해줘","origin":"수봉공원","destination":"도화역","preferences":{"streetlight_score":"maximize"}},
+  {"id":"s-compare-distance","category":"comparison","query":"가장 짧은 길보다는 CCTV가 많은 길이 좋아. 주안역에서 더나눔병원까지 가줘","origin":"주안역","destination":"더나눔병원","preferences":{"cctv_score":"maximize"}},
+  {"id":"s-compare-police","category":"comparison","query":"경찰서에 가까운 길보다 계단이 없는 길로 인천사랑병원에서 도화역까지 안내해줘","origin":"인천사랑병원","destination":"도화역","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"s-multi","category":"multi_condition","query":"도화역에서 수봉공원까지 가로등이 많고 계단을 피하는 길을 찾아줘","origin":"도화역","destination":"수봉공원","preferences":{"streetlight_score":"maximize","stairs_distance_m":"avoid"}},
+  {"id":"s-specific-time","category":"time","query":"오후 7시 25분에 수봉도서관에서 주안역까지 가장 빠른 길로 가줘","origin":"수봉도서관","destination":"주안역","time":"19:25:00","preferences":{"distance_m":"minimize"}},
+  {"id":"s-unsupported-noise","category":"unsupported","query":"주안역에서 현대유비스병원까지 소음이 적은 길로 안내해줘","origin":"주안역","destination":"현대유비스병원","preferences":{"noise_level":"minimize"}}
+]

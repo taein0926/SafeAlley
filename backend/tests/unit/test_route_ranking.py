@@ -87,8 +87,8 @@ def test_ranking_and_custom_override_cannot_undo_sidewalk_priority(monkeypatch):
     assert result["selected_route_type"] == "shortest"
 
 
-@pytest.mark.parametrize("direction, expected", [("minimize", "custom"), ("avoid", None)])
-def test_partial_crossing_cost_is_usable_but_never_claims_hard_avoidance(monkeypatch, direction, expected):
+@pytest.mark.parametrize("direction", ["minimize", "avoid"])
+def test_partial_crossing_cost_cannot_certify_a_crossing_recommendation(monkeypatch, direction):
     shortest = _route("shortest", 100, 20)
     custom = _route("custom", 110, 20)
     for route in (shortest, custom):
@@ -99,11 +99,32 @@ def test_partial_crossing_cost_is_usable_but_never_claims_hard_avoidance(monkeyp
     result = route_ranking_service.rank_route_candidates(_arguments([
         {"factor": "crosswalk_count", "direction": direction, "weight": 1},
     ]))
-    assert result["selected_route_type"] == expected
+    assert result["selected_route_type"] is None
+    assert result["recommendation_status"] == "no_supported_preferences"
     assert all(c["metrics"]["crosswalk_count"] is None for c in result["candidates"])
-    if expected:
-        assert result["recommendation_factors"] == ["crossing"]
-        assert "확인할 수 없어요" in result["recommendation_reason"]
+    assert result["recommendation_factors"] == []
+    assert any(item.factor == "crosswalk_count" for item in result["unsupported_preferences"])
+    assert "자료가 부족해" in result["recommendation_reason"]
+
+
+def test_unknown_crossings_do_not_override_a_comparable_distance_request(monkeypatch):
+    shortest = _route("shortest", 100, 20)
+    custom = _route("custom", 120, 20)
+    for route in (shortest, custom):
+        route["properties"].update(crossing_data_available=False, pedestrian_metadata_coverage_percent=100)
+    custom["properties"]["cost_weights"]["crossing"] = 1
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "distance_m", "direction": "minimize", "weight": 1},
+        {"factor": "crosswalk_count", "direction": "minimize", "weight": 1},
+    ]))
+
+    assert result["selected_route_type"] == "shortest"
+    assert result["recommendation_factors"] == ["distance"]
+    assert [item.factor for item in result["unsupported_preferences"]] == ["crosswalk_count"]
+    assert "건널목이 적" not in result["recommendation_reason"]
 
 
 def test_daytime_secondary_safety_reason_does_not_claim_streetlight_usage(monkeypatch):
@@ -532,7 +553,7 @@ def test_missing_crosswalk_data_is_not_described_as_zero() -> None:
         "no_supported_preferences", None,
     )
     assert "자료가 부족해" in reason
-    assert any("검증된 측정값이 없어" in note for note in notes)
+    assert any("건널목 수를 비교할 수 없습니다" in note for note in notes)
     assert all("0개" not in text for text in [reason, *notes])
 
 

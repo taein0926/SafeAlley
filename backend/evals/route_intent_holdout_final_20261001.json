@@ -1,0 +1,14 @@
+[
+  {"id":"final-negation-1","category":"negation","query":"주안역에서 인천사랑병원까지 계단을 꼭 피할 필요는 없고 보도가 많은 길이면 돼","origin":"주안역","destination":"인천사랑병원","preferences":{"sidewalk_coverage_percent":"maximize"}},
+  {"id":"final-negation-2","category":"negation","query":"수봉공원에서 도화역까지 횡단보도는 건너도 괜찮아. CCTV가 많은 쪽으로 가줘","origin":"수봉공원","destination":"도화역","preferences":{"cctv_score":"maximize"}},
+  {"id":"final-negation-3","category":"negation","query":"도화역에서 수봉도서관까지 평지가 아니어도 돼. 가로등이 많은 길로 가줘","origin":"도화역","destination":"수봉도서관","preferences":{"streetlight_score":"maximize"}},
+  {"id":"final-comparison-1","category":"comparison","query":"주안역에서 더나눔병원까지 멀어도 괜찮으니 계단 없는 길로 가고 싶어","origin":"주안역","destination":"더나눔병원","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"final-time-1","category":"time","query":"오전 12시 20분에 인천사랑병원에서 주안역까지 빠른 길로 가줘","origin":"인천사랑병원","destination":"주안역","time":"00:20:00","preferences":{"distance_m":"minimize"}},
+  {"id":"final-time-2","category":"time","query":"오후 8시에 도화역에서 수봉공원까지 보도가 많은 경로를 알려줘","origin":"도화역","destination":"수봉공원","time":"20:00:00","preferences":{"sidewalk_coverage_percent":"maximize"}},
+  {"id":"final-multi-1","category":"multi_condition","query":"주안역에서 인천사랑병원까지 계단 없이 횡단보도는 적고 CCTV는 많은 길이 좋아","origin":"주안역","destination":"인천사랑병원","preferences":{"stairs_distance_m":"avoid","crosswalk_count":"minimize","cctv_score":"maximize"}},
+  {"id":"final-place-1","category":"place","query":"출발지는 주안역이고 도착은 인천사랑병원이야. 계단 피해서 가줘","origin":"주안역","destination":"인천사랑병원","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"final-place-2","category":"place","query":"도화초등학교에서 인하대학교까지 길을 알려줘","origin":"도화초등학교","destination":"인하대학교","preferences":{}},
+  {"id":"final-missing-1","category":"missing_place","query":"수봉공원에서 출발하는데 목적지는 아직 정하지 않았어. 밝은 길이 좋아","origin":"수봉공원","destination":null,"preferences":{"streetlight_score":"maximize"}},
+  {"id":"final-unsupported-1","category":"unsupported","query":"도화역에서 수봉공원까지 유모차가 다닐 수 있는 길로 가줘","origin":"도화역","destination":"수봉공원","preferences":{"stroller_accessibility":"maximize"}},
+  {"id":"final-unsupported-2","category":"unsupported","query":"주안역에서 인천사랑병원까지 소음이 적은 길로 안내해줘","origin":"주안역","destination":"인천사랑병원","preferences":{"noise_level":"minimize"}}
+]

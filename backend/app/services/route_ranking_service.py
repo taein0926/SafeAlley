@@ -731,8 +731,11 @@ def _recommendation_explanation(
         label = METRIC_NAMES.get(item.factor, item.factor.replace("_", " "))
         if item.reason == "Excluded during daylight":
             notes.append("낮에는 요청한 가로등 조건을 추천 순위에 반영하지 않았습니다.")
-        elif item.factor == "crosswalk_count" and selected is not None and selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0:
-            notes.append("건널목 회피 비용은 반영했지만 일부 구간의 인도·횡단 연결 정보가 없어 건널목 수 비교는 제공하지 않습니다.")
+        elif item.factor == "crosswalk_count":
+            notes.append(
+                "일부 구간의 인도·횡단 연결 정보가 없어 건널목 수를 비교할 수 없습니다. "
+                "경로 탐색에 건널목 비용을 사용했더라도 추천 근거로 삼지 않았습니다."
+            )
         elif item.factor == "max_slope_percent":
             notes.append("경사는 전 구간 측정 자료가 없어 추천 조건에 반영하지 않았습니다. DEM은 현재 적재되지 않았습니다.")
         elif "hard avoidance" in item.reason:
@@ -872,9 +875,10 @@ def _recommendation_factors(selected, preferences, unsupported, arguments) -> li
     if arguments.stairs_weight > 0:
         factors.add("stairs")
     properties = selected["route"]["properties"]
-    if ((arguments.crossing_weight > 0 and properties.get("crossing_data_available"))
-        or (properties.get("cost_weights", {}).get("crossing", 0) > 0
-            and properties.get("pedestrian_metadata_coverage_percent", 0) > 0)):
+    if ("crosswalk_count" not in excluded
+        and properties.get("crossing_data_available")
+        and (arguments.crossing_weight > 0
+             or properties.get("cost_weights", {}).get("crossing", 0) > 0)):
         factors.add("crossing")
     return [factor for factor in ("distance", "safety", "stairs", "crossing") if factor in factors]
 
@@ -920,12 +924,10 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
     if custom is not None:
         supported_for_custom, _ = _supported_preferences(effective_preferences, [custom])
         properties = custom["route"]["properties"]
-        partial_crossing_cost = (
-            any(p.factor == "crosswalk_count" and p.direction == "minimize" for p in effective_preferences)
-            and properties.get("cost_weights", {}).get("crossing", 0) > 0
-            and properties.get("pedestrian_metadata_coverage_percent", 0) > 0
+        custom_objective = any(
+            p.factor != "distance_m" and p.factor not in {u.factor for u in unsupported}
+            for p in supported_for_custom
         )
-        custom_objective = any(p.factor != "distance_m" for p in supported_for_custom) or partial_crossing_cost
         hard_conditions_met = all(
             custom["metrics"].get(p.factor) is not None and custom["metrics"][p.factor] <= 0
             for p in effective_preferences if p.direction == "avoid"
