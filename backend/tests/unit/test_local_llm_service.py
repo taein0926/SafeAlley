@@ -948,6 +948,7 @@ def test_brightness_cancellation_in_later_sentence() -> None:
         ("조명은 따지지 않을게", "streetlight_score"),
         ("건널목은 거쳐도 돼", "crosswalk_count"),
         ("CCTV는 많든 적든 괜찮고", "cctv_score"),
+        ("계단은 있어도 무방해", "stairs_distance_m"),
     ],
 )
 def test_allowance_or_noncriterion_drops_unrequested_preference(query, factor) -> None:
@@ -990,6 +991,25 @@ def test_reconsidered_crossing_and_gentle_slope_use_requested_directions() -> No
         "경사가 완만했으면 해", slope,
     )
     assert slope.preferences[0].direction == "minimize"
+
+
+def test_reconsidered_crossing_allowance_cancels_earlier_avoidance() -> None:
+    intent = ParsedRouteIntent.model_validate({
+        "preferences": [
+            {"factor": "crosswalk_count", "direction": "minimize"},
+            {"factor": "streetlight_score", "direction": "maximize"},
+        ]
+    })
+
+    local_llm_service._apply_explicit_correction(
+        "건널목을 피하고 싶어. 생각이 바뀌었어. 몇 번은 건너도 돼. "
+        "대신 가로등 많은 길로 가줘",
+        intent,
+    )
+
+    assert {item.factor: item.direction for item in intent.preferences} == {
+        "streetlight_score": "maximize",
+    }
 
 
 def test_vague_night_does_not_become_an_invented_hour(monkeypatch) -> None:

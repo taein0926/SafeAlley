@@ -1,0 +1,22 @@
+[
+  {"id":"a26-neutral-01","category":"neutral","query":"주안역에서 수봉도서관까지 계단은 있어도 무방해. CCTV가 많은 길로 가줘","origin":"주안역","destination":"수봉도서관","preferences":{"cctv_score":"maximize"}},
+  {"id":"a26-neutral-02","category":"neutral","query":"도화역에서 인천사랑병원까지 횡단보도는 몇 번 건너도 괜찮아. 가장 짧게 가줘","origin":"도화역","destination":"인천사랑병원","preferences":{"distance_m":"minimize"}},
+  {"id":"a26-neutral-03","category":"neutral","query":"현대유비스병원에서 주안역까지 가로등은 많지 않아도 상관없어. 경찰서와 가까운 길로 가줘","origin":"현대유비스병원","destination":"주안역","preferences":{"police_accessibility":"maximize"}},
+  {"id":"a26-neutral-04","category":"neutral","query":"수봉공원에서 더나눔병원까지 경사는 따지지 않아. CCTV 많은 쪽으로 안내해줘","origin":"수봉공원","destination":"더나눔병원","preferences":{"cctv_score":"maximize"}},
+  {"id":"a26-time-01","category":"time","query":"오전 7시 30분에 주안역에서 인천사랑병원으로 출발해. 계단 없는 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":"07:30:00","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"a26-time-02","category":"time","query":"도화역에서 주안역까지 밤 10시 전에 도착해야 해. 가로등 많은 길로 가줘","origin":"도화역","destination":"주안역","preferences":{"streetlight_score":"maximize"}},
+  {"id":"a26-time-03","category":"time","query":"저녁 8시에 수봉도서관에서 주안역까지 CCTV 많은 길로 가자","origin":"수봉도서관","destination":"주안역","time":"20:00:00","preferences":{"cctv_score":"maximize"}},
+  {"id":"a26-time-04","category":"time","query":"내일 오전 9시 인천사랑병원에서 주안역까지 최단거리로 가줘","origin":"인천사랑병원","destination":"주안역","time":"09:00:00","preferences":{"distance_m":"minimize"}},
+  {"id":"a26-correction-01","category":"correction","query":"주안역에서 수봉공원까지 계단 없는 길로 가고 싶었는데 계단은 지나도 돼. 횡단보도 적은 길로 바꿔줘","origin":"주안역","destination":"수봉공원","preferences":{"crosswalk_count":"minimize"}},
+  {"id":"a26-correction-02","category":"correction","query":"주안역에서 인천사랑병원까지 빠른 길로. 다시 말하면 최단거리는 필요 없고 CCTV 많은 길로 가줘","origin":"주안역","destination":"인천사랑병원","preferences":{"cctv_score":"maximize"}},
+  {"id":"a26-correction-03","category":"correction","query":"도화역에서 주안역까지 건널목을 피하고 싶어. 생각이 바뀌었어. 몇 번은 건너도 돼. 대신 가로등 많은 길로 가줘","origin":"도화역","destination":"주안역","preferences":{"streetlight_score":"maximize"}},
+  {"id":"a26-correction-04","category":"correction","query":"오후 8시가 아니라 오후 9시에 도화역에서 주안역까지 계단 적은 길로 가줘","origin":"도화역","destination":"주안역","time":"21:00:00","preferences":{"stairs_distance_m":"minimize"}},
+  {"id":"a26-comparison-01","category":"comparison","query":"수봉공원에서 더나눔병원까지 가로등 많은 길보다 CCTV 많은 길로 가고 싶어","origin":"수봉공원","destination":"더나눔병원","preferences":{"cctv_score":"maximize"}},
+  {"id":"a26-comparison-02","category":"comparison","query":"현대유비스병원에서 주안역까지 경찰서 가까운 길보다 최단거리로 가줘","origin":"현대유비스병원","destination":"주안역","preferences":{"distance_m":"minimize"}},
+  {"id":"a26-multi-01","category":"multi_condition","query":"주안역에서 더나눔병원까지 보도가 많고 가로등도 많은 길로 안내해줘","origin":"주안역","destination":"더나눔병원","preferences":{"sidewalk_coverage_percent":"maximize","streetlight_score":"maximize"}},
+  {"id":"a26-multi-02","category":"multi_condition","query":"도화역에서 인천사랑병원까지 계단과 횡단보도를 최대한 줄이는 길을 찾아줘","origin":"도화역","destination":"인천사랑병원","preferences":{"stairs_distance_m":"minimize","crosswalk_count":"minimize"}},
+  {"id":"a26-multi-03","category":"multi_condition","query":"수봉공원에서 주안역까지 CCTV가 많은 길이면서 경사가 완만한 길로 가줘","origin":"수봉공원","destination":"주안역","preferences":{"cctv_score":"maximize","max_slope_percent":"minimize"}},
+  {"id":"a26-multi-04","category":"multi_condition","query":"현대유비스병원에서 수봉도서관까지 경찰서가 가까우면서 거리도 짧은 길로 가줘","origin":"현대유비스병원","destination":"수봉도서관","preferences":{"police_accessibility":"maximize","distance_m":"minimize"}},
+  {"id":"a26-missing-01","category":"missing_place","query":"인천사랑병원까지 계단이 없는 길로 가고 싶어. 출발지는 아직 정하지 않았어","origin":null,"destination":"인천사랑병원","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"a26-unsupported-01","category":"unsupported","query":"주안역에서 수봉공원까지 유모차가 다닐 수 있는 길로 가줘","origin":"주안역","destination":"수봉공원","preferences":{"stroller_accessibility":"maximize"}}
+]

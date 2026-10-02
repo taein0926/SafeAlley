@@ -13,6 +13,7 @@ from app.services.local_llm_service import clear_intent_cache, parse_route_inten
 
 EVAL_DIR = Path(__file__).parent
 CASE_SETS = {
+    "acceptance_20261002": (EVAL_DIR / "route_intent_acceptance_20261002.json",),
     "prospective_final_20261002": (EVAL_DIR / "route_intent_prospective_final_20261002.json",),
     "prospective_validation_20261002": (EVAL_DIR / "route_intent_prospective_validation_20261002.json",),
     "prospective_probe_20261002": (EVAL_DIR / "route_intent_prospective_probe_20261002.json",),

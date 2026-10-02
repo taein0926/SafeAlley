@@ -131,7 +131,7 @@ FACTOR_MENTIONS = {
 }
 NONREQUEST_TAIL = re.compile(
     r"(?:있어도|건너도|건너는\s*건|거쳐도|적어도|많아도|아니어도|없어도|지나도|지나가도)"
-    r".{0,10}(?:괜찮|상관\s*없|돼|되)"
+    r".{0,10}(?:괜찮|상관\s*없|무방|돼|되)"
     r"|많든\s*적든.{0,8}(?:괜찮|상관\s*없)"
     r"|중요하지\s*않|필요(?:가|는)?\s*없|상관\s*없|피하(?:지|진)\s*(?:않|말)"
     r"|신경\s*안\s*써도|따지지\s*않|고려하지\s*않|말고|빼고|무시하고"
@@ -312,14 +312,27 @@ def _apply_explicit_correction(query: str, intent: ParsedRouteIntent) -> None:
             _set_preference(intent, factor, "maximize")
     # A correction can refer back to the previous factor without repeating it:
     # "횡단보도 없는 길로. 다시 말하면 없는 건 아니고 적게 건너면 돼".
-    if not mentions and re.search(r"적게|적으면|덜|최소", clause):
+    antecedent = clause[:mentions[0][0]] if mentions else clause
+    if antecedent:
         previous = sorted(
             (match.start(), factor)
             for factor in ("stairs_distance_m", "crosswalk_count")
             for match in FACTOR_MENTIONS[factor].finditer(query[:len(query) - len(clause)])
         )
         if previous:
-            _set_preference(intent, previous[-1][1], "minimize")
+            factor = previous[-1][1]
+            if re.search(r"적게|적으면|덜|최소", antecedent):
+                _set_preference(intent, factor, "minimize")
+            elif factor == "crosswalk_count" and re.search(
+                r"(?:건너도|거쳐도).{0,10}(?:괜찮|상관\s*없|무방|돼|되)",
+                antecedent,
+            ):
+                _drop_preference(intent, factor)
+            elif factor == "stairs_distance_m" and re.search(
+                r"(?:있어도|지나도|지나가도).{0,10}(?:괜찮|상관\s*없|무방|돼|되)",
+                antecedent,
+            ):
+                _drop_preference(intent, factor)
 
 
 def _preserve_unsupported_requests(query: str, intent: ParsedRouteIntent) -> None:
