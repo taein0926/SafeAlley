@@ -499,6 +499,48 @@ def test_excluding_stairs_from_route_is_not_discarding_the_stairs_preference(
     ("query", "model_preferences", "expected"),
     [
         (
+            "주안역에서 수봉도서관까지 계단은 몇 개 있어도 괜찮아. CCTV가 많은 쪽으로 가줘",
+            {"stairs_count": "minimize", "cctv_score": "maximize"},
+            {"cctv_score": "maximize"},
+        ),
+        (
+            "주안역에서 인천사랑병원까지 계단을 피하려고 했는데 생각이 바뀌었어. 계단은 상관없고 CCTV가 많은 길로",
+            {"stairs_distance_m": "avoid", "cctv_score": "maximize"},
+            {"cctv_score": "maximize"},
+        ),
+        (
+            "현대유비스병원에서 도화역까지 건널목 없는 길로. 정확히는 건널목이 적으면 돼",
+            {"crosswalk_count": "avoid"},
+            {"crosswalk_count": "minimize"},
+        ),
+    ],
+)
+def test_last_user_intent_overrides_earlier_or_permissive_factor(
+    monkeypatch, query, model_preferences, expected
+) -> None:
+    model_output = {
+        "origin_name": query.split("에서", 1)[0],
+        "destination_name": query.split("에서", 1)[1].split("까지", 1)[0],
+        "preferences": [
+            {"factor": factor, "direction": direction}
+            for factor, direction in model_preferences.items()
+        ],
+    }
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps(model_output, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert {item.factor: item.direction for item in intent.preferences} == expected
+
+
+@pytest.mark.parametrize(
+    ("query", "model_preferences", "expected"),
+    [
+        (
             "주안역에서 인천사랑병원까지 계단은 피하지 말고 최단거리로 가줘",
             {"stairs_distance_m": "avoid", "distance_m": "minimize"},
             {"distance_m": "minimize"},
@@ -897,6 +939,57 @@ def test_brightness_cancellation_in_later_sentence() -> None:
     )
 
     assert {item.factor for item in intent.preferences} == {"distance_m"}
+
+
+@pytest.mark.parametrize(
+    ("query", "factor"),
+    [
+        ("계단 한두 군데는 지나가도 괜찮아", "stairs_distance_m"),
+        ("조명은 따지지 않을게", "streetlight_score"),
+        ("건널목은 거쳐도 돼", "crosswalk_count"),
+        ("CCTV는 많든 적든 괜찮고", "cctv_score"),
+    ],
+)
+def test_allowance_or_noncriterion_drops_unrequested_preference(query, factor) -> None:
+    intent = ParsedRouteIntent.model_validate({
+        "preferences": [{"factor": factor, "direction": "minimize"}]
+    })
+
+    local_llm_service._prune_explicit_nonrequests(query, intent)
+
+    assert intent.preferences == []
+
+
+def test_correction_without_repeated_factor_uses_last_named_factor() -> None:
+    intent = ParsedRouteIntent.model_validate({
+        "preferences": [{"factor": "crosswalk_count", "direction": "avoid"}]
+    })
+
+    local_llm_service._apply_explicit_correction(
+        "건널목은 빼고 가줘. 정확히는 조금 적게 건너면 돼", intent,
+    )
+
+    assert [(item.factor, item.direction) for item in intent.preferences] == [
+        ("crosswalk_count", "minimize")
+    ]
+
+
+def test_reconsidered_crossing_and_gentle_slope_use_requested_directions() -> None:
+    crossing = ParsedRouteIntent.model_validate({
+        "preferences": [{"factor": "crosswalk_count", "direction": "avoid"}]
+    })
+    local_llm_service._apply_explicit_correction(
+        "횡단보도가 없는 길로. 다시 생각해보니 적게 건너면 돼", crossing,
+    )
+    assert crossing.preferences[0].direction == "minimize"
+
+    slope = ParsedRouteIntent.model_validate({
+        "preferences": [{"factor": "max_slope_percent", "direction": "maximize"}]
+    })
+    local_llm_service._normalize_explicit_route_preferences(
+        "경사가 완만했으면 해", slope,
+    )
+    assert slope.preferences[0].direction == "minimize"
 
 
 def test_vague_night_does_not_become_an_invented_hour(monkeypatch) -> None:

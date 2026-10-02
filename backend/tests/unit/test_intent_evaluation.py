@@ -75,6 +75,8 @@ def test_prospective_cases_are_distinct_and_not_in_historical_suites() -> None:
     prospective_paths = (
         *CASE_SETS["prospective_probe_20261002"],
         *CASE_SETS["prospective_reserve_20261002"],
+        *CASE_SETS["prospective_validation_20261002"],
+        *CASE_SETS["prospective_final_20261002"],
     )
     prospective = [
         case for path in prospective_paths
@@ -86,9 +88,9 @@ def test_prospective_cases_are_distinct_and_not_in_historical_suites() -> None:
         for case in json.loads(path.read_text(encoding="utf-8"))
     ]
 
-    assert len(prospective) == 60
-    assert len({case["id"] for case in prospective}) == 60
-    assert len({case["query"] for case in prospective}) == 60
+    assert len(prospective) == 100
+    assert len({case["id"] for case in prospective}) == 100
+    assert len({case["query"] for case in prospective}) == 100
     assert {case["query"] for case in prospective}.isdisjoint(
         {case["query"] for case in historical}
     )
