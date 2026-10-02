@@ -69,3 +69,30 @@ def test_new_holdout_is_separate_from_development_cases() -> None:
 def test_percentile_uses_observed_duration() -> None:
     assert _percentile([1.0, 2.0, 3.0, 4.0], 0.95) == 4.0
     assert _percentile([], 0.95) is None
+
+
+def test_prospective_cases_are_distinct_and_not_in_historical_suites() -> None:
+    prospective_paths = (
+        *CASE_SETS["prospective_probe_20261002"],
+        *CASE_SETS["prospective_reserve_20261002"],
+    )
+    prospective = [
+        case for path in prospective_paths
+        for case in json.loads(path.read_text(encoding="utf-8"))
+    ]
+    historical = [
+        case for paths in (CASE_SETS["dev"], CASE_SETS["regression"], CASE_SETS["holdout"])
+        for path in paths
+        for case in json.loads(path.read_text(encoding="utf-8"))
+    ]
+
+    assert len(prospective) == 60
+    assert len({case["id"] for case in prospective}) == 60
+    assert len({case["query"] for case in prospective}) == 60
+    assert {case["query"] for case in prospective}.isdisjoint(
+        {case["query"] for case in historical}
+    )
+    assert all(
+        {"id", "category", "query", "origin", "destination", "preferences"} <= case.keys()
+        for case in prospective
+    )

@@ -403,6 +403,102 @@ def test_local_llm_retries_flatness_alias_and_omitted_cctv(monkeypatch) -> None:
     ("query", "model_preferences", "expected"),
     [
         (
+            "주안역에서 수봉공원까지 가로등 많은 길로. 아니 가로등 말고 CCTV 많은 길로",
+            {"streetlight_score": "maximize"},
+            {"cctv_score": "maximize"},
+        ),
+        (
+            "도화역에서 인천사랑병원까지 계단을 피해줘. 정정할게, 계단은 상관없고 보도를 많이 지나는 길로",
+            {"stairs_distance_m": "avoid"},
+            {"sidewalk_coverage_percent": "maximize"},
+        ),
+        (
+            "수봉공원에서 주안역까지 CCTV 많은 길로. 아니 CCTV는 빼고 계단만 피하고 싶어",
+            {"cctv_score": "maximize", "stairs_distance_m": "avoid"},
+            {"stairs_distance_m": "avoid"},
+        ),
+        (
+            "도화역에서 주안역까지 횡단보도 없는 길로. 다시 말하면 없는 건 아니고 적게 건너면 돼",
+            {"crosswalk_count": "avoid"},
+            {"crosswalk_count": "minimize"},
+        ),
+    ],
+)
+def test_final_explicit_correction_replaces_superseded_preferences(
+    monkeypatch, query, model_preferences, expected
+) -> None:
+    model_output = {
+        "origin_name": query.split("에서", 1)[0],
+        "destination_name": query.split("에서", 1)[1].split("까지", 1)[0],
+        "preferences": [
+            {"factor": factor, "direction": direction}
+            for factor, direction in model_preferences.items()
+        ],
+    }
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps(model_output, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert {item.factor: item.direction for item in intent.preferences} == expected
+
+
+def test_arrival_deadline_with_place_between_clock_and_arrival_is_not_departure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "origin_name": "주안역",
+            "destination_name": "인천사랑병원",
+            "departure_time": "09:00:00",
+            "preferences": [{"factor": "distance_m", "direction": "minimize"}],
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(
+        "오전 9시까지 인천사랑병원에 도착하고 싶어. 주안역에서 출발할게"
+    )
+
+    assert intent.departure_time is None
+    assert intent.preferences == []
+
+
+def test_excluding_stairs_from_route_is_not_discarding_the_stairs_preference(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "origin_name": "주안역",
+            "destination_name": "수봉공원",
+            "preferences": [
+                {"factor": "crosswalk_count", "direction": "minimize"},
+                {"factor": "streetlight_score", "direction": "maximize"},
+            ],
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(
+        "밤에 주안역에서 수봉공원까지 계단은 빼고 횡단보도도 적게 건너면서 가로등 많은 길로"
+    )
+
+    assert {item.factor: item.direction for item in intent.preferences} == {
+        "stairs_distance_m": "avoid",
+        "crosswalk_count": "minimize",
+        "streetlight_score": "maximize",
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "model_preferences", "expected"),
+    [
+        (
             "주안역에서 인천사랑병원까지 계단은 피하지 말고 최단거리로 가줘",
             {"stairs_distance_m": "avoid", "distance_m": "minimize"},
             {"distance_m": "minimize"},

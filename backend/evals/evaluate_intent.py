@@ -13,6 +13,8 @@ from app.services.local_llm_service import clear_intent_cache, parse_route_inten
 
 EVAL_DIR = Path(__file__).parent
 CASE_SETS = {
+    "prospective_probe_20261002": (EVAL_DIR / "route_intent_prospective_probe_20261002.json",),
+    "prospective_reserve_20261002": (EVAL_DIR / "route_intent_prospective_reserve_20261002.json",),
     "time_role_probe": (EVAL_DIR / "route_intent_time_role_probe_20261002.json",),
     "new_questions": (EVAL_DIR / "route_intent_new_questions_20261001.json",),
     "multi_sentence_probe": (EVAL_DIR / "route_intent_multi_sentence_probe_20261001.json",),
@@ -102,7 +104,16 @@ def evaluate(
     get_settings().ollama_intent_cache_seconds = 0
     clear_intent_cache()
     outcomes: list[dict[str, object]] = []
-    categories: dict[str, dict[str, int]] = defaultdict(lambda: {"passed": 0, "total": 0})
+    categories: dict[str, dict[str, object]] = defaultdict(
+        lambda: {
+            "passed": 0,
+            "total": 0,
+            "field_errors": {field: 0 for field in ("origin", "destination", "time", "preferences")},
+            "unrequested_factor_count": 0,
+            "missing_factor_count": 0,
+            "wrong_direction_count": 0,
+        }
+    )
     durations: list[float] = []
     for case_file in case_files:
         cases = json.loads(case_file.read_text(encoding="utf-8"))
@@ -123,6 +134,11 @@ def evaluate(
             category = case.get("category", "legacy")
             categories[category]["total"] += 1
             categories[category]["passed"] += int(scored["exact"])
+            for field, passed in scored["checks"].items():
+                categories[category]["field_errors"][field] += int(not passed)
+            categories[category]["unrequested_factor_count"] += len(scored["unrequested_factors"])
+            categories[category]["missing_factor_count"] += len(scored["missing_factors"])
+            categories[category]["wrong_direction_count"] += len(scored["wrong_direction_factors"])
             outcome = {
                 "id": case_id,
                 "category": category,

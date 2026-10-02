@@ -84,7 +84,9 @@ EXPLICIT_PERIOD_HOUR_PATTERN = re.compile(
     r"(밤|오후|오전|새벽|아침)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?"
 )
 TIME_CORRECTION = re.compile(r"아니라|말고|대신|정정|변경|바꿔|바꿨")
-ARRIVAL_AFTER_TIME = re.compile(r"^\s*(?:에|까지)?\s*도착")
+ARRIVAL_AFTER_TIME = re.compile(
+    r"^\s*(?:에|까지)?(?:(?!출발)[^.?!]){0,35}?도착"
+)
 DEPARTURE_AFTER_TIME = re.compile(r"^\s*(?:에|부터)?\s*출발")
 ARRIVAL_BEFORE_TIME = re.compile(r"도착\s*(?:시각|시간)?(?:은|는|이|가)?\s*$")
 DEPARTURE_BEFORE_TIME = re.compile(r"출발\s*(?:시각|시간)?(?:은|는|이|가)?\s*$")
@@ -131,7 +133,9 @@ NONREQUEST_TAIL = re.compile(
     r"(?:있어도|건너도|건너는\s*건|적어도|많아도|아니어도|없어도|지나도)"
     r".{0,10}(?:괜찮|상관\s*없|돼|되)"
     r"|중요하지\s*않|필요(?:가|는)?\s*없|상관\s*없|피하(?:지|진)\s*(?:않|말)"
+    r"|신경\s*안\s*써도|말고|빼고|무시하고"
 )
+CORRECTION_CUE = re.compile(r"아니(?:\s*[,，]\s*|\s+)|정정할게\s*[,，]?\s*|다시\s*말하면\s*")
 REJECTED_COMPARISON_TAIL = re.compile(r"보(?:다|다는?|단)")
 SENTENCE_BOUNDARY = re.compile(r"[.!?]")
 EXPLICIT_SHORT_ROUTE = re.compile(
@@ -151,6 +155,16 @@ def _set_preference(intent: ParsedRouteIntent, factor: str, direction: str) -> N
 
 def _drop_preference(intent: ParsedRouteIntent, factor: str) -> None:
     intent.preferences = [item for item in intent.preferences if item.factor != factor]
+
+
+def _is_nonrequest_tail(factor: str, tail: str) -> bool:
+    # "계단은 빼고" excludes stairs from the route, unlike
+    # "CCTV는 빼고", which removes a preference.
+    if factor in {"stairs_distance_m", "crosswalk_count"} and re.match(
+        r"^\s*(?:은|는|을|를|도)?\s*빼고", tail
+    ):
+        return False
+    return bool(NONREQUEST_TAIL.search(tail))
 
 
 def _reconcile_disclaimed_preferences(query: str, intent: ParsedRouteIntent) -> None:
@@ -174,6 +188,11 @@ def _reconcile_disclaimed_preferences(query: str, intent: ParsedRouteIntent) -> 
 
 def _normalize_explicit_route_preferences(query: str, intent: ParsedRouteIntent) -> None:
     """Map an explicit supported request to the factor the router actually accepts."""
+    # Preserve the existing repair retry for explicit "평지" requests, where
+    # the first model response may also have omitted another named condition.
+    if "평지" not in query and any(item.factor == "flatness" for item in intent.preferences):
+        _drop_preference(intent, "flatness")
+        _set_preference(intent, "max_slope_percent", "minimize")
     if re.search(r"계단(?:이|은|는|을|를|가)?\s*(?:적게|적은|적고|최소)", query):
         _drop_preference(intent, "stairs_count")
         _set_preference(intent, "stairs_distance_m", "minimize")
@@ -224,7 +243,7 @@ def _prune_explicit_nonrequests(query: str, intent: ParsedRouteIntent) -> None:
         if sentence_end:
             tail = tail[:sentence_end.start()]
         tail = tail[:40]
-        if NONREQUEST_TAIL.search(tail) or REJECTED_COMPARISON_TAIL.search(tail):
+        if _is_nonrequest_tail(preference.factor, tail) or REJECTED_COMPARISON_TAIL.search(tail):
             _drop_preference(intent, preference.factor)
 
 
@@ -243,6 +262,47 @@ def _prune_comparison_antecedents(query: str, intent: ParsedRouteIntent) -> None
             pattern = FACTOR_MENTIONS.get(preference.factor)
             if pattern and pattern.search(rejected) and not pattern.search(chosen):
                 _drop_preference(intent, preference.factor)
+
+
+def _latest_correction_clause(query: str) -> str | None:
+    cues = list(CORRECTION_CUE.finditer(query))
+    return query[cues[-1].end():] if cues else None
+
+
+def _apply_explicit_correction(query: str, intent: ParsedRouteIntent) -> None:
+    """Reconcile the final, explicit correction across known route factors."""
+    clause = _latest_correction_clause(query)
+    if clause is None:
+        return
+    mentions = sorted(
+        (match.start(), match.end(), factor)
+        for factor, pattern in FACTOR_MENTIONS.items()
+        for match in pattern.finditer(clause)
+    )
+    for index, (_, end, factor) in enumerate(mentions):
+        next_start = mentions[index + 1][0] if index + 1 < len(mentions) else len(clause)
+        tail = clause[end:next_start][:40]
+        if _is_nonrequest_tail(factor, tail):
+            _drop_preference(intent, factor)
+        elif factor in {"stairs_distance_m", "crosswalk_count"}:
+            if re.search(r"피하(?!지|진)|피해|없(?:는|이)|빼고", tail):
+                _set_preference(intent, factor, "avoid")
+            elif re.search(r"적게|적은|덜|최소", tail):
+                _set_preference(intent, factor, "minimize")
+        elif factor == "max_slope_percent" and re.search(r"낮|완만|적|평탄", tail):
+            _set_preference(intent, factor, "minimize")
+        elif re.search(r"많|밝|높|우선", tail):
+            _set_preference(intent, factor, "maximize")
+    # A correction can refer back to the previous factor without repeating it:
+    # "횡단보도 없는 길로. 다시 말하면 없는 건 아니고 적게 건너면 돼".
+    if not mentions and re.search(r"없는\s*건\s*아니고\s*적게", clause):
+        previous = sorted(
+            (match.start(), factor)
+            for factor in ("stairs_distance_m", "crosswalk_count")
+            for match in FACTOR_MENTIONS[factor].finditer(query[:len(query) - len(clause)])
+        )
+        if previous:
+            _set_preference(intent, previous[-1][1], "minimize")
 
 
 def _preserve_unsupported_requests(query: str, intent: ParsedRouteIntent) -> None:
@@ -417,7 +477,7 @@ def _preserve_explicit_no_stairs(query: str, intent: ParsedRouteIntent) -> None:
     if STAIRS_DISCLAIMER.search(query):
         return
     if not re.search(
-        r"계단(?:이|은|는|을|를|가)?\s*(?:하나도\s*)?(?:없는|없이|없게|피하(?!지|진)|피해)",
+        r"계단(?:이|은|는|을|를|가)?\s*(?:하나도\s*)?(?:없는|없이|없게|피하(?!지|진)|피해|빼고)",
         query,
     ):
         return
@@ -459,10 +519,15 @@ def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
     if re.search(r"\S{2,}\s*까지", query) and intent.destination_name is None:
         raise ValueError("An explicit destination was omitted")
     factors = {preference.factor: preference.direction for preference in intent.preferences}
+    correction = _latest_correction_clause(query)
+    stairs_scope = (
+        correction if correction and FACTOR_MENTIONS["stairs_distance_m"].search(correction)
+        else query
+    )
     if re.search(
-        r"계단(?:이|은|는|을|를|가)?\s*(?:하나도\s*)?(?:없는|없이|없게|피하(?!지|진)|피해)",
-        query,
-    ) and not STAIRS_DISCLAIMER.search(query) and factors.get(
+        r"계단(?:이|은|는|을|를|가)?\s*(?:하나도\s*)?(?:없는|없이|없게|피하(?!지|진)|피해|빼고)",
+        stairs_scope,
+    ) and not STAIRS_DISCLAIMER.search(stairs_scope) and factors.get(
         "stairs_distance_m"
     ) != "avoid":
         raise ValueError("An explicit no-stairs constraint was not preserved")
@@ -558,6 +623,7 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _preserve_mentioned_places(query, intent)
             _prune_explicit_nonrequests(query, intent)
             _prune_comparison_antecedents(query, intent)
+            _apply_explicit_correction(query, intent)
             _validate_query_semantics(query, intent)
             return intent
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:
