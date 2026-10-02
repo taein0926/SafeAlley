@@ -232,6 +232,98 @@ def test_local_llm_corrects_one_explicit_pm_hour_without_dropping_preferences(mo
     }
 
 
+@pytest.mark.parametrize(
+    ("query", "model_time", "expected_time"),
+    [
+        (
+            "오전 8시가 아니라 오전 9시 15분에 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "08:00:00",
+            "09:15:00",
+        ),
+        (
+            "밤 10시 말고 밤 11시에 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "22:00:00",
+            "23:00:00",
+        ),
+        (
+            "오후 2시까지 도착해야 해. 오전 8시에 도화역에서 수봉공원까지 출발할래",
+            "14:00:00",
+            "08:00:00",
+        ),
+        (
+            "오후 2시에 도착할 거야. 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "14:00:00",
+            None,
+        ),
+        (
+            "오전 8시에 출발하려다 9시로 바꿨어. 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "09:00:00",
+            "09:00:00",
+        ),
+        (
+            "밤 10시에 출발할까 했는데 밤 11시로 바꿨어. 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "22:00:00",
+            "23:00:00",
+        ),
+        (
+            "오후 2시에 도착하려 했는데 오후 3시로 바꿨어. 도화역에서 수봉공원까지 계단 없는 길로 가줘",
+            "15:00:00",
+            None,
+        ),
+    ],
+)
+def test_departure_time_correction_does_not_use_arrival_time(
+    monkeypatch, query, model_time, expected_time
+) -> None:
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "origin_name": "도화역",
+            "destination_name": "수봉공원",
+            "departure_time": model_time,
+            "preferences": [{"factor": "stairs_distance_m", "direction": "avoid"}],
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert (intent.departure_time.isoformat() if intent.departure_time else None) == expected_time
+    assert intent.origin_name == "도화역"
+    assert intent.destination_name == "수봉공원"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "오후 2시까지 도착해야 해. 오전 8시에 도화역에서 수봉공원까지 출발할래",
+            {},
+        ),
+        (
+            "오후 2시까지 도착해야 해. 오전 8시에 도화역에서 수봉공원까지 짧은 길로 출발할래",
+            {"distance_m": "minimize"},
+        ),
+    ],
+)
+def test_arrival_deadline_does_not_invent_shortest_route(monkeypatch, query, expected) -> None:
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "origin_name": "도화역",
+            "destination_name": "수봉공원",
+            "departure_time": "14:00:00",
+            "preferences": [{"factor": "distance_m", "direction": "minimize"}],
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert intent.departure_time.isoformat() == "08:00:00"
+    assert {item.factor: item.direction for item in intent.preferences} == expected
+
+
 def test_local_llm_preserves_explicit_no_stairs_when_model_omits_it(monkeypatch) -> None:
     monkeypatch.setattr(
         local_llm_service,

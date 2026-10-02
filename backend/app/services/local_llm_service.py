@@ -83,6 +83,11 @@ EXPLICIT_TIME_PATTERN = re.compile(
 EXPLICIT_PERIOD_HOUR_PATTERN = re.compile(
     r"(밤|오후|오전|새벽|아침)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?"
 )
+TIME_CORRECTION = re.compile(r"아니라|말고|대신|정정|변경|바꿔|바꿨")
+ARRIVAL_AFTER_TIME = re.compile(r"^\s*(?:에|까지)?\s*도착")
+DEPARTURE_AFTER_TIME = re.compile(r"^\s*(?:에|부터)?\s*출발")
+ARRIVAL_BEFORE_TIME = re.compile(r"도착\s*(?:시각|시간)?(?:은|는|이|가)?\s*$")
+DEPARTURE_BEFORE_TIME = re.compile(r"출발\s*(?:시각|시간)?(?:은|는|이|가)?\s*$")
 ROUTE_PLACE_PATTERN = re.compile(r"\S.+?에서\s+\S.+?까지")
 STAIRS_DISCLAIMER = re.compile(
     r"계단(?:이|은|는|을|를|가)?\s*"
@@ -305,31 +310,106 @@ def _preserve_mentioned_places(query: str, intent: ParsedRouteIntent) -> None:
         intent.destination_name = None
 
 
-def _discard_invented_time(query: str, intent: ParsedRouteIntent) -> None:
-    """A vague daypart is not a specific departure time."""
-    if intent.departure_time is not None and not (
-        EXPLICIT_TIME_PATTERN.search(query) or re.search(r"자정|정오", query)
-    ):
-        intent.departure_time = None
-
-
-def _correct_explicit_pm_time(query: str, intent: ParsedRouteIntent) -> None:
-    """Normalize one unambiguous clock phrase after LLM extraction."""
+def _period_hour_mentions(query: str) -> list[tuple[re.Match[str], str]]:
     matches = list(EXPLICIT_PERIOD_HOUR_PATTERN.finditer(query))
-    if intent.departure_time is None or len(matches) != 1:
-        return
-    if len(EXPLICIT_TIME_PATTERN.findall(query)) != 1:
-        return
-    period, raw_hour, raw_minute, half_hour = matches[0].groups()
+    mentions = []
+    for index, match in enumerate(matches):
+        following = query[match.end():matches[index + 1].start() if index + 1 < len(matches) else len(query)]
+        preceding = query[max(0, match.start() - 12):match.start()]
+        if ARRIVAL_AFTER_TIME.search(following) or ARRIVAL_BEFORE_TIME.search(preceding):
+            role = "arrival"
+        elif DEPARTURE_AFTER_TIME.search(following) or DEPARTURE_BEFORE_TIME.search(preceding):
+            role = "departure"
+        else:
+            role = "unspecified"
+        mentions.append((match, role))
+    return mentions
+
+
+def _corrects_previous_clock(
+    query: str, previous: re.Match[str], current: re.Match[str]
+) -> bool:
+    between = query[previous.end():current.start()]
+    following = query[current.end():].split(".", 1)[0][:30]
+    return bool(
+        TIME_CORRECTION.search(between)
+        or re.match(r"^\s*(?:로|으로|에)\s*(?:바꾸|바꿔|바꿨|변경|정정)", following)
+    )
+
+
+def _arrival_time_only(query: str) -> bool:
+    mentions = _period_hour_mentions(query)
+    if not mentions or len(EXPLICIT_TIME_PATTERN.findall(query)) != len(mentions):
+        return False
+    if all(role == "arrival" for _, role in mentions):
+        return True
+    return (
+        len(mentions) > 1
+        and all(role == "arrival" for _, role in mentions[:-1])
+        and mentions[-1][1] == "unspecified"
+        and _corrects_previous_clock(query, mentions[-2][0], mentions[-1][0])
+    )
+
+
+def _unambiguous_departure_clock(query: str) -> time | None:
+    """Correct only a clear departure time, not an arrival deadline."""
+    mentions = _period_hour_mentions(query)
+    if len(EXPLICIT_TIME_PATTERN.findall(query)) != len(mentions):
+        # An unqualified additional clock may be the user's correction.
+        return None
+    if _arrival_time_only(query):
+        return None
+    departure = [match for match, role in mentions if role == "departure"]
+    candidates = [match for match, role in mentions if role != "arrival"]
+    if len(mentions) > 1 and mentions[-1][1] != "arrival" and _corrects_previous_clock(
+        query, mentions[-2][0], mentions[-1][0]
+    ):
+        selected = mentions[-1][0]
+    elif len(departure) == 1:
+        selected = departure[0]
+    elif len(candidates) == 1:
+        selected = candidates[0]
+    else:
+        return None
+    period, raw_hour, raw_minute, half_hour = selected.groups()
     hour = int(raw_hour)
     minute = 30 if half_hour else (int(raw_minute) if raw_minute is not None else 0)
     if not (1 <= hour <= 12 and 0 <= minute <= 59):
-        return
+        return None
     if period in {"오전", "새벽", "아침"}:
         expected_hour = 0 if hour == 12 else hour
     else:
         expected_hour = 0 if period == "밤" and hour == 12 else (hour + 12 if hour < 12 else 12)
-    intent.departure_time = time(expected_hour, minute)
+    return time(expected_hour, minute)
+
+
+def _discard_invented_time(query: str, intent: ParsedRouteIntent) -> None:
+    """A vague daypart or an arrival-only deadline is not a departure time."""
+    if intent.departure_time is not None and (
+        not (EXPLICIT_TIME_PATTERN.search(query) or re.search(r"자정|정오", query))
+        or _arrival_time_only(query)
+    ):
+        intent.departure_time = None
+
+
+def _correct_explicit_departure_time(query: str, intent: ParsedRouteIntent) -> None:
+    """Normalize an unambiguous departure clock after LLM extraction."""
+    expected = _unambiguous_departure_clock(query)
+    if intent.departure_time is not None and expected is not None:
+        intent.departure_time = expected
+
+
+def _discard_deadline_inferred_distance(query: str, intent: ParsedRouteIntent) -> None:
+    """An arrival deadline alone does not request the shortest route."""
+    if not any(role == "arrival" for _, role in _period_hour_mentions(query)):
+        return
+    if (
+        EXPLICIT_SHORT_ROUTE.search(query)
+        or AVOID_DETOUR.search(query)
+        or re.search(r"빠른\s*(?:길|경로)|빨리\s*(?:가|도착|걷)|거리\s*(?:짧|최소)", query)
+    ):
+        return
+    _drop_preference(intent, "distance_m")
 
 
 def _preserve_explicit_no_stairs(query: str, intent: ParsedRouteIntent) -> None:
@@ -366,19 +446,11 @@ def _preserve_explicit_flat_ground(query: str, intent: ParsedRouteIntent) -> Non
 
 
 def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
-    if EXPLICIT_TIME_PATTERN.search(query) and intent.departure_time is None:
+    if EXPLICIT_TIME_PATTERN.search(query) and not _arrival_time_only(query) and intent.departure_time is None:
         raise ValueError("An explicit departure time was omitted")
-    period_hour = EXPLICIT_PERIOD_HOUR_PATTERN.search(query)
-    if period_hour and intent.departure_time is not None:
-        period = period_hour.group(1)
-        hour = int(period_hour.group(2))
-        expected = (
-            0 if hour == 12 else hour
-        ) if period in {"오전", "새벽", "아침"} else (
-            0 if period == "밤" and hour == 12 else (hour + 12 if 1 <= hour <= 11 else hour)
-        )
-        minute = 30 if period_hour.group(4) else int(period_hour.group(3) or 0)
-        if (intent.departure_time.hour, intent.departure_time.minute) != (expected, minute):
+    expected_clock = _unambiguous_departure_clock(query)
+    if expected_clock is not None and intent.departure_time is not None:
+        if intent.departure_time != expected_clock:
             raise ValueError("Explicit hour was not converted to 24-hour time")
     if ROUTE_PLACE_PATTERN.search(query) and (
         intent.origin_name is None or intent.destination_name is None
@@ -470,10 +542,11 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
         try:
             intent = ParsedRouteIntent.model_validate_json(content)
             _discard_invented_time(query, intent)
-            _correct_explicit_pm_time(query, intent)
+            _correct_explicit_departure_time(query, intent)
             _reconcile_disclaimed_preferences(query, intent)
             _normalize_explicit_route_preferences(query, intent)
             _preserve_explicit_short_route(query, intent)
+            _discard_deadline_inferred_distance(query, intent)
             _preserve_unsupported_requests(query, intent)
             _preserve_explicit_no_stairs(query, intent)
             _preserve_crossing_preference(query, intent)

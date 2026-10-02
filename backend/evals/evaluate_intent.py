@@ -13,6 +13,7 @@ from app.services.local_llm_service import clear_intent_cache, parse_route_inten
 
 EVAL_DIR = Path(__file__).parent
 CASE_SETS = {
+    "time_role_probe": (EVAL_DIR / "route_intent_time_role_probe_20261002.json",),
     "new_questions": (EVAL_DIR / "route_intent_new_questions_20261001.json",),
     "multi_sentence_probe": (EVAL_DIR / "route_intent_multi_sentence_probe_20261001.json",),
     "comparison_probe": (EVAL_DIR / "route_intent_comparison_probe_20261001.json",),
@@ -32,6 +33,7 @@ CASE_SETS = {
         EVAL_DIR / "route_intent_comparison_probe_20261001.json",
         EVAL_DIR / "route_intent_multi_sentence_probe_20261001.json",
         EVAL_DIR / "route_intent_new_questions_20261001.json",
+        EVAL_DIR / "route_intent_time_role_probe_20261002.json",
     ),
     "holdout": (EVAL_DIR / "route_intent_holdout_safety_20261001.json",),
 }

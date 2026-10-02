@@ -1,0 +1,10 @@
+[
+  {"id":"tr-correct-morning","category":"time_correction","query":"오전 8시가 아니라 오전 9시 15분에 도화역에서 수봉공원까지 계단 없는 길로 가줘","origin":"도화역","destination":"수봉공원","time":"09:15:00","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"tr-correct-night","category":"time_correction","query":"밤 10시 말고 밤 11시에 주안역에서 인천사랑병원까지 CCTV 많은 길로 가줘","origin":"주안역","destination":"인천사랑병원","time":"23:00:00","preferences":{"cctv_score":"maximize"}},
+  {"id":"tr-arrival-only","category":"time_role","query":"오후 2시에 도착할 거야. 도화역에서 수봉공원까지 계단 없는 길로 가줘","origin":"도화역","destination":"수봉공원","time":null,"preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"tr-arrival-departure","category":"time_role","query":"오후 2시까지 도착해야 해. 오전 8시에 도화역에서 수봉공원까지 출발할래","origin":"도화역","destination":"수봉공원","time":"08:00:00","preferences":{}},
+  {"id":"tr-arrival-short","category":"time_role","query":"오후 2시까지 도착해야 해. 오전 8시에 도화역에서 수봉공원까지 짧은 길로 출발할래","origin":"도화역","destination":"수봉공원","time":"08:00:00","preferences":{"distance_m":"minimize"}},
+  {"id":"tr-departure-first","category":"time_role","query":"오전 8시에 출발해 오후 2시에 도착 예정이야. 주안역에서 더나눔병원까지 가로등 많은 길로 가줘","origin":"주안역","destination":"더나눔병원","time":"08:00:00","preferences":{"streetlight_score":"maximize"}},
+  {"id":"tr-labeled-hours","category":"time_role","query":"도착 시간은 오후 5시고 출발 시간은 오전 9시야. 도화역에서 인천사랑병원까지 계단 피해서 가줘","origin":"도화역","destination":"인천사랑병원","time":"09:00:00","preferences":{"stairs_distance_m":"avoid"}},
+  {"id":"tr-correction-after-clock","category":"time_correction","query":"밤 10시에 출발할까 했는데 밤 11시로 바꿨어. 주안역에서 수봉공원까지 CCTV 많은 길로 가줘","origin":"주안역","destination":"수봉공원","time":"23:00:00","preferences":{"cctv_score":"maximize"}}
+]
