@@ -1311,9 +1311,12 @@ export function CesiumRoadMap({
       ...routeMarkerLocations(routeCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude])];
     const sphere = BoundingSphere.fromPoints(frameCoordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
     const canvasBounds = viewer.canvas.getBoundingClientRect();
-    const panel = containerRef.current?.closest(".app-shell")?.querySelector(".map-info-panel");
-    const panelBounds = panel?.getBoundingClientRect();
-    const leftInset = panelBounds ? Math.max(0, panelBounds.right - canvasBounds.left + 24) : 0;
+    const panels = containerRef.current?.closest(".app-shell")?.querySelectorAll(".map-info-panel, #route-results") ?? [];
+    const leftInset = Array.from(panels).reduce((inset, panel) => {
+      const bounds = panel.getBoundingClientRect();
+      if (bounds.width === 0 || bounds.right <= canvasBounds.left || bounds.left >= canvasBounds.right) return inset;
+      return Math.max(inset, bounds.right - canvasBounds.left + 24);
+    }, 0);
     const frustum = viewer.camera.frustum;
     if (frustum instanceof PerspectiveFrustum && canvasBounds.width > 0 && canvasBounds.height > 0) {
       const heading = routeCameraHeading(coordinates);

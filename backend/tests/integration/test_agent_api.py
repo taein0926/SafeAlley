@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.api import agent as agent_api
@@ -188,6 +190,47 @@ def test_natural_language_query_uses_local_interpretation(monkeypatch) -> None:
     assert payload["model"] == "qwen3:4b"
     assert payload["interpretation"]["departure_time"] == "22:00:00"
     assert payload["result"]["selected_route_type"] == "custom"
+
+
+def test_natural_language_query_stream_reports_real_stages(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_api,
+        "parse_route_intent",
+        lambda _: ParsedRouteIntent.model_validate({
+            "departure_time": "22:00:00",
+            "preferences": [{"factor": "streetlight_score", "direction": "maximize", "weight": 1}],
+        }),
+    )
+    response = client.post("/api/agent/query/stream", json={
+        "query": "밤에 가로등 많은 길로 안내해줘",
+        "origin": {"latitude": 37.4608, "longitude": 126.6790},
+        "destination": {"latitude": 37.4608, "longitude": 126.6830},
+        "source": "test-fixture",
+    })
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [event["type"] for event in events if event["type"] != "route_progress"] == [
+        "stage", "interpreted", "stage", "resolved", "stage", "result",
+    ]
+    assert any(event["type"] == "route_progress" for event in events[:-1])
+    assert events[1]["data"]["preferences"][0]["factor"] == "streetlight_score"
+    assert events[-1]["data"]["result"]["candidates"]
+
+
+def test_natural_language_query_stream_reports_llm_error(monkeypatch) -> None:
+    from app.services.local_llm_service import LocalLLMOutputError
+
+    def fail(_: str) -> ParsedRouteIntent:
+        raise LocalLLMOutputError("invalid local model output")
+
+    monkeypatch.setattr(agent_api, "parse_route_intent", fail)
+    response = client.post("/api/agent/query/stream", json={"query": "경로 알려줘"})
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events == [
+        {"type": "stage", "stage": "interpreting"},
+        {"type": "error", "detail": "invalid local model output"},
+    ]
 
 
 def test_natural_language_query_does_not_fallback_when_llm_fails(monkeypatch) -> None:

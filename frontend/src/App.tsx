@@ -3,11 +3,14 @@ import { isNightDepartureTime } from "./nightMode";
 import { defaultStreetlightVisibility } from "./mapLighting";
 import { PreferenceSlider } from "./components/PreferenceSlider";
 import { RecommendationIcons } from "./components/RecommendationIcons";
+import { RouteProgressPanel } from "./components/RouteProgressPanel";
 import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
 import { facilityToggleImage } from "./facilityToggleIcons";
 import { routeInputMarkerImage } from "./routeMarkers";
 import { createRouteSelectionSaver } from "./routeSelection";
+import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
+import type { RouteWorkUpdate } from "./routeProgress";
 
 import {
   CesiumRoadMap,
@@ -115,6 +118,12 @@ function App() {
     "밤 10시에 정부인천지방합동청사에서 두리하나어린이집까지 계단은 피하고 가로등이 많은 길로 안내해줘.",
   );
   const [requestState, setRequestState] = useState<RequestState>("idle");
+  const [activeSearchMode, setActiveSearchMode] = useState<SearchMode | null>(null);
+  const [progressStage, setProgressStage] = useState<"interpreting" | "resolving" | "routing" | "done" | "failed">("interpreting");
+  const [progressInterpretation, setProgressInterpretation] = useState<RouteQueryResponse["interpretation"] | null>(null);
+  const [progressWork, setProgressWork] = useState<RouteWorkUpdate[]>([]);
+  const processScrollRef = useRef<HTMLDivElement>(null);
+  const [progressPlaces, setProgressPlaces] = useState<{ origin: string | null; destination: string | null }>({ origin: null, destination: null });
   const [errorMessage, setErrorMessage] = useState("");
   const [searchResult, setSearchResult] = useState<RouteSearchResult | null>(null);
   const [resultPanelOpen, setResultPanelOpen] = useState(true);
@@ -181,7 +190,6 @@ function App() {
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
   const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
-  const showRouteResults = displayedCandidates.length > 0 && resultPanelOpen;
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
     // Keep pins at the coordinates used for THIS search, including AI/text results.
@@ -284,10 +292,16 @@ function App() {
     setMapSelectionNotice(null);
   }
 
-  function beginSearch() {
+  function beginSearch(searchMode: SearchMode) {
+    if (processScrollRef.current) processScrollRef.current.scrollTop = 0;
     ++buildingRequestSerial.current;
     setBuildingSelectionPending(false);
     setRequestState("loading");
+    setActiveSearchMode(searchMode);
+    setProgressStage("interpreting");
+    setProgressInterpretation(null);
+    setProgressWork([]);
+    setProgressPlaces({ origin: null, destination: null });
     setErrorMessage("");
     setSearchResult(null);
     setRouteDetailOpen(false);
@@ -322,7 +336,7 @@ function App() {
       return;
     }
     setAppliedDepartureTime(departureTime);
-    beginSearch();
+    beginSearch("direct");
     try {
       const [origin, destination] = await Promise.all([
         resolveDirectLocation(originLocation, resolvePlace),
@@ -355,14 +369,18 @@ function App() {
   async function searchWithAi(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (requestState === "loading") return;
-    beginSearch();
+    beginSearch("ai");
     try {
-      const response = await fetch("/api/agent/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ query: query.trim(), source: "osm", user_id: userId }),
+      const data = await queryRouteWithProgress(query.trim(), userId, (event) => {
+        if (event.type === "stage") setProgressStage(event.stage);
+        if (event.type === "interpreted") setProgressInterpretation(event.data);
+        if (event.type === "route_progress") setProgressWork((updates) => mergeWorkUpdate(updates, event.data));
+        if (event.type === "resolved") setProgressPlaces({
+          origin: event.origin?.name ?? null,
+          destination: event.destination?.name ?? null,
+        });
       });
-      const data = await responseJson<RouteQueryResponse>(response);
+      setProgressStage("done");
       finishSearch({
         mode: "ai",
         origin: data.resolved_origin,
@@ -372,6 +390,7 @@ function App() {
         result: data.result,
       });
     } catch (error) {
+      setProgressStage("failed");
       failSearch(error);
     }
   }
@@ -423,6 +442,47 @@ function App() {
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
       />
+      {displayedCandidates.length > 0 && !mapInfo && (
+        <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
+          <header className="floating-results-header">
+            <strong>경로 후보</strong>
+            <button type="button" aria-label={resultPanelOpen ? "경로 후보 숨기기" : "경로 후보 보이기"} aria-expanded={resultPanelOpen} aria-controls="route-candidate-cards" onClick={() => setResultPanelOpen((open) => !open)}>{resultPanelOpen ? "숨기기" : "보이기"}</button>
+          </header>
+          {resultPanelOpen && (
+          <div id="route-candidate-cards" className="floating-results-body">
+          {searchResult?.result.recommendation_status !== "ready" && (
+            <p className="route-review-warning" role="status">
+              {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
+            </p>
+          )}
+          <div className="route-cards">
+            {displayedCandidates.map(({ candidate, label }) => {
+              const active = candidate.route_type === selectedRouteType;
+              const walkingMinutes = estimatedWalkingMinutes(candidate.route.properties.total_distance_m);
+              return (
+                <div key={candidate.route_type} className="route-card-group">
+                <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
+                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
+                  <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
+                  {candidate.route_type === searchResult?.result.selected_route_type && <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />}
+                  <span className="route-card-details">
+                    계단 {candidate.route.properties.stairs_segment_count}개
+                    {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
+                    {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
+                  </span>
+                </button>
+                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "경로 전체가 보이는 시점으로 전환" : "출발지에서 도착지 방향으로 경로를 가까이 보기"}>{routeDetailOpen ? "전체 경로 보기" : "자세히 보기"}</button>}
+                </div>
+              );
+            })}
+          </div>
+          {selectedCandidate?.route.properties.unverified_major_road_count ? (
+            <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
+          ) : null}
+          </div>
+          )}
+        </aside>
+      )}
       {nightMode && facilityVisibility.streetlights && (
         <div className="density-legend" role="img" aria-label="등록된 가로등의 상대 밀집도입니다. 색상은 적음, 보통, 많음을 구분하며 실제 조도나 안전을 나타내지 않습니다.">
           <span>가로등 밀집도</span>
@@ -486,7 +546,6 @@ function App() {
           <WeatherHud {...weather} />
         </div>
       </header>
-      <div className="sidebar-scroll">
       <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
         <div className="segmented-control" role="tablist" aria-label="검색 방식">
           <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
@@ -533,41 +592,19 @@ function App() {
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
 
-      {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
-      {displayedCandidates.length > 0 && !resultPanelOpen && <button className="reopen-results" type="button" onClick={() => setResultPanelOpen(true)}>경로 검색 결과 다시 보기 · {displayedCandidates.length}개</button>}
-      {showRouteResults && (
-        <aside id="route-results" className="result-panel" aria-label="경로 검색 결과">
-          {searchResult?.result.recommendation_status !== "ready" && (
-            <p className="route-review-warning" role="status">
-              {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
-            </p>
-          )}
-          <div className="route-cards">
-            {displayedCandidates.map(({ candidate, label }) => {
-              const active = candidate.route_type === selectedRouteType;
-              const walkingMinutes = estimatedWalkingMinutes(candidate.route.properties.total_distance_m);
-              return (
-                <div key={candidate.route_type} className="route-card-group">
-                <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
-                  <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
-                  <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
-                  {candidate.route_type === searchResult?.result.selected_route_type && <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />}
-                  <span className="route-card-details">
-                    계단 {candidate.route.properties.stairs_segment_count}개
-                    {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
-                    {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
-                  </span>
-                </button>
-                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "경로 전체가 보이는 시점으로 전환" : "출발지에서 도착지 방향으로 경로를 가까이 보기"}>{routeDetailOpen ? "전체 경로 보기" : "자세히 보기"}</button>}
-                </div>
-              );
-            })}
-          </div>
-          {selectedCandidate?.route.properties.unverified_major_road_count ? (
-            <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
-          ) : null}
-        </aside>
+      <div ref={processScrollRef} className="sidebar-scroll" role="region" aria-label="경로 검색 처리 내용" tabIndex={0}>
+      {activeSearchMode === "ai" && (requestState === "loading" || requestState === "error" || searchResult?.mode === "ai") && (
+        <RouteProgressPanel
+          stage={progressStage}
+          interpretation={progressInterpretation}
+          originName={progressPlaces.origin}
+          destinationName={progressPlaces.destination}
+          result={searchResult?.mode === "ai" ? searchResult.result : null}
+          workUpdates={progressWork}
+        />
       )}
+
+      {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
       </div>
       </div>
       {mapInfo && (

@@ -1,3 +1,5 @@
+import json
+
 import psycopg
 from psycopg.rows import dict_row
 
@@ -7,6 +9,29 @@ from app.repositories.road_repository import BoundingBox
 
 class SafetyRepositoryError(RuntimeError):
     """Raised when streetlight safety data cannot be read from PostGIS."""
+
+
+def count_route_facilities(geometry: dict, *, radius_m: float = 30) -> dict[str, int]:
+    """Count registered locations near a path, not camera units or safety."""
+    query = """
+        WITH path AS (
+            SELECT ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), 5179) AS geom
+        )
+        SELECT
+            (SELECT COUNT(DISTINCT ST_AsEWKB(s.geom)) FROM streetlights s, path p
+             WHERE ST_DWithin(s.geom, p.geom, %s)) AS streetlights,
+            (SELECT COUNT(DISTINCT ST_AsEWKB(c.geom)) FROM cctvs c, path p
+             WHERE c.is_safety_cctv AND c.geom IS NOT NULL
+               AND ST_DWithin(c.geom, p.geom, %s)) AS cctvs
+    """
+    try:
+        with connect_database() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(query, (json.dumps(geometry), radius_m, radius_m))
+                row = cursor.fetchone()
+                return {"streetlights": int(row["streetlights"]), "cctvs": int(row["cctvs"])}
+    except psycopg.Error as exc:
+        raise SafetyRepositoryError("Failed to count facilities near the route") from exc
 
 
 def _filters(
