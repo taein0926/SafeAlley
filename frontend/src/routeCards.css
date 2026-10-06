@@ -1,4 +1,64 @@
 /* Keep result presentation scoped; selection and ranking remain unchanged. */
+#route-results.result-panel--floating {
+  position: absolute;
+  top: var(--map-edge);
+  left: var(--map-edge);
+  z-index: 30;
+  width: clamp(244px, 30%, 304px);
+  max-width: calc(100% - 2 * var(--map-edge));
+  max-height: calc(100% - 2 * var(--map-edge));
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  gap: 12px;
+  background: transparent;
+}
+#route-results.result-panel--floating {
+  --result-surface: rgba(18, 34, 52, .84);
+  --result-selected: rgba(27, 53, 83, .9);
+}
+.app-shell[data-theme="day"] #route-results.result-panel--floating {
+  --result-surface: rgba(255, 255, 255, .86);
+  --result-selected: rgba(242, 247, 255, .91);
+}
+#route-results .floating-results-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--result-line);
+  border-radius: 12px;
+  background: var(--result-surface);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 5px 18px #00000014;
+  font-size: 12px;
+}
+#route-results .floating-results-header button {
+  min-width: 60px;
+  height: 26px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--result-text);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+#route-results .floating-results-header button:hover { background: var(--result-badge); }
+#route-results .floating-results-body { display: flex; flex-direction: column; gap: 12px; }
+#route-results.result-panel--floating .route-cards { grid-template-columns: minmax(0, 1fr); }
+#route-results.result-panel--floating .route-card {
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px #00000022;
+}
 #route-results {
   --result-surface: #122234;
   --result-selected: #1b3553;

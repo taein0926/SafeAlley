@@ -74,6 +74,43 @@ def _arguments(
     )
 
 
+def test_routing_progress_keeps_recommendation_identical(monkeypatch):
+    from app.services import route_progress
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    monkeypatch.setattr(route_progress, "count_route_facilities", lambda _: {"streetlights": 4, "cctvs": 2})
+    arguments = _arguments([
+        {"factor": "streetlight_score", "direction": "maximize"},
+        {"factor": "cctv_score", "direction": "maximize"},
+    ], departure_time="22:00:00")
+    expected = route_ranking_service.rank_route_candidates(arguments)
+    events = []
+    actual = route_ranking_service.rank_route_candidates(arguments, on_progress=events.append)
+    assert actual == expected
+    ids = [event["id"] for event in events]
+    assert ids.index("candidate-shortest") < ids.index("candidate-custom")
+    assert "compare-streetlight_score" in ids
+    assert "compare-cctv_score" in ids
+    assert ids[-1] == "selection"
+
+
+def test_progress_does_not_present_identical_paths_as_distinct_alternatives(monkeypatch):
+    from app.services import route_progress
+    shortest = _route("shortest", 100, 20)
+    custom = _route("custom", 100, 20)
+    custom["properties"]["road_segments"][0]["source_id"] = shortest["properties"]["road_segments"][0]["source_id"]
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+    calls = []
+    monkeypatch.setattr(route_progress, "count_route_facilities", lambda geometry: calls.append(geometry) or {"streetlights": 4, "cctvs": 2})
+    events = []
+    candidates = route_ranking_service.generate_route_candidates(_arguments([
+        {"factor": "cctv_score", "direction": "maximize"},
+    ]), on_progress=events.append)
+    assert len(candidates) == 2
+    assert len(calls) == 1
+    assert "같은 동선" in events[-1]["message"]
+
+
 def test_ranking_and_custom_override_cannot_undo_sidewalk_priority(monkeypatch):
     walking = _route("shortest", 150, 20)
     shortcut = _route("custom", 100, 90)

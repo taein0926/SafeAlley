@@ -6,6 +6,7 @@ from app.schemas.agent import (
     UnsupportedPreference,
 )
 from app.services.route_metrics import METRIC_REGISTRY, calculate_route_metrics
+from app.services.route_progress import ProgressCallback, candidate_report, comparison_reports, report
 from app.services.route_service import (
     get_custom_route,
     RouteNotFoundError,
@@ -755,11 +756,13 @@ def generate_route_candidates(
     arguments: RouteOptimizationArguments,
     *, time_context: RouteTimeContext | None = None,
     preferences: list[RoutePreference] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> list[dict[str, object]]:
     """Generate a distance baseline and a request-aware route on one shared graph."""
 
     route_arguments = _route_arguments(arguments)
     route_arguments["time_context"] = time_context or resolve_route_time(arguments.departure_time)
+    report(on_progress, "graph", "출발지·도착지를 도로망에 연결하고 보행 경로를 계산할 자료를 읽고 있어요.", "working")
     route_arguments["prepared"] = prepare_route(
         start_longitude=arguments.origin.longitude,
         start_latitude=arguments.origin.latitude,
@@ -767,27 +770,33 @@ def generate_route_candidates(
         end_latitude=arguments.destination.latitude,
         source=arguments.source,
     )
+    report(on_progress, "graph", "도로망 연결을 확인했어요. 같은 도로망에서 최단 후보와 요청 조건을 반영한 후보를 찾을게요.")
     # Baseline is unaffected by sliders. Both paths use the same OSM graph/snaps.
     baseline_arguments = {**route_arguments, "stairs_weight": 0.0, "intersection_weight": 0.0}
+    active_preferences = preferences if preferences is not None else arguments.preferences
+    report(on_progress, "candidate-shortest", "비교 기준이 될 최단 후보를 찾고 있어요.", "working")
     shortest_route = get_shortest_route(**baseline_arguments)
-    routes = [shortest_route]
+
+    def candidate(route, baseline=None):
+        value = {"route_type": route["properties"]["route_type"], "preference_score": None,
+                 "metrics": calculate_route_metrics(route), "route": route}
+        if baseline is not None and _route_identity(value) == _route_identity(baseline):
+            report(on_progress, f"candidate-{value['route_type']}", "요청 조건을 반영해 계산해도 최단 후보와 같은 동선이에요. 별도의 다른 길은 나오지 않았어요.")
+        else:
+            candidate_report(on_progress, value, active_preferences)
+        return value
+
+    candidates = [candidate(shortest_route)]
+    report(on_progress, "candidate-custom", "말씀하신 조건을 반영해 다른 경로를 찾고 있어요.", "working")
     try:
-        routes.append(get_custom_route(
+        candidates.append(candidate(get_custom_route(
             **route_arguments, preferences=preferences if preferences is not None else arguments.preferences,
             crossing_weight=arguments.crossing_weight,
-        ))
+        ), baseline=candidates[0]))
     except RouteNotFoundError:
         # A hard avoidance request must not silently fall back to a violating path.
-        pass
-    return [
-        {
-            "route_type": route["properties"]["route_type"],
-            "preference_score": None,
-            "metrics": calculate_route_metrics(route),
-            "route": route,
-        }
-        for route in routes
-    ]
+        report(on_progress, "candidate-custom", "회피 조건을 충족하는 맞춤 후보를 찾지 못했어요. 이 조건은 완화하지 않겠습니다.", "unavailable")
+    return candidates
 
 
 def rank_generated_candidates(
@@ -883,7 +892,7 @@ def _recommendation_factors(selected, preferences, unsupported, arguments) -> li
     return [factor for factor in ("distance", "safety", "stairs", "crossing") if factor in factors]
 
 
-def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, object]:
+def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress: ProgressCallback | None = None) -> dict[str, object]:
     time_context = resolve_route_time(arguments.departure_time)
     #2. 사용자 조건이없으면 시간대별 기본 조건 사용
     if arguments.preferences:
@@ -912,7 +921,10 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
     ]
     if not effective_preferences:
         effective_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
-    candidates = generate_route_candidates(arguments, time_context=time_context, preferences=effective_preferences)
+    for item in daytime_ignored:
+        report(on_progress, f"policy-{item.factor}", "출발 시각이 낮이라 가로등 우선 조건은 이번 경로 계산에서 제외했어요.")
+    candidates = generate_route_candidates(arguments, time_context=time_context, preferences=effective_preferences, on_progress=on_progress)
+    comparison_reports(on_progress, candidates, effective_preferences)
     #4. 후보 경로 점수 계산 및 최종 경로 선택
     selected, unsupported = rank_generated_candidates(
         candidates,
@@ -954,6 +966,11 @@ def rank_route_candidates(arguments: RouteOptimizationArguments) -> dict[str, ob
         "field_review_required" if field_review_required
         else "ready" if selected else "no_supported_preferences"
     )
+    if selected:
+        name = "최단 후보" if selected["route_type"] == "shortest" else "맞춤 후보"
+        report(on_progress, "selection", f"적용 가능한 조건을 종합해 {name}를 선택했어요. 추천 이유와 경로를 정리하고 있어요.")
+    else:
+        report(on_progress, "selection", "후보 비교는 마쳤지만 추천 조건을 충족하지 못했어요. 확인이 필요한 내용을 정리하고 있어요.", "unavailable")
     recommendation_reason, recommendation_notes = _recommendation_explanation(
         selected, candidates, effective_preferences, unsupported,
         recommendation_status, arguments.departure_time,
