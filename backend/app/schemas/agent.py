@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.route import CoordinateInput, RouteFeature
+from app.schemas.intent_preview import ConditionCard
 
 
 PreferenceDirection = Literal["maximize", "minimize", "avoid"]
@@ -87,6 +88,7 @@ class AgentExecutionResponse(BaseModel):
     recommendation_reason: str | None = None
     recommendation_notes: list[str] = Field(default_factory=list)
     recommendation_factors: list[Literal["distance", "safety", "stairs", "crossing"]] = Field(default_factory=list)
+    recommendation_conditions: list[ConditionCard] = Field(default_factory=list)
     compared_route_type: Literal["shortest", "balanced", "safe", "custom"] | None = None
     recommendation_criteria: list[RecommendationCriterion] = Field(default_factory=list)
     candidates: list[RouteCandidate]

@@ -143,6 +143,16 @@
   background: transparent;
 }
 #route-results .recommendation-icons svg { width: 26px; height: 26px; }
+#route-results .recommendation-badge[data-state="analyzing"] {
+  --badge-cutout: var(--card-surface);
+  border-style: solid;
+  border-color: #bd934c;
+  color: #bd934c;
+  background: transparent;
+}
+#route-results .live-preview-hint { display: block; margin: 12px 0 0; color: var(--result-muted); font-size: 11px; line-height: 1.5; }
+#route-results .live-preview-notice { display: block; margin: 10px 0 0; color: var(--result-muted); font-size: 11px; line-height: 1.5; }
+#route-results .route-card--preview { cursor: default; }
 #route-results .recommendation-icons span { font-size: 11px; font-weight: 600; }
 #route-results .recommendation-badge-status { font-size: 10px; font-weight: 500; }
 #route-results .route-card-details {
