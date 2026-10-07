@@ -1,3 +1,5 @@
+import type { ConditionCard } from "./conditionCards";
+
 export type RouteType = "shortest" | "balanced" | "safe" | "custom";
 
 export type RouteGeometry = {
@@ -103,6 +105,7 @@ export type RouteQueryResponse = {
     recommendation_reason: string | null;
     recommendation_notes: string[];
     recommendation_factors?: Array<"distance" | "safety" | "stairs" | "crossing">;
+    recommendation_conditions?: ConditionCard[];
     compared_route_type: RouteType | null;
     recommendation_criteria: RecommendationCriterion[];
     candidates: RouteCandidate[];

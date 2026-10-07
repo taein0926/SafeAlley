@@ -26,7 +26,7 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
         `${time}에 정부인천지방합동청사에서 두리하나어린이집까지 가로등과 CCTV가 많은 길로 안내해줘. 계단은 피하고 건널목은 적게 지나고 싶어`,
       );
       await page.getByRole('button', { name: '길찾기', exact: true }).click();
-      await page.getByRole('heading', { name: '이렇게 길을 찾았어요' }).waitFor({ timeout: 180000 });
+      await page.getByRole('heading', { name: 'AI가 길을 찾고 있어요', exact: true }).waitFor({ timeout: 180000 });
       await page.locator('#route-results .route-card').nth(1).waitFor();
       const question = page.getByRole('textbox', { name: '문장으로 경로 요청' });
       const searchButton = page.getByRole('button', { name: '길찾기', exact: true });

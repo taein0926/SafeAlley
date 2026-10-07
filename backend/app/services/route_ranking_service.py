@@ -6,6 +6,7 @@ from app.schemas.agent import (
     UnsupportedPreference,
 )
 from app.services.route_metrics import METRIC_REGISTRY, calculate_route_metrics
+from app.services.condition_cards import routing_condition_cards
 from app.services.route_progress import ProgressCallback, candidate_report, comparison_reports, report
 from app.services.route_service import (
     get_custom_route,
@@ -997,6 +998,7 @@ def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress:
     #5. API에 결과 반환
     return {
         "recommendation_id": recommendation_id,
+        "recommendation_conditions": routing_condition_cards(selected, effective_preferences, unsupported, arguments, time_context),
         "selected_route_type": selected["route_type"] if selected else None,
         "selected_route": selected["route"] if selected else None,
         "recommendation_status": recommendation_status,

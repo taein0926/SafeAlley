@@ -244,7 +244,6 @@ textarea { font: inherit; }
 .recommendation-icons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 0; margin: 13px 0; list-style: none; }
 .recommendation-icons .recommendation-badge { --badge-cutout: #173e59; display: grid; justify-items: center; gap: 5px; min-width: 0; padding: 8px 4px; border: 1px solid #73b9ed; border-radius: 16px; color: #b8e3ff; background: #173e59; }
 .recommendation-icons .recommendation-badge[data-applied="false"] { border: 1px dashed #82929e; color: #adb9c2; background: transparent; }
-.recommendation-badge-status { font-size: .65rem; font-weight: 600; white-space: nowrap; }
 .recommendation-icons svg { width: 35px; height: 35px; }
 .recommendation-icons span { font-size: .7rem; font-weight: 700; white-space: nowrap; }
 .route-swatch { display: inline-block; width: 20px; height: 5px; border-radius: 3px; margin: 0 8px 3px 0; background: #8b96a7; }

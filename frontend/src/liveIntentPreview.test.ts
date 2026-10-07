@@ -1,0 +1,125 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
+import { CONDITION_LABELS, conditionCards, emptyConditionCards } from "./conditionCards.ts";
+import { createPreviewScheduler, previewUnavailableMessage, requestIntentPreview, type PreviewResponse } from "./liveIntentPreview.ts";
+
+const result = (query: string): PreviewResponse => ({ query, model: "jev-test", conditions: emptyConditionCards("not_applied") });
+
+test("disabled or unavailable preview keeps route search available without a quota message", () => {
+  assert.match(previewUnavailableMessage({ enabled: true, configured: true, available: false }), /연결되지/);
+  assert.match(previewUnavailableMessage({ enabled: false, configured: true, available: false }), /꺼져/);
+  assert.match(previewUnavailableMessage(null), /경로 검색은 계속/);
+});
+async function until(predicate: () => boolean) {
+  for (let i = 0; i < 200; i++) { if (predicate()) return; await sleep(5); }
+  assert.fail("Preview event did not arrive");
+}
+
+test("seven cards preserve actual API decisions without inferring new conditions", () => {
+  const cards = conditionCards(["safety"], [{ factor: "streetlight", state: "applied" }, { factor: "time", state: "applied", period: "night" }]);
+  assert.equal(cards.length, 7);
+  assert.equal(cards.find((card) => card.factor === "cctv")?.state, "not_applied");
+  assert.equal(cards.find((card) => card.factor === "time")?.period, "night");
+});
+
+test("condition cards always use the requested four-plus-three presentation order", () => {
+  const order = ["distance", "streetlight", "cctv", "safety", "stairs", "crossing", "time"];
+  assert.deepEqual(emptyConditionCards().map(card => card.factor), order);
+  assert.deepEqual(conditionCards([], emptyConditionCards().reverse()).map(card => card.factor), order);
+  assert.equal(CONDITION_LABELS.crossing, "건널목 회피");
+  const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+});
+
+test("cards omit visible applied labels and footer hints but keep accessible state and errors", () => {
+  const badges = readFileSync(new URL("./components/RecommendationIcons.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(badges, /<small|recommendation-badge-status/);
+  assert.match(badges, /aria-label=\{`\$\{CONDITION_LABELS\[factor\]\}: \$\{status\}`\}/);
+  assert.doesNotMatch(app, /live-preview-hint|live-preview-notice|경로는 검색 후/);
+  assert.match(app, /live-preview-state.*role="status".*title=\{livePreview.notice/);
+});
+
+test("preview integrates with the shared example search and the current icon mode switch", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  assert.match(app, /setQuery\(text\);\s+livePreview.pause\(\);\s+beginSearch\("ai"\)/);
+  assert.match(app, /onClick=\{\(\) => void runAiSearch\(example\)\}/);
+  assert.match(app, /livePreview.clear\(\);\s+setMode\(mode === "ai" \? "direct" : "ai"\)/);
+  assert.match(app, /setQuery\(event.target.value\); livePreview.update\(event.target.value\)/);
+});
+
+test("word boundaries are coalesced and the whole latest prefix is sent once", async () => {
+  const calls: string[] = [];
+  const outputs: string[] = [];
+  const scheduler = createPreviewScheduler({
+    request: async (query) => { calls.push(query); return result(query); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult(data) { outputs.push(data.query); },
+    boundaryDelayMs: 10, idleDelayMs: 20, minimumIntervalMs: 0,
+  });
+  try {
+    scheduler.update("밤 "); scheduler.update("밤 10시에 "); scheduler.update("밤 10시에 계단을 피하고 ");
+    await until(() => outputs.length === 1);
+    assert.deepEqual(calls, ["밤 10시에 계단을 피하고"]);
+    scheduler.update("밤 10시에 계단을 피하고  ");
+    await sleep(30);
+    assert.equal(calls.length, 1);
+  } finally { scheduler.dispose(); }
+});
+
+test("late response cannot overwrite revised negation and only one request is in flight", async () => {
+  const calls: string[] = [];
+  const outputs: string[] = [];
+  const resolvers: Array<(response: PreviewResponse) => void> = [];
+  const scheduler = createPreviewScheduler({
+    request: (query) => { calls.push(query); return new Promise((resolve) => resolvers.push(resolve)); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult(data) { outputs.push(data.query); },
+    boundaryDelayMs: 1, minimumIntervalMs: 0,
+  });
+  try {
+    scheduler.update("계단을 피해서 ");
+    await until(() => calls.length === 1);
+    scheduler.update("계단은 피하지 않아도 돼. CCTV가 많은 길 ");
+    await sleep(20);
+    assert.equal(calls.length, 1);
+    resolvers[0](result(calls[0]));
+    await until(() => calls.length === 2);
+    assert.equal(outputs.length, 0);
+    resolvers[1](result(calls[1]));
+    await until(() => outputs.length === 1);
+    assert.deepEqual(outputs, ["계단은 피하지 않아도 돼. CCTV가 많은 길"]);
+  } finally { scheduler.dispose(); }
+});
+
+test("pausing for route search prevents queued previews and ignores pending results", async () => {
+  let resolve: (value: PreviewResponse) => void = () => {};
+  let calls = 0;
+  let outputs = 0;
+  const scheduler = createPreviewScheduler({
+    request: () => { calls++; return new Promise((done) => { resolve = done; }); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult() { outputs++; },
+    boundaryDelayMs: 1, minimumIntervalMs: 0,
+  });
+  scheduler.update("가로등 많은 길 ");
+  await until(() => calls === 1);
+  scheduler.update("CCTV도 많은 길 ");
+  scheduler.pause();
+  resolve(result("가로등 많은 길"));
+  await sleep(25);
+  assert.equal(calls, 1); assert.equal(outputs, 0);
+  scheduler.dispose();
+});
+
+test("preview API contract sends only the query and rejects invalid card states", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    assert.deepEqual(JSON.parse(String(init?.body)), { query: "계단 피하기" });
+    return new Response(JSON.stringify(result("계단 피하기")));
+  };
+  try {
+    assert.equal((await requestIntentPreview("계단 피하기")).conditions.length, 7);
+    globalThis.fetch = async () => new Response(JSON.stringify({ ...result("계단 피하기"), conditions: [{ factor: "stairs", state: "pending" }] }));
+    await assert.rejects(requestIntentPreview("계단 피하기"));
+  } finally { globalThis.fetch = original; }
+});

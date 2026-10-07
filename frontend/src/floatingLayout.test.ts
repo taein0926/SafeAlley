@@ -54,7 +54,7 @@ test("streaming progress scrolls independently below the fixed search controls",
 test("progress keeps its messages but removes the comparison table and its notices from code", () => {
   const progress = readFileSync(new URL("./components/RouteProgressPanel.tsx", import.meta.url), "utf8");
   const search = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
-  assert.match(progress, /이렇게 길을 찾았어요/);
+  assert.match(progress, /AI가 길을 찾고 있어요/);
   assert.match(progress, /progressMessages\(/);
   assert.doesNotMatch(progress, /requestedMetricRows|<details|<table|계산값 자세히 보기|실제 밝기·안전도/);
   assert.doesNotMatch(search, /route-progress-comparison|route-progress-note/);

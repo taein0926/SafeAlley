@@ -23,11 +23,12 @@ test("both supplied examples start the shared natural-language search without st
 test("compact route badges align small icons and labels without visible status text", () => {
   const cards = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   assert.match(cards, /padding: 12px 14px;/);
-  assert.match(cards, /repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(cards, /repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(cards, /\.recommendation-icons svg \{ width: 16px; height: 16px;/);
-  assert.match(cards, /\.recommendation-badge-status \{ display: none; \}/);
+  assert.doesNotMatch(cards, /recommendation-badge-status/);
   const badges = readFileSync(new URL("./components/RecommendationIcons.tsx", import.meta.url), "utf8");
-  assert.match(badges, /aria-label=\{`\$\{labels\[factor\]\}: \$\{applied \? "적용" : "미적용"\}`\}/);
+  assert.match(badges, /aria-label=\{`\$\{CONDITION_LABELS\[factor\]\}: \$\{status\}`\}/);
+  assert.doesNotMatch(badges, /<small|recommendation-badge-status/);
 });
 
 test("sentence input restores the original height and reserves the smaller microphone footprint", () => {

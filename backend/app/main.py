@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.agent import router as agent_router
+from app.api.intent_preview import router as intent_preview_router
 from app.api.buildings import router as buildings_router
 from app.api.health import router as health_router
 from app.api.heatmap import router as heatmap_router
@@ -22,6 +23,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(heatmap_router)
 app.include_router(agent_router)
+app.include_router(intent_preview_router)
 app.include_router(places_router)
 app.include_router(pedestrian_references_router)
 app.include_router(buildings_router)

@@ -11,6 +11,7 @@ import { routeInputMarkerImage } from "./routeMarkers";
 import { createRouteSelectionSaver } from "./routeSelection";
 import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
 import type { RouteWorkUpdate } from "./routeProgress";
+import { useLiveIntentPreview } from "./useLiveIntentPreview";
 
 import {
   CesiumRoadMap,
@@ -125,6 +126,7 @@ function App() {
   const [progressStage, setProgressStage] = useState<"interpreting" | "resolving" | "routing" | "done" | "failed">("interpreting");
   const [progressInterpretation, setProgressInterpretation] = useState<RouteQueryResponse["interpretation"] | null>(null);
   const [progressWork, setProgressWork] = useState<RouteWorkUpdate[]>([]);
+  const livePreview = useLiveIntentPreview();
   const processScrollRef = useRef<HTMLDivElement>(null);
   const [progressPlaces, setProgressPlaces] = useState<{ origin: string | null; destination: string | null }>({ origin: null, destination: null });
   const [errorMessage, setErrorMessage] = useState("");
@@ -150,6 +152,16 @@ function App() {
     setFacilityVisibility(current => current.streetlights === defaultStreetlights
       ? current : { ...current, streetlights: defaultStreetlights });
   }, [nightMode, defaultStreetlights]);
+
+  useEffect(() => {
+    if (requestState !== "idle" || !searchResult) return;
+    // Wait until the completed messages are laid out; scroll only the result pane.
+    const frame = window.requestAnimationFrame(() => {
+      const pane = processScrollRef.current;
+      if (pane) pane.scrollTop = pane.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [requestState, searchResult]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -229,6 +241,7 @@ function App() {
   ) => {
     if (target === null || requestState === "loading") return;
     const serial = ++buildingRequestSerial.current;
+    livePreview.clear();
     setMode("direct");
     setSearchPanelOpen(true);
     setBuildingSelectionPending(true);
@@ -254,7 +267,7 @@ function App() {
     } finally {
       if (serial === buildingRequestSerial.current) setBuildingSelectionPending(false);
     }
-  }, [buildingSelectionMode, requestState]);
+  }, [buildingSelectionMode, requestState, livePreview.clear]);
 
   const handleInvalidBuildingSelect = useCallback((message?: string) => {
     setMapSelectionNotice({ kind: "error", text: message ?? "건물을 선택해주세요" });
@@ -378,6 +391,7 @@ function App() {
     if (requestState === "loading" || !text.trim()) return;
     setMode("ai");
     setQuery(text);
+    livePreview.pause();
     beginSearch("ai");
     try {
       const data = await queryRouteWithProgress(text.trim(), userId, (event) => {
@@ -390,6 +404,7 @@ function App() {
         });
       });
       setProgressStage("done");
+      livePreview.clear();
       finishSearch({
         mode: "ai",
         origin: data.resolved_origin,
@@ -400,6 +415,7 @@ function App() {
       });
     } catch (error) {
       setProgressStage("failed");
+      livePreview.clear();
       failSearch(error);
     }
   }
@@ -450,7 +466,7 @@ function App() {
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
       />
-      {displayedCandidates.length > 0 && !mapInfo && (
+      {(displayedCandidates.length > 0 || (mode === "ai" && livePreview.active)) && !mapInfo && (
         <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
           <header className="floating-results-header">
             <strong>경로 후보</strong>
@@ -458,7 +474,13 @@ function App() {
           </header>
           {resultPanelOpen && (
           <div id="route-candidate-cards" className="floating-results-body">
-          {searchResult?.result.recommendation_status !== "ready" && (
+          {livePreview.active && displayedCandidates.length === 0 && (
+            <section className="route-card route-card--preview" aria-label="맞춤경로 입력 조건">
+              <span className="route-card-title"><strong>실시간 분석</strong>{(livePreview.blocked || livePreview.updating) && <span className="live-preview-state" role="status" title={livePreview.notice ?? undefined}>{livePreview.blocked ? "분석 사용 불가" : "분석 중"}</span>}</span>
+              {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
+            </section>
+          )}
+          {searchResult && searchResult.result.recommendation_status !== "ready" && (
             <p className="route-review-warning" role="status">
               {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
             </p>
@@ -467,12 +489,17 @@ function App() {
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;
               const walkingMinutes = estimatedWalkingMinutes(candidate.route.properties.total_distance_m);
+              const previewRouteType = displayedCandidates.find((item) => item.candidate.route_type === "custom")?.candidate.route_type ?? searchResult?.result.selected_route_type;
+              const showConditions = livePreview.active ? candidate.route_type === previewRouteType : candidate.route_type === searchResult?.result.selected_route_type;
               return (
                 <div key={candidate.route_type} className="route-card-group">
                 <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
                   <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
                   <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
-                  {candidate.route_type === searchResult?.result.selected_route_type && <RecommendationIcons factors={searchResult.result.recommendation_factors ?? []} />}
+                  {showConditions && <>
+                    {livePreview.active && (livePreview.blocked || livePreview.updating) && <span className="live-preview-state" role="status" title={livePreview.notice ?? undefined}>{livePreview.blocked ? "분석 사용 불가" : "분석 중"}</span>}
+                    {(!livePreview.active || !livePreview.blocked) && <RecommendationIcons factors={searchResult?.result.recommendation_factors ?? []} conditions={livePreview.active ? livePreview.cards : searchResult?.result.recommendation_conditions} preview={livePreview.active} />}
+                  </>}
                   <span className="route-card-details">
                     계단 {candidate.route.properties.stairs_segment_count}개
                     {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
@@ -587,8 +614,8 @@ function App() {
         ) : (
           <form id="route-search-form" className="route-form" onSubmit={searchWithAi}>
             <div className="ai-query">
-              <SpeechInput value={query} onText={setQuery} disabled={requestState === "loading" || !searchPanelOpen}>
-                <textarea id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
+              <SpeechInput value={query} onText={(text) => { setQuery(text); livePreview.update(text); }} disabled={requestState === "loading" || !searchPanelOpen}>
+                <textarea id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} onChange={(event) => { setQuery(event.target.value); livePreview.update(event.target.value); }} disabled={requestState === "loading"} rows={3} required />
               </SpeechInput>
             </div>
           </form>
@@ -599,6 +626,7 @@ function App() {
             setBuildingSelectionPending(false);
             setBuildingSelectionMode(null);
             setMapSelectionNotice(null);
+            livePreview.clear();
             setMode(mode === "ai" ? "direct" : "ai");
           }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">

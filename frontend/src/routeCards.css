@@ -127,17 +127,18 @@
 #route-results .route-time-unit { margin-left: 3px; font-size: 17px; font-weight: 500; letter-spacing: 0; }
 #route-results .route-card-primary > span { color: var(--result-muted); font-size: 14px; }
 #route-results .recommendation-icons {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   margin: 8px 0 0;
 }
 #route-results .recommendation-badge {
   --badge-cutout: var(--result-badge);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 4px 6px;
+  padding: 5px 2px;
   border: 1px solid var(--result-badge-line);
   border-radius: 8px;
   color: var(--result-accent);
@@ -152,9 +153,17 @@
   background: transparent;
 }
 #route-results .recommendation-icons svg { width: 16px; height: 16px; flex-shrink: 0; }
-#route-results .recommendation-icons span { font-size: 11px; font-weight: 600; }
+#route-results .recommendation-badge[data-state="analyzing"] {
+  --badge-cutout: var(--card-surface);
+  border-style: solid;
+  border-color: #bd934c;
+  color: #bd934c;
+  background: transparent;
+}
+#route-results .live-preview-state { color: var(--result-muted); font-size: 10px; font-weight: 400; }
+#route-results .route-card--preview { cursor: default; }
+#route-results .recommendation-icons span { font-size: 10px; font-weight: 600; }
 #route-results .recommendation-badge > span { white-space: nowrap; }
-#route-results .recommendation-badge-status { display: none; }
 #route-results .route-card-details {
   margin-top: 8px;
   padding-top: 8px;
