@@ -4,15 +4,14 @@ export const ROUTE_CAMERA_PITCH = -55 * Math.PI / 180;
 // accounts for perspective while the left inset excludes the result panel.
 export function routeCameraFrame(
   points: Array<{ x: number; y: number; z: number }>,
-  width: number, height: number, fovY: number, leftInset = 0, heading = 0,
+  width: number, height: number, fovY: number, leftInset = 0, heading = 0, padding = 36, pitch = ROUTE_CAMERA_PITCH,
 ) {
-  const padding = 36;
   const tanY = Math.tan(fovY / 2);
   const tanX = tanY * width / height;
   const left = 2 * (Math.min(Math.max(0, leftInset), width - 2 * padding - 1) + padding) / width - 1;
   const right = 1 - 2 * padding / width;
   const top = 1 - 2 * padding / height;
-  const sin = Math.sin(-ROUTE_CAMERA_PITCH), cos = Math.cos(-ROUTE_CAMERA_PITCH);
+  const sin = Math.sin(-pitch), cos = Math.cos(-pitch);
   const projected = (points.length ? points : [{ x: 0, y: 0, z: 0 }]).map(({ x, y, z }) => {
     const forward = x * Math.sin(heading) + y * Math.cos(heading);
     return { x: x * Math.cos(heading) - y * Math.sin(heading), y: forward * sin + z * cos, z: forward * cos - z * sin };
@@ -36,7 +35,7 @@ export function routeCameraFrame(
     if (fit(middle)) high = middle;
     else low = middle;
   }
-  return { range: high, ...fit(high)!, pitch: ROUTE_CAMERA_PITCH };
+  return { range: high, ...fit(high)!, pitch };
 }
 
 // Bearing clockwise from north, using the selected route's actual endpoints.
@@ -56,11 +55,11 @@ export function routeCameraHeading(coordinates: number[][]): number {
   return (Math.atan2(east, north) + 2 * Math.PI) % (2 * Math.PI);
 }
 
-export function routeCameraTargetOffset(rightOffset: number, heading: number, upOffset = 0) {
-  const forward = upOffset * Math.sin(-ROUTE_CAMERA_PITCH);
+export function routeCameraTargetOffset(rightOffset: number, heading: number, upOffset = 0, pitch = ROUTE_CAMERA_PITCH) {
+  const forward = upOffset * Math.sin(-pitch);
   return {
     east: rightOffset * Math.cos(heading) + forward * Math.sin(heading),
     north: -rightOffset * Math.sin(heading) + forward * Math.cos(heading),
-    up: upOffset * Math.cos(-ROUTE_CAMERA_PITCH),
+    up: upOffset * Math.cos(-pitch),
   };
 }

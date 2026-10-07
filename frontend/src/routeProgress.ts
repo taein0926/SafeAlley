@@ -266,28 +266,3 @@ export function progressMessages(
   }
   return messages;
 }
-
-export function requestedMetricRows(
-  interpretation: RouteQueryResponse["interpretation"] | null,
-  selected: RouteCandidate,
-  shortest: RouteCandidate | undefined,
-): Array<{ factor: string; label: string; selected: string; shortest: string | null }> {
-  const factors = new Set(["distance_m", ...(interpretation?.preferences.map((item) => item.factor) ?? [])]);
-  return [...factors].filter((factor) => factor in FACTOR_LABELS).map((factor) => {
-    const format = (candidate: RouteCandidate | undefined): string | null => {
-      if (!candidate) return null;
-      const value = candidate.metrics[factor];
-      if (typeof value !== "number" || !Number.isFinite(value)) return "자료 없음";
-      if (factor === "distance_m" || factor === "stairs_distance_m") return `${Math.round(value)}m`;
-      if (factor === "crosswalk_count") return `${Math.round(value)}개`;
-      if (factor === "sidewalk_coverage_percent") return `${Math.round(value)}%`;
-      return value.toFixed(1);
-    };
-    return {
-      factor,
-      label: FACTOR_LABELS[factor],
-      selected: format(selected) ?? "자료 없음",
-      shortest: format(shortest),
-    };
-  });
-}

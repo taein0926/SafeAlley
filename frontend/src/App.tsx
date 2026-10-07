@@ -52,6 +52,11 @@ type HealthState =
   | { kind: "error"; message: string };
 
 type SearchMode = "direct" | "ai";
+const SEARCH_EXAMPLES = [
+  "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
+  "낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘.",
+  "밤 11시에 인천 비즈니스 고등학교에서 인천청인학교까지 가로등이 많고 횡단보도 적게 건너는 길로 가고 싶어",
+] as const;
 type RequestState = "idle" | "loading" | "error";
 type MapSelectionNotice = { kind: "instruction" | "error" | "success"; text: string } | null;
 
@@ -114,9 +119,7 @@ function App() {
   const [crossingWeight, setCrossingWeight] = useState(50);
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
-  const [query, setQuery] = useState(
-    "밤 10시에 정부인천지방합동청사에서 두리하나어린이집까지 계단은 피하고 가로등이 많은 길로 안내해줘.",
-  );
+  const [query, setQuery] = useState("");
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [activeSearchMode, setActiveSearchMode] = useState<SearchMode | null>(null);
   const [progressStage, setProgressStage] = useState<"interpreting" | "resolving" | "routing" | "done" | "failed">("interpreting");
@@ -368,10 +371,16 @@ function App() {
 
   async function searchWithAi(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (requestState === "loading") return;
+    await runAiSearch(query);
+  }
+
+  async function runAiSearch(text: string) {
+    if (requestState === "loading" || !text.trim()) return;
+    setMode("ai");
+    setQuery(text);
     beginSearch("ai");
     try {
-      const data = await queryRouteWithProgress(query.trim(), userId, (event) => {
+      const data = await queryRouteWithProgress(text.trim(), userId, (event) => {
         if (event.type === "stage") setProgressStage(event.stage);
         if (event.type === "interpreted") setProgressInterpretation(event.data);
         if (event.type === "route_progress") setProgressWork((updates) => mergeWorkUpdate(updates, event.data));
@@ -401,7 +410,6 @@ function App() {
     setMapInfo(null);
     if (routeType === selectedRouteType) return;
     setSelectedRouteType(routeType);
-    setRouteDetailOpen(false);
     const recommendationId = searchResult?.result.recommendation_id;
     if (!recommendationId) return;
     try {
@@ -426,7 +434,7 @@ function App() {
   }, [selectRoute]);
 
   return (
-    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme={nightMode ? "night" : "day"}>
+    <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme="day">
       <div className="map-stage">
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}
@@ -471,7 +479,6 @@ function App() {
                     {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
                   </span>
                 </button>
-                {active && <button type="button" className="route-detail-button" onClick={() => setRouteDetailOpen((open) => !open)} aria-pressed={routeDetailOpen} title={routeDetailOpen ? "경로 전체가 보이는 시점으로 전환" : "출발지에서 도착지 방향으로 경로를 가까이 보기"}>{routeDetailOpen ? "전체 경로 보기" : "자세히 보기"}</button>}
                 </div>
               );
             })}
@@ -483,6 +490,10 @@ function App() {
           )}
         </aside>
       )}
+      <nav className="map-view-toggle" aria-label="지도 시점">
+        <button type="button" aria-pressed={!routeDetailOpen} onClick={() => setRouteDetailOpen(false)} title="전체 경로를 위에서 보기">탑뷰</button>
+        <button type="button" aria-pressed={routeDetailOpen} onClick={() => setRouteDetailOpen(true)} title="건물과 경로를 사선으로 보기">사이드뷰</button>
+      </nav>
       {nightMode && facilityVisibility.streetlights && (
         <div className="density-legend" role="img" aria-label="등록된 가로등의 상대 밀집도입니다. 색상은 적음, 보통, 많음을 구분하며 실제 조도나 안전을 나타내지 않습니다.">
           <span>가로등 밀집도</span>
@@ -542,18 +553,16 @@ function App() {
       <div className="sidebar-primary">
       <header className="sidebar-header" data-map-status={systemReady ? "ready" : "pending"}>
         <div className="brand-row">
-          <button type="button" className="brand-chip" aria-label="SafeAlley 새로고침" onClick={() => window.location.reload()}><strong>SafeAlley<span>안전한 길찾기</span></strong></button>
+          <div className="brand-identity">
+          <button type="button" className="brand-chip" aria-label="안전골목길 새로고침" onClick={() => window.location.reload()}><strong>안전골목길</strong></button>
+          <p className="brand-slogan">늦은 밤 골목에 안전을 더하다</p>
+          </div>
           <WeatherHud {...weather} />
         </div>
       </header>
       <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
-        <div className="segmented-control" role="tablist" aria-label="검색 방식">
-          <button type="button" role="tab" aria-selected={mode === "ai"} onClick={() => { ++buildingRequestSerial.current; setBuildingSelectionPending(false); setMode("ai"); setBuildingSelectionMode(null); setMapSelectionNotice(null); }}>AI 검색</button>
-          <button type="button" role="tab" aria-selected={mode === "direct"} onClick={() => setMode("direct")}>직접 검색</button>
-        </div>
-
         {mode === "direct" ? (
-          <form className="route-form" onSubmit={searchDirect}>
+          <form id="route-search-form" className="route-form" onSubmit={searchDirect}>
             <div className="place-inputs">
               <div className="location-input"><input aria-label="출발지" value={originLocation.displayName} placeholder="출발지 입력" onChange={(event) => editLocation("origin", event.target.value)} required /><button type="button" aria-label="출발지 지도 선택" aria-pressed={buildingSelectionMode === "origin"} title="지도에서 출발지 건물 선택" onClick={() => toggleBuildingSelection("origin")}><img src={routeInputMarkerImage("origin")} width="28" height="35" alt="" aria-hidden="true" /></button></div>
               <i aria-hidden="true" />
@@ -565,30 +574,39 @@ function App() {
             </button>
             {criteriaOpen && (
               <div className="route-criteria">
-                <label>
-                  <span>출발 시간</span>
-                  <span className="departure-time-control">
+                  <div className="departure-time-control">
                     <input aria-label="출발 시간" type="time" value={departureTime} onChange={(event) => setDepartureTime(event.target.value)} required />
                     <button type="button" onClick={() => setDepartureTime(currentLocalTime())}>현재 시간</button>
-                  </span>
-                </label>
-                <PreferenceSlider label="안전 관련 시설" value={safetyWeight} onChange={setSafetyWeight} description="낮음은 거리 우선, 높음은 안전 시설 우선" />
+                  </div>
+                <PreferenceSlider label="경로 우선순위" value={safetyWeight} onChange={setSafetyWeight} levelLabels={["거리", "균형", "안전"]} />
                 <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} />
-                <PreferenceSlider label="건널목 회피" value={crossingWeight} onChange={setCrossingWeight} />
+                <PreferenceSlider label="횡단보도 회피" value={crossingWeight} onChange={setCrossingWeight} />
               </div>
             )}
-            <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
           </form>
         ) : (
-          <form className="route-form" onSubmit={searchWithAi}>
+          <form id="route-search-form" className="route-form" onSubmit={searchWithAi}>
             <div className="ai-query">
               <SpeechInput value={query} onText={setQuery} disabled={requestState === "loading" || !searchPanelOpen}>
-                <textarea id="ai-route-query" aria-label="AI 경로 요청" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
+                <textarea id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} onChange={(event) => setQuery(event.target.value)} rows={3} required />
               </SpeechInput>
             </div>
-            <button className="search-button" type="submit" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "경로 검색"}</button>
           </form>
         )}
+        <div className="search-mode-toolbar">
+          <button type="button" className="search-mode-switch" aria-label={mode === "ai" ? "직접 설정" : "문장 입력"} title={mode === "ai" ? "직접 설정" : "문장 입력"} disabled={requestState === "loading"} onClick={() => {
+            ++buildingRequestSerial.current;
+            setBuildingSelectionPending(false);
+            setBuildingSelectionMode(null);
+            setMapSelectionNotice(null);
+            setMode(mode === "ai" ? "direct" : "ai");
+          }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              {mode === "ai" ? <><path d="M3 5h4m4 0h10M3 12h10m4 0h4M3 19h4m4 0h10" /><circle cx="9" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="9" cy="19" r="2" /></> : <path d="M20 4H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3v3l5-3h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM7 9h10M7 13h6" />}
+            </svg>
+          </button>
+          <button className="search-button" type="submit" form="route-search-form" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "길찾기"}</button>
+        </div>
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
 
@@ -604,11 +622,30 @@ function App() {
         />
       )}
 
-      {!mapInfo && displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty"><span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p></div>}
+      {displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">
+        <div className="search-examples" role="group" aria-label="예시 경로 검색">
+          {SEARCH_EXAMPLES.map((example, index) => <button key={example} type="button" onClick={() => void runAiSearch(example)}>
+            <span className="search-example-label">예시 {index + 1} · {index === 0 ? "가로등 많음 · 계단 회피" : index === 1 ? "CCTV 많음" : "가로등 많음 · 횡단보도 회피"}</span>
+            <span>{example}</span>
+          </button>)}
+        </div>
+        <span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p>
+      </div>}
       </div>
       </div>
-      {mapInfo && (
-        <aside className="map-info-panel" aria-label="지도 객체 정보">
+      </div>
+      <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색·결과·상세 패널 접기" : "검색·결과·상세 패널 열기"} aria-controls="map-sidebar-content" aria-expanded={searchPanelOpen} onClick={() => {
+        setSearchPanelOpen((open) => !open);
+        ++buildingRequestSerial.current;
+        setBuildingSelectionPending(false);
+        setBuildingSelectionMode(null);
+        setMapSelectionNotice(null);
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><polyline points={searchPanelOpen ? "15 5 9 12 15 19" : "9 5 15 12 9 19"} /></svg>
+      </button>
+      </div>
+      {searchPanelOpen && mapInfo && (
+        <aside className="map-info-panel floating-secondary" aria-label="지도 객체 정보">
           <header>
             <div>
               <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : mapInfo.kind === "streetlight" ? "가로등 정보" : mapInfo.kind === "cctv" ? "CCTV 정보" : mapInfo.kind === "stairs" ? "계단 정보" : "육교 정보"}</span>
@@ -629,17 +666,6 @@ function App() {
           </dl>
         </aside>
       )}
-      </div>
-      <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색·결과·상세 패널 접기" : "검색·결과·상세 패널 열기"} aria-controls="map-sidebar-content" aria-expanded={searchPanelOpen} onClick={() => {
-        setSearchPanelOpen((open) => !open);
-        ++buildingRequestSerial.current;
-        setBuildingSelectionPending(false);
-        setBuildingSelectionMode(null);
-        setMapSelectionNotice(null);
-      }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><polyline points={searchPanelOpen ? "15 5 9 12 15 19" : "9 5 15 12 9 19"} /></svg>
-      </button>
-      </div>
     </main>
   );
 }

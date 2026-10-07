@@ -42,7 +42,7 @@ import { CONNECTED_BRIDGE_IMAGE, REFERENCE_BRIDGE_IMAGE, bridgeMarkerPosition } 
 import { mapLighting, STREETLIGHT_GLOW_IMAGE } from "../mapLighting";
 import { CCTV_MARKER_IMAGE, helpPointMarkerImage } from "../facilityMarkers";
 import { routeMarkerImage, routeMarkerLocations, routeAccessConnectors, selectedRouteLabelLocation } from "../routeMarkers";
-import { CROSSING_GUIDE_IMAGE, SHOW_ALL_CROSSING_MARKERS, selectedRouteGuidePoints } from "../routeGuidePoints";
+import { CROSSING_GUIDE_IMAGE, selectedRouteGuidePoints } from "../routeGuidePoints";
 import { INITIAL_MAP_VIEW, zoomTargetHeight } from "../mapNavigation";
 import { routeCapPath, routeEndCaps, routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
@@ -139,17 +139,6 @@ type RoadFeatureCollection = {
       dark_gap_proxy_m: number;
       [key: string]: unknown;
     };
-  }>;
-  metadata: FeatureCollectionMetadata;
-};
-
-type StreetlightFeatureCollection = {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    id: number | string;
-    geometry: { type: "Point"; coordinates: [number, number] };
-    properties: Record<string, unknown>;
   }>;
   metadata: FeatureCollectionMetadata;
 };
@@ -267,6 +256,33 @@ function pickedWgs84Coordinate(
   };
 }
 
+// Both camera modes use the same fit, leaving the floating cards outside the
+// usable map area. Read live bounds only when a search or view toggle requests it.
+function flyToRouteFrame(viewer: Viewer, coordinates: number[][], heading: number, pitch: number) {
+  if (!coordinates.length) return;
+  const canvasBounds = viewer.canvas.getBoundingClientRect();
+  const frustum = viewer.camera.frustum;
+  if (!(frustum instanceof PerspectiveFrustum) || canvasBounds.width <= 0 || canvasBounds.height <= 0) return;
+  const shell = viewer.canvas.closest(".app-shell");
+  const sidebarClosed = shell?.classList.contains("app-shell--sidebar-closed");
+  const panels = Array.from(shell?.querySelectorAll(".sidebar-primary, .floating-secondary, #route-results") ?? [])
+    .filter(panel => !sidebarClosed || panel.id === "route-results");
+  const leftInset = Math.max(0, ...panels.map(panel => panel.getBoundingClientRect())
+    .filter(bounds => bounds.width > 0 && bounds.right > canvasBounds.left && bounds.left < canvasBounds.right)
+    .map(bounds => bounds.right - canvasBounds.left + 16));
+  const sphere = BoundingSphere.fromPoints(coordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
+  const transform = Transforms.eastNorthUpToFixedFrame(sphere.center);
+  const inverse = Matrix4.inverseTransformation(transform, new Matrix4());
+  const localPoints = coordinates.map(([lon, lat]) => Matrix4.multiplyByPoint(inverse, Cartesian3.fromDegrees(lon, lat), new Cartesian3()));
+  // Keep endpoint pins clear of the top-right view toggle and facility rail.
+  const frame = routeCameraFrame(localPoints, canvasBounds.width, canvasBounds.height, frustum.fovy ?? Math.PI / 3, leftInset, heading, 128, pitch);
+  const offset = routeCameraTargetOffset(frame.rightOffset, heading, frame.upOffset, pitch);
+  const target = Matrix4.multiplyByPoint(transform, new Cartesian3(offset.east, offset.north, offset.up), new Cartesian3());
+  viewer.camera.flyToBoundingSphere(new BoundingSphere(target, sphere.radius), {
+    duration: 0.8, offset: new HeadingPitchRange(heading, frame.pitch, frame.range),
+  });
+}
+
 export function CesiumRoadMap({
   onStatusChange,
   onBuildingStatusChange,
@@ -282,7 +298,6 @@ export function CesiumRoadMap({
   nightMode,
   onResetView,
 }: CesiumRoadMapProps) {
-  const [allCrossingsReady, setAllCrossingsReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const routePinsRef = useRef<HTMLDivElement>(null);
@@ -303,7 +318,6 @@ export function CesiumRoadMap({
   const routeEntityIdsRef = useRef<string[]>([]);
   const lastRouteSignatureRef = useRef("");
   const lastRouteDetailOpenRef = useRef(routeDetailOpen);
-  const routeOverviewRef = useRef<Rectangle | null>(null);
   const facilityVisibilityRef = useRef(facilityVisibility);
   const buildingSelectionModeRef = useRef(buildingSelectionMode);
   const onBuildingSelectRef = useRef(onBuildingSelect);
@@ -733,7 +747,6 @@ export function CesiumRoadMap({
     const streetlightPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
     const cctvPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
     const helpPointPrimitives = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
-    const markers = viewer.scene.primitives.add(new BillboardCollection({ scene: viewer.scene })) as BillboardCollection;
     streetlightPrimitivesRef.current = streetlightPrimitives;
     cctvPrimitivesRef.current = cctvPrimitives;
     helpPointPrimitivesRef.current = helpPointPrimitives;
@@ -866,23 +879,6 @@ export function CesiumRoadMap({
       return () => { helpPointPrimitives.remove(marker); };
     }
 
-    function addCrossing(raw: FacilityFeature): () => void {
-      const feature = raw as PointFeatureCollection["features"][number];
-
-      const [lon, lat] = feature.geometry.coordinates;
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return () => {};
-          const marker = markers.add({
-            position: Cartesian3.fromDegrees(lon, lat),
-            image: CROSSING_GUIDE_IMAGE,
-            width: 24,
-            height: 24,
-            heightReference: HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            distanceDisplayCondition: new DistanceDisplayCondition(0, 30000),
-          });
-      return () => { markers.remove(marker); };
-    }
-
     function addStair(raw: FacilityFeature): () => void {
       const feature = raw as RoadFeatureCollection["features"][number];
 
@@ -975,7 +971,6 @@ export function CesiumRoadMap({
       layer("/api/help-points?source=ai-ready-help-points", () => facilityVisibilityRef.current.helpPoints, addHelpPoint),
       layer("/api/roads?source=osm&steps_only=true", () => facilityVisibilityRef.current.stairsAndBridges, addStair),
       layer("/api/pedestrian-bridges", () => facilityVisibilityRef.current.stairsAndBridges, addBridge),
-      layer("/api/crossings", () => SHOW_ALL_CROSSING_MARKERS, addCrossing),
     ];
     type FacilityLayer = typeof facilityLayers[number];
     let facilityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -998,7 +993,6 @@ export function CesiumRoadMap({
           if (!item.active.has(id)) item.active.set(id, item.create(feature));
         }
       } finally { viewer.entities.resumeEvents(); }
-      if (item === facilityLayers[5]) setAllCrossingsReady(features.length > 0);
       if (layerStatus) {
         layerStatus = { ...layerStatus,
           streetlightCount: facilityLayers[0].active.size,
@@ -1244,7 +1238,7 @@ export function CesiumRoadMap({
     }
 
     // One zebra-crossing icon at each selected crossing's path midpoint.
-    (SHOW_ALL_CROSSING_MARKERS && allCrossingsReady ? [] : selectedRouteGuidePoints(visibleCandidates, selectedRouteType)).forEach((point, index) => {
+    selectedRouteGuidePoints(visibleCandidates, selectedRouteType).forEach((point, index) => {
       const id = `route-guide-point-${index}`;
       const entity = viewer.entities.add({
         id,
@@ -1269,25 +1263,13 @@ export function CesiumRoadMap({
         ...visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates),
         ...routeMarkerLocations(visibleCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude]),
       ];
-      const longitudes = coordinates.map(([longitude]) => longitude);
-      const latitudes = coordinates.map(([, latitude]) => latitude);
-      const padding = 0.002;
-      routeOverviewRef.current = Rectangle.fromDegrees(
-        Math.min(...longitudes) - padding, Math.min(...latitudes) - padding,
-        Math.max(...longitudes) + padding, Math.max(...latitudes) + padding,
-      );
-      viewer.camera.flyTo({
-        duration: 0.8,
-        destination: routeOverviewRef.current,
-        orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
-      });
+      flyToRouteFrame(viewer, coordinates, 0, -CesiumMath.PI_OVER_TWO);
       lastRouteSignatureRef.current = signature;
     } else if (visibleCandidates.length === 0) {
       lastRouteSignatureRef.current = "";
-      routeOverviewRef.current = null;
     }
     viewer.scene.requestRender();
-  }, [draftLocations, routeCandidates, selectedRouteType, nightMode, allCrossingsReady]);
+  }, [draftLocations, routeCandidates, selectedRouteType, nightMode]);
 
   useEffect(() => {
     // Only a mode change moves the camera; manual map movement stays untouched.
@@ -1295,47 +1277,30 @@ export function CesiumRoadMap({
     lastRouteDetailOpenRef.current = routeDetailOpen;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    if (!routeDetailOpen) {
-      if (routeOverviewRef.current) viewer.camera.flyTo({
-        duration: 0.8,
-        destination: routeOverviewRef.current,
-        orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
-      });
+    viewer.camera.cancelFlight();
+    const selected = routeCandidates.find((candidate) => candidate.route_type === selectedRouteType) ?? routeCandidates[0];
+    const coordinates = selected?.route.geometry.coordinates;
+    if (!coordinates || coordinates.length < 2) {
+      // The same controls work before a search, around the current map center.
+      const center = viewer.camera.pickEllipsoid(
+        new Cartesian2(viewer.canvas.clientWidth / 2, viewer.canvas.clientHeight / 2),
+        viewer.scene.globe.ellipsoid,
+      );
+      if (center) {
+        const pitch = routeDetailOpen ? -CesiumMath.toRadians(55) : -CesiumMath.PI_OVER_TWO;
+        const range = Math.max(280, Cartesian3.distance(viewer.camera.positionWC, center));
+        viewer.camera.flyToBoundingSphere(new BoundingSphere(center, 1), {
+          duration: 0.8, offset: new HeadingPitchRange(viewer.camera.heading, pitch, range),
+        });
+      }
       viewer.scene.requestRender();
       return;
     }
-    const selected = routeCandidates.find((candidate) => candidate.route_type === selectedRouteType);
-    const coordinates = selected?.route.geometry.coordinates;
-    if (!viewer || viewer.isDestroyed() || !coordinates || coordinates.length < 2) return;
-    const frameCoordinates = [...coordinates,
+    const frameCoordinates = [...routeCandidates.flatMap(candidate => candidate.route.geometry.coordinates),
       ...routeMarkerLocations(routeCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude])];
-    const sphere = BoundingSphere.fromPoints(frameCoordinates.map(([lon, lat]) => Cartesian3.fromDegrees(lon, lat)));
-    const canvasBounds = viewer.canvas.getBoundingClientRect();
-    const panels = containerRef.current?.closest(".app-shell")?.querySelectorAll(".map-info-panel, #route-results") ?? [];
-    const leftInset = Array.from(panels).reduce((inset, panel) => {
-      const bounds = panel.getBoundingClientRect();
-      if (bounds.width === 0 || bounds.right <= canvasBounds.left || bounds.left >= canvasBounds.right) return inset;
-      return Math.max(inset, bounds.right - canvasBounds.left + 24);
-    }, 0);
-    const frustum = viewer.camera.frustum;
-    if (frustum instanceof PerspectiveFrustum && canvasBounds.width > 0 && canvasBounds.height > 0) {
-      const heading = routeCameraHeading(coordinates);
-      const transform = Transforms.eastNorthUpToFixedFrame(sphere.center);
-      const inverse = Matrix4.inverseTransformation(transform, new Matrix4());
-      const localPoints = frameCoordinates.map(([lon, lat]) => Matrix4.multiplyByPoint(inverse, Cartesian3.fromDegrees(lon, lat), new Cartesian3()));
-      const frame = routeCameraFrame(localPoints, canvasBounds.width, canvasBounds.height, frustum.fovy ?? Math.PI / 3, leftInset, heading);
-      // Offset in camera-right space so the result panel is avoided even
-      // when the start-to-end direction points south, east or west.
-      const offset = routeCameraTargetOffset(frame.rightOffset, heading, frame.upOffset);
-      const target = Matrix4.multiplyByPoint(
-        transform,
-        new Cartesian3(offset.east, offset.north, offset.up), new Cartesian3(),
-      );
-      viewer.camera.flyToBoundingSphere(new BoundingSphere(target, sphere.radius), {
-        duration: 0.9,
-        offset: new HeadingPitchRange(heading, frame.pitch, frame.range),
-      });
-    }
+    flyToRouteFrame(viewer, frameCoordinates,
+      routeDetailOpen ? routeCameraHeading(coordinates) : 0,
+      routeDetailOpen ? -CesiumMath.toRadians(55) : -CesiumMath.PI_OVER_TWO);
     viewer.scene.requestRender();
   }, [routeDetailOpen, routeCandidates, selectedRouteType, draftLocations]);
 

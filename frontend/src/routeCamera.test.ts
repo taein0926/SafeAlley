@@ -38,6 +38,31 @@ test("larger routes zoom out; panel-free views need no sideways offset", () => {
   assert.equal(routeCameraFrame(points(100), 1000, 800, .65).rightOffset, 0);
 });
 
+test("side view can reserve extra screen space for endpoint pins", () => {
+  const points = [{ x: -100, y: -1500, z: 0 }, { x: 200, y: 1500, z: 0 }];
+  assert.ok(routeCameraFrame(points, 1200, 800, .65, 0, 0, 64).range > routeCameraFrame(points, 1200, 800, .65).range);
+});
+
+test("top view fits every route vertex beyond floating search and detail cards", () => {
+  for (const inset of [0, 416, 832]) {
+    const width = 1440, height = 900, fov = .8, pitch = -Math.PI / 2;
+    const points = [{ x: -1300, y: -1600, z: -1 }, { x: 800, y: 900, z: -2 }, { x: 250, y: 1700, z: 0 }];
+    const frame = routeCameraFrame(points, width, height, fov, inset, 0, 128, pitch);
+    assert.equal(frame.pitch, pitch);
+    for (const point of points) {
+      const depth = frame.range - point.z;
+      const x = (1 + (point.x - frame.rightOffset) / (depth * Math.tan(fov / 2) * width / height)) * width / 2;
+      const y = (1 - (point.y - frame.upOffset) / (depth * Math.tan(fov / 2))) * height / 2;
+      assert.ok(x >= inset + 128 - 1e-6 && x <= width - 128 + 1e-6);
+      assert.ok(y >= 128 - 1e-6 && y <= height - 128 + 1e-6);
+    }
+    const offset = routeCameraTargetOffset(frame.rightOffset, 0, frame.upOffset, pitch);
+    assert.equal(offset.east, frame.rightOffset);
+    assert.equal(offset.north, frame.upOffset);
+    assert.ok(Math.abs(offset.up) < 1e-9);
+  }
+});
+
 test("3D heading looks from start towards destination, including reversed routes", () => {
   for (const [end, expected] of [ [[0, 1], 0], [[1, 0], Math.PI / 2], [[0, -1], Math.PI], [[-1, 0], 3 * Math.PI / 2] ] as const) {
     assert.ok(Math.abs(routeCameraHeading([[0, 0], [...end]]) - expected) < 1e-10);

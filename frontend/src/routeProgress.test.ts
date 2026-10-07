@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { conditionDecisions, mergeWorkUpdate, progressMessages, queryRouteWithProgress, requestedMetricRows } from "./routeProgress.ts";
+import { conditionDecisions, mergeWorkUpdate, progressMessages, queryRouteWithProgress } from "./routeProgress.ts";
 import type { RouteCandidate, RouteQueryResponse } from "./types.ts";
 
 test("routing messages update in place and remain visible before the final result", () => {
@@ -83,25 +83,6 @@ test("stream error never becomes a successful route", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
-});
-
-test("metric comparison shows only requested, available source values", () => {
-  const candidate = (routeType: "shortest" | "custom", values: Record<string, number | null>) => ({
-    route_type: routeType,
-    metrics: values,
-  }) as RouteCandidate;
-  const rows = requestedMetricRows(
-    { origin_name: null, destination_name: null, departure_time: null, profile: "pedestrian", preferences: [
-      { factor: "streetlight_score", direction: "maximize", weight: 1 },
-      { factor: "crosswalk_count", direction: "minimize", weight: 1 },
-    ] },
-    candidate("custom", { distance_m: 950, streetlight_score: 72.23, crosswalk_count: null }),
-    candidate("shortest", { distance_m: 810, streetlight_score: 51.12, crosswalk_count: 2 }),
-  );
-  assert.deepEqual(rows.map((row) => row.label), ["거리", "가로등 위치 지표", "등록된 횡단보도"]);
-  assert.equal(rows[1].selected, "72.2");
-  assert.equal(rows[2].selected, "자료 없음");
-  assert.equal(rows[2].shortest, "2개");
 });
 
 test("Qwen preferences become explicit questions without invented probabilities", () => {

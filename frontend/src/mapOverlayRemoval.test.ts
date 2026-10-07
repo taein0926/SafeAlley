@@ -8,4 +8,8 @@ test("map does not fetch or render inspection roads, while keeping routes and st
   assert.match(source, /recommended-route-/);
   assert.match(source, /\/api\/roads\?source=osm&steps_only=true/);
   assert.match(source, /selectedRouteGuidePoints/);
+  assert.doesNotMatch(source, /\/api\/crossings|SHOW_ALL_CROSSING_MARKERS|allCrossingsReady|addCrossing/);
+  assert.doesNotMatch(source, /createStreetlightDensityTexture/);
+  assert.match(source, /\/api\/streetlight-heatmap\/manifest/);
+  assert.match(source, /\/api\/pedestrian-bridges/);
 });

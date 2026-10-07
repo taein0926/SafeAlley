@@ -29,3 +29,11 @@ test("low/medium/high preserve existing route API weights", () => {
     assert.equal(args.departure_time, "22:00");
   }
 });
+
+test("safety labels change presentation only and retain the same three weights", () => {
+  const labels = ["거리", "중간", "안전"] as const;
+  assert.deepEqual(PREFERENCE_LEVELS.map(({ value }) => preferenceLevelLabel(value, labels)), labels);
+  assert.equal(preferenceLevelLabel(23, labels), "거리");
+  assert.equal(preferenceLevelLabel(76, labels), "안전");
+  assert.equal(preferenceLevelLabel(100), "높음");
+});

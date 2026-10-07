@@ -10,6 +10,7 @@ export function snapPreferenceWeight(value: number): number {
   return Math.round(Math.min(100, Math.max(0, value)) / 50) * 50;
 }
 
-export function preferenceLevelLabel(value: number): string {
-  return PREFERENCE_LEVELS[snapPreferenceWeight(value) / 50].label;
+export function preferenceLevelLabel(value: number, labels?: readonly [string, string, string]): string {
+  const index = snapPreferenceWeight(value) / 50;
+  return labels?.[index] ?? PREFERENCE_LEVELS[index].label;
 }

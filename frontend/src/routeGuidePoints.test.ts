@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CROSSING_GUIDE_IMAGE, SHOW_ALL_CROSSING_MARKERS, selectedRouteGuidePoints } from "./routeGuidePoints.ts";
+import { CROSSING_GUIDE_IMAGE, selectedRouteGuidePoints } from "./routeGuidePoints.ts";
 import type { RouteCandidate, RouteRoadSegment, RouteType } from "./types.ts";
-
-test("district-wide crossing inspection is disabled in normal map use", () => {
-  assert.equal(SHOW_ALL_CROSSING_MARKERS, false);
-});
 
 test("crossing icon uses a round white badge and dark perspective stripes without external assets", () => {
   const svg = decodeURIComponent(CROSSING_GUIDE_IMAGE.split(",")[1]);
