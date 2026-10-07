@@ -3,9 +3,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-CardFactor = Literal["distance", "safety", "streetlight", "cctv", "stairs", "crossing", "time"]
+CardFactor = Literal["distance", "safety", "streetlight", "cctv", "stairs", "crossing", "bridge", "time"]
 CardState = Literal["analyzing", "applied", "not_applied"]
-CARD_ORDER = ("distance", "safety", "streetlight", "cctv", "stairs", "crossing", "time")
+CARD_ORDER = ("distance", "safety", "streetlight", "cctv", "stairs", "crossing", "bridge", "time")
 
 
 class ConditionCard(BaseModel):

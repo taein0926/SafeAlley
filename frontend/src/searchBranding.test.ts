@@ -5,11 +5,18 @@ import test from "node:test";
 const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
 
-test("both supplied examples start the shared natural-language search without stale input", () => {
+test("examples animate input without searching; the search button retains the existing route handler", () => {
   assert.match(app, /밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해\. 가로등이 많고 계단 없는 길로 안내해줘\./);
   assert.match(app, /낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘\./);
+  assert.match(app, /낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘\./);
+  const examplesArray = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)?.[1];
+  assert.equal(examplesArray?.match(/"[^"\n]+"/g)?.length, 4);
   assert.match(app, /await runAiSearch\(query\)/);
-  assert.match(app, /onClick=\{\(\) => void runAiSearch\(example\)\}/);
+  assert.match(app, /onClick=\{\(\) => typeExample\(example\)\}/);
+  const example = app.slice(app.indexOf("function typeExample"), app.indexOf("function editQuery"));
+  assert.match(example, /livePreview.clear\(\)/);
+  assert.match(example, /exampleTyper.current\?\.start\(text\)/);
+  assert.doesNotMatch(example, /runAiSearch|queryRouteWithProgress|beginSearch/);
   const sharedSearch = app.slice(app.indexOf("async function runAiSearch"), app.indexOf("const selectRoute ="));
   assert.match(sharedSearch, /requestState === "loading" \|\| !text.trim\(\)/);
   assert.match(sharedSearch, /setMode\("ai"\)/);
@@ -18,6 +25,22 @@ test("both supplied examples start the shared natural-language search without st
   assert.equal(app.match(/await queryRouteWithProgress\(/g)?.length, 1);
   assert.ok(app.indexOf('aria-label="예시 경로 검색"') < app.indexOf('나에게 맞는 길을 찾아보세요'));
   assert.match(app, /\{displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">/);
+});
+
+test("compact examples use two columns and element-only labels below the search button", () => {
+  const start = app.indexOf('className="search-examples"');
+  const end = app.indexOf('</section>', start);
+  const examples = app.slice(start, end);
+  assert.ok(start > app.indexOf('className="search-button"'));
+  assert.ok(start < app.indexOf('ref={processScrollRef}'));
+  assert.equal(app.match(/className="search-examples"/g)?.length, 1);
+  assert.match(examples, /예시 \{index \+ 1\}\)/);
+  assert.match(examples, /"가로등 · 계단".*"CCTV".*index === 2 \? "가로등 · 건널목" : "CCTV · 건널목"/);
+  assert.doesNotMatch(examples, /많음|회피/);
+  assert.doesNotMatch(examples, /<span>\{example\}<\/span>/);
+  assert.match(examples, /disabled=\{requestState === "loading"\}/);
+  assert.match(css, /\.search-examples \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 6px;.*margin: 12px auto 0;/);
+  assert.match(css, /\.search-examples button \{[^}]*min-height: 32px;[^}]*background: #f5f8fc;/);
 });
 
 test("compact route badges align small icons and labels without visible status text", () => {
@@ -127,9 +150,32 @@ test("Korean brand keeps reload and the agreed slogan without a comma", () => {
   assert.match(html, /<title>안전골목길<\/title>/);
   assert.match(app, /aria-label="안전골목길 새로고침" onClick=\{\(\) => window.location.reload\(\)\}/);
   assert.match(app, /<strong>안전골목길<\/strong>/);
-  assert.match(app, /className="brand-slogan">늦은 밤 골목에 안전을 더하다<\/p>/);
+  assert.match(app, /className="brand-slogan">골목에 안전을 더하다<\/p>/);
   assert.match(app, /className="brand-identity">[\s\S]*className="brand-slogan">[^<]+<\/p>\s+<\/div>\s+<WeatherHud/);
-  assert.match(css, /\.brand-row \{ align-items: stretch;/);
+  assert.match(css, /\.brand-row \{ align-items: flex-start;/);
+});
+
+test("compact actions and symmetric header preserve equal input and example edge gaps", () => {
+  assert.match(css, /--search-action-height: 40px;/);
+  assert.match(css, /height: var\(--search-action-height\);/);
+  assert.match(css, /min-height: var\(--search-action-height\);/);
+  assert.match(css, /--search-edge-gap: 18px;/);
+  assert.match(css, /padding: 8px 20px var\(--search-edge-gap\);/);
+  assert.match(css, /\.route-form \{[^}]*margin: 10px auto 0;/);
+  assert.match(css, /\.sidebar-header \{ --brand-logo-line-height: 30px; padding: 14px 20px; \}/);
+  assert.match(css, /\.brand-chip strong \{ line-height: var\(--brand-logo-line-height\); \}/);
+  const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
+  assert.match(chrome, /\.weather-hud-heading \{[^}]*align-items: flex-end;[^}]*height: var\(--brand-logo-line-height\);/);
+  assert.match(chrome, /\.weather-hud-values > span \{ min-height: 18px; line-height: 18px; \}/);
+});
+
+test("slogan and weather rows have no extra vertical spacing", () => {
+  assert.match(css, /\.brand-identity \{[^}]*gap: 0;/);
+  const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(chrome, /\.weather-hud-values \{[^}]*margin-top: 0;/);
+  assert.match(chrome, /\.weather-hud-unavailable \{[^}]*margin-top: 0;/);
+  assert.match(styles, /\.weather-hud-values \{[^}]*margin-top: 0;/);
 });
 
 test("sentence input starts empty with a placeholder and uses existing search handlers", () => {

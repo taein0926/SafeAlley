@@ -40,10 +40,10 @@ def test_disabled_preview_does_not_call_external_api(monkeypatch, state):
     assert "remaining_calls" not in client.get("/api/agent/intent-preview/status").json()
 
 
-def test_jev_questions_keep_full_query_and_exactly_seven_cards():
+def test_jev_questions_keep_full_query_and_exactly_eight_cards():
     payload = service.build_request("계단은 피하지 않아도 돼. CCTV가 많은 길", "jev-test")
     assert payload["state"] == "계단은 피하지 않아도 돼. CCTV가 많은 길"
-    assert len(payload["questions"]) == 7
+    assert len(payload["questions"]) == 8
     cards = service.parse_decisions(payload, _response(payload, {"cctv": "apply", "time": "night"}), .7)
     assert {card.factor: card.state for card in cards}["stairs"] == "not_applied"
     assert {card.factor: card.state for card in cards}["cctv"] == "applied"
@@ -58,6 +58,19 @@ def test_incomplete_or_uncertain_answers_remain_analyzing():
     assert cards["stairs"].state == "analyzing"
     assert cards["streetlight"].state == "not_applied"
     assert cards["streetlight"].direction is None
+
+
+@pytest.mark.parametrize("choice,direction,state", [
+    ("apply", "maximize", "applied"), ("avoid", "avoid", "applied"),
+    ("minimize", "minimize", "applied"), ("skip", None, "not_applied"),
+    ("pending", None, "analyzing"),
+])
+def test_bridge_preview_reads_its_own_choice_without_assuming_stairs(choice, direction, state):
+    payload = service.build_request("육교를 이용하는 길로 안내해줘", "jev-test")
+    cards = {card.factor: card for card in service.parse_decisions(payload, _response(payload, {"bridge": choice}), .7)}
+    assert cards["bridge"].state == state
+    assert cards["bridge"].direction == direction
+    assert cards["stairs"].state == "not_applied"
 
 
 def test_negative_choice_does_not_leave_unrequested_card_spinning():
@@ -131,7 +144,7 @@ def test_request_spacing_remains_without_a_cumulative_cap(monkeypatch):
 
 def test_actual_cards_use_supported_metrics_and_time_policy_not_preview():
     selected = {"metrics": {"stairs_distance_m": 0, "streetlight_score": 77, "cctv_score": None},
-                "route": {"properties": {"crossing_data_available": False}}}
+                "route": {"properties": {"crossing_data_available": False, "pedestrian_bridge_count": 2}}}
     preferences = [RoutePreference(factor="stairs_distance_m", direction="avoid"),
                    RoutePreference(factor="streetlight_score", direction="maximize"),
                    RoutePreference(factor="cctv_score", direction="maximize")]
@@ -139,7 +152,8 @@ def test_actual_cards_use_supported_metrics_and_time_policy_not_preview():
     arguments = SimpleNamespace(stairs_weight=0, crossing_weight=0, departure_time=time(22))
     cards = routing_condition_cards(selected, preferences, [], arguments, SimpleNamespace(is_night=True))
     states = {card.factor: card.state for card in cards}
-    assert len(cards) == 7
+    assert len(cards) == 8
+    assert states["bridge"] == "not_applied"
     assert states["stairs"] == states["streetlight"] == states["time"] == "applied"
     assert states["safety"] == states["cctv"] == "not_applied"
     assert cards[-1].period == "night"

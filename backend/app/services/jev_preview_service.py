@@ -29,6 +29,7 @@ QUESTIONS = {
     "cctv": "CCTV가 많거나 CCTV와 가까운 길을 우선하는가? 단순 목적지 이름은 제외한다.",
     "stairs": "계단을 아예 피하려는가, 적게 지나려는가? 계단이 있어도 괜찮거나 피하지 않아도 된다는 말은 skip이다.",
     "crossing": "건널목·횡단보도를 아예 피하려는가, 적게 지나려는가? 건너도 괜찮다는 말은 skip이다.",
+    "bridge": "육교를 이용하고 싶은가, 아예 피하고 싶은가, 적게 지나고 싶은가? 육교가 있어도 괜찮다는 허용이나 계단 회피만으로 육교 조건을 추론하지 않는다. 육교가 포함된 목적지 이름은 제외한다.",
     "time": "출발 시각·시간대를 명시했는가? 밤·오전·오후와 시각을 함께 읽는다. 시각이 없으면 skip이다.",
 }
 
@@ -66,6 +67,11 @@ def build_request(query: str, model: str) -> dict:
         if factor == "time":
             choices = {"night": "명시된 출발 시간대가 밤·심야·새벽이다", "day": "명시된 출발 시간대가 낮이다",
                        "skip": "출발 시간대를 명시하지 않았다", "pending": "시간 표현이 미완성이거나 명확하지 않다"}
+        if factor == "bridge":
+            choices = {"apply": "육교를 이용하는 길을 명시적으로 원한다",
+                       "avoid": "육교를 전혀 지나지 않는 길을 명시적으로 원한다",
+                       "minimize": "육교를 적게 또는 가급적 피해서 지나고 싶다",
+                       "skip": "육교 조건을 요청하지 않았거나 철회·허용했다", "pending": "미완성이라 방향을 정할 수 없다"}
         questions[factor] = {"type": "choice", "instructions": COMMON + QUESTIONS[factor], "criteria": choices}
     return {"state": query, "model": model, "questions": questions}
 

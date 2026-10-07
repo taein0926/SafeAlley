@@ -35,13 +35,28 @@ type Options = {
 export function createPreviewScheduler(options: Options) {
   let version = 0;
   let current = "";
+  let lastSnapshot = "";
   let queued: { query: string; version: number; readyAt: number } | null = null;
   let inFlight = false;
   let lastStarted = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let failed = false;
   const minimumInterval = options.minimumIntervalMs ?? 800;
+
+  function isCurrentPrefix(task: { query: string; version: number }) {
+    return !disposed && task.version === version && current.startsWith(task.query)
+      && (current === task.query || /^\s/u.test(current.slice(task.query.length)));
+  }
+
+  function enqueue(query: string, delay: number) {
+    if (query === lastSnapshot && !failed) return;
+    lastSnapshot = query;
+    options.onPending();
+    queued = { query, version, readyAt: Date.now() + delay };
+    schedule();
+  }
 
   function schedule() {
     if (timer) clearTimeout(timer);
@@ -55,13 +70,20 @@ export function createPreviewScheduler(options: Options) {
     if (!queued || inFlight || disposed) return;
     const task = queued;
     queued = null;
+    // An idle snapshot can become an incomplete word when typing resumes.
+    if (!isCurrentPrefix(task)) return;
     inFlight = true;
     lastStarted = Date.now();
     try {
       const result = await options.request(task.query);
-      if (!disposed && task.version === version) { failed = false; options.onResult(result); }
+      // Appending the next word must not discard an already completed prefix.
+      // A rewrite, deletion, clear or pause invalidates the previous generation.
+      if (isCurrentPrefix(task)) {
+        failed = false; options.onResult(result);
+        if (queued) options.onPending();
+      }
     } catch (error) {
-      if (!disposed && task.version === version) {
+      if (isCurrentPrefix(task)) {
         failed = true;
         options.onError(error instanceof Error ? error : new Error("실시간 분석 오류"));
       }
@@ -75,24 +97,38 @@ export function createPreviewScheduler(options: Options) {
     version++;
     queued = null;
     current = "";
+    lastSnapshot = "";
     if (timer) clearTimeout(timer);
+    if (idleTimer) clearTimeout(idleTimer);
     timer = undefined;
+    idleTimer = undefined;
   }
 
   return {
     update(text: string) {
       if (disposed) return;
       const query = text.trim();
-      if (query === current && !failed) return;
-      current = query;
-      const requestVersion = ++version;
-      if (timer) clearTimeout(timer);
-      if (!query) { queued = null; options.onEmpty(); return; }
-      options.onPending();
       const boundary = /[\s.!?,;。！？]$/u.test(text);
-      const delay = boundary ? options.boundaryDelayMs ?? 350 : options.idleDelayMs ?? 800;
-      queued = { query, version: requestVersion, readyAt: Date.now() + delay };
-      schedule();
+      // Adding a space leaves trim() unchanged, but is a new analysis trigger.
+      if (query === current && !failed && !boundary) return;
+      if (!query.startsWith(current)) {
+        version++;
+        queued = null;
+        lastSnapshot = "";
+        if (timer) clearTimeout(timer);
+        timer = undefined;
+      }
+      current = query;
+      if (!query) { pause(); options.onEmpty(); return; }
+      // Retain the original idle delay for the last word, but keep this timer
+      // separate so a new letter never postpones the completed-word snapshot.
+      if (idleTimer) clearTimeout(idleTimer);
+      const inputVersion = version;
+      idleTimer = setTimeout(() => {
+        idleTimer = undefined;
+        if (!disposed && version === inputVersion) enqueue(current, 0);
+      }, options.idleDelayMs ?? 800);
+      if (boundary) enqueue(query, options.boundaryDelayMs ?? 350);
     },
     pause,
     dispose() { pause(); disposed = true; },

@@ -1263,13 +1263,16 @@ export function CesiumRoadMap({
         ...visibleCandidates.flatMap((candidate) => candidate.route.geometry.coordinates),
         ...routeMarkerLocations(visibleCandidates, selectedRouteType, draftLocations).map(p => [p.longitude, p.latitude]),
       ];
-      flyToRouteFrame(viewer, coordinates, 0, -CesiumMath.PI_OVER_TWO);
+      const selected = visibleCandidates.find(candidate => candidate.route_type === selectedRouteType) ?? visibleCandidates[0];
+      flyToRouteFrame(viewer, coordinates,
+        routeDetailOpen ? routeCameraHeading(selected.route.geometry.coordinates) : 0,
+        routeDetailOpen ? -CesiumMath.toRadians(55) : -CesiumMath.PI_OVER_TWO);
       lastRouteSignatureRef.current = signature;
     } else if (visibleCandidates.length === 0) {
       lastRouteSignatureRef.current = "";
     }
     viewer.scene.requestRender();
-  }, [draftLocations, routeCandidates, selectedRouteType, nightMode]);
+  }, [draftLocations, routeCandidates, selectedRouteType, nightMode, routeDetailOpen]);
 
   useEffect(() => {
     // Only a mode change moves the camera; manual map movement stays untouched.

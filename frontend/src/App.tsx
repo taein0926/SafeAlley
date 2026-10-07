@@ -6,12 +6,14 @@ import { RecommendationIcons } from "./components/RecommendationIcons";
 import { RouteProgressPanel } from "./components/RouteProgressPanel";
 import { SpeechInput } from "./components/SpeechInput";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
-import { facilityToggleImage } from "./facilityToggleIcons";
+import { facilityToggleFactor } from "./facilityToggleIcons";
+import { ConditionIcon } from "./components/ConditionIcon";
 import { routeInputMarkerImage } from "./routeMarkers";
 import { createRouteSelectionSaver } from "./routeSelection";
 import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
 import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
+import { createExampleTyper } from "./exampleTyping";
 
 import {
   CesiumRoadMap,
@@ -57,6 +59,7 @@ const SEARCH_EXAMPLES = [
   "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
   "낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘.",
   "밤 11시에 인천 비즈니스 고등학교에서 인천청인학교까지 가로등이 많고 횡단보도 적게 건너는 길로 가고 싶어",
+  "낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘.",
 ] as const;
 type RequestState = "idle" | "loading" | "error";
 type MapSelectionNotice = { kind: "instruction" | "error" | "success"; text: string } | null;
@@ -121,17 +124,59 @@ function App() {
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
   const [query, setQuery] = useState("");
+  const [queryEditing, setQueryEditing] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [activeSearchMode, setActiveSearchMode] = useState<SearchMode | null>(null);
   const [progressStage, setProgressStage] = useState<"interpreting" | "resolving" | "routing" | "done" | "failed">("interpreting");
   const [progressInterpretation, setProgressInterpretation] = useState<RouteQueryResponse["interpretation"] | null>(null);
   const [progressWork, setProgressWork] = useState<RouteWorkUpdate[]>([]);
   const livePreview = useLiveIntentPreview();
+  const [exampleTyping, setExampleTyping] = useState(false);
+  const queryInputRef = useRef<HTMLTextAreaElement>(null);
+  const exampleTyper = useRef<ReturnType<typeof createExampleTyper> | null>(null);
+  useEffect(() => {
+    const typer = createExampleTyper({
+      onText: (text) => { setQuery(text); livePreview.update(text); },
+      onTypingChange: setExampleTyping,
+    });
+    exampleTyper.current = typer;
+    return () => { typer.dispose(); exampleTyper.current = null; };
+  }, [livePreview.update]);
+  useEffect(() => { if (exampleTyping) queryInputRef.current?.focus(); }, [exampleTyping]);
+
+  function typeExample(text: string) {
+    if (requestState === "loading") return;
+    exampleTyper.current?.cancel();
+    livePreview.clear();
+    ++buildingRequestSerial.current;
+    setBuildingSelectionPending(false);
+    setBuildingSelectionMode(null);
+    setMapSelectionNotice(null);
+    setMode("ai");
+    setSearchPanelOpen(true);
+    setMapInfo(null);
+    setErrorMessage("");
+    setRequestState("idle");
+    setActiveSearchMode(null);
+    setQueryEditing(true);
+    exampleTyper.current?.start(text);
+    queryInputRef.current?.focus();
+  }
+
+  function editQuery(text: string) {
+    exampleTyper.current?.cancel();
+    setQueryEditing(true);
+    setActiveSearchMode(null);
+    setRequestState("idle");
+    setErrorMessage("");
+    setMapInfo(null);
+    setQuery(text);
+    livePreview.update(text);
+  }
   const processScrollRef = useRef<HTMLDivElement>(null);
   const [progressPlaces, setProgressPlaces] = useState<{ origin: string | null; destination: string | null }>({ origin: null, destination: null });
   const [errorMessage, setErrorMessage] = useState("");
   const [searchResult, setSearchResult] = useState<RouteSearchResult | null>(null);
-  const [resultPanelOpen, setResultPanelOpen] = useState(true);
   const [selectedRouteType, setSelectedRouteType] = useState<RouteType | null>(null);
   const [routeDetailOpen, setRouteDetailOpen] = useState(false);
   const [mapInfo, setMapInfo] = useState<MapInfoSelection | null>(null);
@@ -204,6 +249,8 @@ function App() {
   const displayedCandidates = useMemo(() => searchResult
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
+  const showSearchResults = !queryEditing && displayedCandidates.length > 0;
+  const showLivePreview = mode === "ai" && livePreview.active && !showSearchResults && requestState !== "loading";
   const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
@@ -241,11 +288,11 @@ function App() {
   ) => {
     if (target === null || requestState === "loading") return;
     const serial = ++buildingRequestSerial.current;
+    exampleTyper.current?.cancel();
     livePreview.clear();
     setMode("direct");
     setSearchPanelOpen(true);
     setBuildingSelectionPending(true);
-    setResultPanelOpen(false);
     setMapSelectionNotice({ kind: "instruction", text: "건물 위치를 확인하고 있습니다..." });
     try {
       const location = await resolveBuildingLocation(selection, reversePlace);
@@ -313,6 +360,7 @@ function App() {
     ++buildingRequestSerial.current;
     setBuildingSelectionPending(false);
     setRequestState("loading");
+    setQueryEditing(false);
     setActiveSearchMode(searchMode);
     setProgressStage("interpreting");
     setProgressInterpretation(null);
@@ -320,7 +368,6 @@ function App() {
     setProgressPlaces({ origin: null, destination: null });
     setErrorMessage("");
     setSearchResult(null);
-    setRouteDetailOpen(false);
     setSelectedRouteType(null);
     setBuildingSelectionMode(null);
     setMapSelectionNotice(null);
@@ -328,9 +375,9 @@ function App() {
   }
 
   function finishSearch(result: RouteSearchResult) {
-    setResultPanelOpen(true);
     setAppliedDepartureTime(result.departureTime ?? currentLocalTime());
     setSearchResult(result);
+    setQueryEditing(false);
     setSelectedRouteType(
       result.result.recommendation_status === "ready"
         ? result.result.selected_route_type
@@ -389,6 +436,7 @@ function App() {
 
   async function runAiSearch(text: string) {
     if (requestState === "loading" || !text.trim()) return;
+    exampleTyper.current?.cancel();
     setMode("ai");
     setQuery(text);
     livePreview.pause();
@@ -422,7 +470,6 @@ function App() {
 
   const selectRoute = useCallback(async (routeType: RouteType) => {
     setSearchPanelOpen(true);
-    setResultPanelOpen(true);
     setMapInfo(null);
     if (routeType === selectedRouteType) return;
     setSelectedRouteType(routeType);
@@ -466,20 +513,15 @@ function App() {
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
       />
-      {(displayedCandidates.length > 0 || (mode === "ai" && livePreview.active)) && !mapInfo && (
-        <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
-          <header className="floating-results-header">
-            <strong>경로 후보</strong>
-            <button type="button" aria-label={resultPanelOpen ? "경로 후보 숨기기" : "경로 후보 보이기"} aria-expanded={resultPanelOpen} aria-controls="route-candidate-cards" onClick={() => setResultPanelOpen((open) => !open)}>{resultPanelOpen ? "숨기기" : "보이기"}</button>
-          </header>
-          {resultPanelOpen && (
+      {(showSearchResults || showLivePreview) && !mapInfo && (
+        <aside id="route-results" className="result-panel result-panel--floating" aria-label={showSearchResults ? "경로 검색 결과" : "실시간 분석"}>
           <div id="route-candidate-cards" className="floating-results-body">
-          {livePreview.active && displayedCandidates.length === 0 && (
+          {showLivePreview ? (
             <section className="route-card route-card--preview" aria-label="맞춤경로 입력 조건">
               <span className="route-card-title"><strong>실시간 분석</strong>{(livePreview.blocked || livePreview.updating) && <span className="live-preview-state" role="status" title={livePreview.notice ?? undefined}>{livePreview.blocked ? "분석 사용 불가" : "분석 중"}</span>}</span>
               {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
             </section>
-          )}
+          ) : <>
           {searchResult && searchResult.result.recommendation_status !== "ready" && (
             <p className="route-review-warning" role="status">
               {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
@@ -489,17 +531,13 @@ function App() {
             {displayedCandidates.map(({ candidate, label }) => {
               const active = candidate.route_type === selectedRouteType;
               const walkingMinutes = estimatedWalkingMinutes(candidate.route.properties.total_distance_m);
-              const previewRouteType = displayedCandidates.find((item) => item.candidate.route_type === "custom")?.candidate.route_type ?? searchResult?.result.selected_route_type;
-              const showConditions = livePreview.active ? candidate.route_type === previewRouteType : candidate.route_type === searchResult?.result.selected_route_type;
+              const showConditions = candidate.route_type === searchResult?.result.selected_route_type;
               return (
                 <div key={candidate.route_type} className="route-card-group">
                 <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
                   <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
                   <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
-                  {showConditions && <>
-                    {livePreview.active && (livePreview.blocked || livePreview.updating) && <span className="live-preview-state" role="status" title={livePreview.notice ?? undefined}>{livePreview.blocked ? "분석 사용 불가" : "분석 중"}</span>}
-                    {(!livePreview.active || !livePreview.blocked) && <RecommendationIcons factors={searchResult?.result.recommendation_factors ?? []} conditions={livePreview.active ? livePreview.cards : searchResult?.result.recommendation_conditions} preview={livePreview.active} />}
-                  </>}
+                  {showConditions && <RecommendationIcons factors={searchResult?.result.recommendation_factors ?? []} conditions={searchResult?.result.recommendation_conditions} />}
                   <span className="route-card-details">
                     계단 {candidate.route.properties.stairs_segment_count}개
                     {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
@@ -513,8 +551,8 @@ function App() {
           {selectedCandidate?.route.properties.unverified_major_road_count ? (
             <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
           ) : null}
+          </>}
           </div>
-          )}
         </aside>
       )}
       <nav className="map-view-toggle" aria-label="지도 시점">
@@ -534,14 +572,14 @@ function App() {
       <nav id="facility-controls" className="facility-controls" aria-label="시설 표시">
         <button
           type="button"
-          aria-label="가로등 위치와 상대 밀집도 표시"
+          aria-label="가로등 표시"
           aria-pressed={facilityVisibility.streetlights}
-          title={nightMode ? "가로등 밀집도 (실제 조도 아님)" : "가로등 위치"}
+          title="가로등"
           onClick={() => setFacilityVisibility((current) => ({
             ...current,
             streetlights: !current.streetlights,
           }))}
-        ><img src={facilityToggleImage("streetlights")} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><ConditionIcon factor={facilityToggleFactor("streetlights")} size={24} applied={facilityVisibility.streetlights} /></button>
         <button
           type="button"
           aria-label="CCTV 표시"
@@ -551,17 +589,17 @@ function App() {
             ...current,
             cctvs: !current.cctvs,
           }))}
-        ><img src={facilityToggleImage("cctvs")} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><ConditionIcon factor={facilityToggleFactor("cctvs")} size={24} applied={facilityVisibility.cctvs} /></button>
         <button
           type="button"
-          aria-label="안전지원시설 표시"
+          aria-label="안전시설 표시"
           aria-pressed={facilityVisibility.helpPoints}
-          title="안전지원시설"
+          title="안전시설"
           onClick={() => setFacilityVisibility((current) => ({
             ...current,
             helpPoints: !current.helpPoints,
           }))}
-        ><img src={facilityToggleImage("helpPoints")} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><ConditionIcon factor={facilityToggleFactor("helpPoints")} size={24} applied={facilityVisibility.helpPoints} /></button>
         <button
           type="button"
           aria-label="계단·육교 표시"
@@ -571,7 +609,7 @@ function App() {
             ...current,
             stairsAndBridges: !current.stairsAndBridges,
           }))}
-        ><img src={facilityToggleImage("stairsAndBridges")} width="24" height="24" alt="" aria-hidden="true" /></button>
+        ><ConditionIcon factor={facilityToggleFactor("stairsAndBridges")} size={24} showAvoidance={false} applied={facilityVisibility.stairsAndBridges} /></button>
       </nav>
       </div>
 
@@ -582,7 +620,7 @@ function App() {
         <div className="brand-row">
           <div className="brand-identity">
           <button type="button" className="brand-chip" aria-label="안전골목길 새로고침" onClick={() => window.location.reload()}><strong>안전골목길</strong></button>
-          <p className="brand-slogan">늦은 밤 골목에 안전을 더하다</p>
+          <p className="brand-slogan">골목에 안전을 더하다</p>
           </div>
           <WeatherHud {...weather} />
         </div>
@@ -614,8 +652,15 @@ function App() {
         ) : (
           <form id="route-search-form" className="route-form" onSubmit={searchWithAi}>
             <div className="ai-query">
-              <SpeechInput value={query} onText={(text) => { setQuery(text); livePreview.update(text); }} disabled={requestState === "loading" || !searchPanelOpen}>
-                <textarea id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} onChange={(event) => { setQuery(event.target.value); livePreview.update(event.target.value); }} disabled={requestState === "loading"} rows={3} required />
+              <SpeechInput value={query} onText={editQuery} disabled={requestState === "loading" || !searchPanelOpen || exampleTyping}>
+                <textarea ref={queryInputRef} id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} data-example-typing={exampleTyping || undefined}
+                  onChange={(event) => editQuery(event.target.value)}
+                  onBeforeInput={() => exampleTyper.current?.cancel()}
+                  onPointerDown={() => exampleTyper.current?.cancel()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key.length === 1) exampleTyper.current?.cancel();
+                  }}
+                  disabled={requestState === "loading"} rows={3} required />
               </SpeechInput>
             </div>
           </form>
@@ -626,6 +671,7 @@ function App() {
             setBuildingSelectionPending(false);
             setBuildingSelectionMode(null);
             setMapSelectionNotice(null);
+            exampleTyper.current?.cancel();
             livePreview.clear();
             setMode(mode === "ai" ? "direct" : "ai");
           }}>
@@ -635,11 +681,16 @@ function App() {
           </button>
           <button className="search-button" type="submit" form="route-search-form" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "길찾기"}</button>
         </div>
+        <div className="search-examples" role="group" aria-label="예시 경로 검색">
+          {SEARCH_EXAMPLES.map((example, index) => <button key={example} type="button" disabled={requestState === "loading"} onClick={() => typeExample(example)}>
+            <span className="search-example-label">예시 {index + 1}) {index === 0 ? "가로등 · 계단" : index === 1 ? "CCTV" : index === 2 ? "가로등 · 건널목" : "CCTV · 건널목"}</span>
+          </button>)}
+        </div>
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
 
       <div ref={processScrollRef} className="sidebar-scroll" role="region" aria-label="경로 검색 처리 내용" tabIndex={0}>
-      {activeSearchMode === "ai" && (requestState === "loading" || requestState === "error" || searchResult?.mode === "ai") && (
+      {!queryEditing && activeSearchMode === "ai" && (requestState === "loading" || requestState === "error" || searchResult?.mode === "ai") && (
         <RouteProgressPanel
           stage={progressStage}
           interpretation={progressInterpretation}
@@ -651,18 +702,13 @@ function App() {
       )}
 
       {displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">
-        <div className="search-examples" role="group" aria-label="예시 경로 검색">
-          {SEARCH_EXAMPLES.map((example, index) => <button key={example} type="button" onClick={() => void runAiSearch(example)}>
-            <span className="search-example-label">예시 {index + 1} · {index === 0 ? "가로등 많음 · 계단 회피" : index === 1 ? "CCTV 많음" : "가로등 많음 · 횡단보도 회피"}</span>
-            <span>{example}</span>
-          </button>)}
-        </div>
         <span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p>
       </div>}
       </div>
       </div>
       </div>
       <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색·결과·상세 패널 접기" : "검색·결과·상세 패널 열기"} aria-controls="map-sidebar-content" aria-expanded={searchPanelOpen} onClick={() => {
+        exampleTyper.current?.cancel();
         setSearchPanelOpen((open) => !open);
         ++buildingRequestSerial.current;
         setBuildingSelectionPending(false);

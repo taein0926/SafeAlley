@@ -61,7 +61,7 @@ export function WeatherHud({ data, error, date, time }: ReturnType<typeof useWea
   const symbol = weatherSymbol(forecast);
   return <section id="map-weather" className="weather-hud" aria-label="출발 시간 날씨" aria-live="polite">
     <div className="weather-hud-toprow">
-      <div className="weather-hud-heading">미추홀구 · <strong className="weather-time">{date.slice(5).replace("-", "/")} {time.slice(0, 5)}</strong></div>
+      <div className="weather-hud-heading"><strong className="weather-location">미추홀구</strong><strong className="weather-time">{date.slice(5).replace("-", "/")} {time.slice(0, 5)}</strong></div>
     </div>
     {forecast ? <div className="weather-hud-values">
       <span className="weather-condition">{symbol.label}</span>

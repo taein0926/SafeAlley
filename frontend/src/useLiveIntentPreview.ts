@@ -58,6 +58,8 @@ export function useLiveIntentPreview() {
   const update = useCallback((text: string) => {
     latestText.current = text;
     if (!text.trim()) { scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); return; }
+    // Show the input panel immediately; keep inference on the existing word/idle schedule.
+    setActive(true);
     if (!status.current?.available) {
       scheduler.current?.pause();
       setActive(true);

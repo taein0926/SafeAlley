@@ -150,7 +150,7 @@ textarea { font: inherit; }
 .weather-hud { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 8px 12px; border-radius: 16px; color: #1d5b99; background: #e0edf9; }
 .weather-hud-toprow { display: flex; align-items: center; justify-content: center; gap: 6px 10px; }
 .weather-hud-heading { color: #506a77; font-size: .65rem; text-align: center; white-space: nowrap; }
-.weather-hud-values { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 3px; font-size: .875rem; font-weight: 400; line-height: 1.5; text-align: center; }
+.weather-hud-values { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0; font-size: .875rem; font-weight: 400; line-height: 1.5; text-align: center; }
 .weather-hud-values > span { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 24px; font: inherit; white-space: nowrap; }
 .weather-hud-values > [role="img"] { font-size: 1.125rem; line-height: 1; }
 .weather-hud-unavailable { margin: 7px 0 0; color: #506a77; font-size: .73rem; line-height: 1.5; text-align: center; }

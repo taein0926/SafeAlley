@@ -28,7 +28,8 @@ test("candidate cards and object details share their top-left anchor and collaps
   assert.match(app, /className="result-panel result-panel--floating"/);
   assert.ok(app.indexOf('id="route-results"') < app.indexOf('id="map-sidebar-content"'));
   assert.equal(app.match(/id="route-results"/g)?.length, 1);
-  assert.match(app, /aria-controls="route-candidate-cards"/);
+  assert.match(app, /id="route-candidate-cards"/);
+  assert.doesNotMatch(app, /floating-results-header|resultPanelOpen|경로 후보 숨기기|경로 후보 보이기/);
   assert.match(app, /className="map-info-panel floating-secondary"/);
   assert.match(app, /searchPanelOpen && mapInfo &&/);
   assert.match(css, /\.floating-secondary \{[^}]*left: calc\(var\(--panel-edge\) \+ var\(--sidebar-width\) \+ var\(--route-panel-gap\)\);[^}]*z-index: 31;/);
@@ -36,6 +37,7 @@ test("candidate cards and object details share their top-left anchor and collaps
   assert.match(css, /\.search-panel-shell--collapsed \.sidebar-content \{ visibility: hidden; \}/);
   assert.match(app, /inert=\{!searchPanelOpen\}/);
   const cards = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  assert.doesNotMatch(cards, /floating-results-header/);
   assert.match(cards, /width: var\(--route-card-width\);/);
   assert.match(cards, /top: var\(--floating-panel-top\);/);
   assert.match(cards, /--route-panel-gap: max\(calc\(var\(--panel-gap\) \* 0\.7 \+ 14px\), 36\.4px\);/);
@@ -64,7 +66,7 @@ test("both camera modes reuse the fit and account for visible floating panels", 
   assert.match(map, /querySelectorAll\("\.sidebar-primary, \.floating-secondary, #route-results"\)/);
   assert.match(map, /!sidebarClosed \|\| panel.id === "route-results"/);
   assert.match(map, /classList.contains\("app-shell--sidebar-closed"\)/);
-  assert.match(map, /flyToRouteFrame\(viewer, coordinates, 0, -CesiumMath.PI_OVER_TWO\)/);
+  assert.match(map, /flyToRouteFrame\(viewer, coordinates,\s+routeDetailOpen \? routeCameraHeading\(selected.route.geometry.coordinates\) : 0,\s+routeDetailOpen \? -CesiumMath.toRadians\(55\) : -CesiumMath.PI_OVER_TWO\)/);
   assert.match(map, /flyToRouteFrame\(viewer, frameCoordinates,/);
   assert.match(map, /if \(routeDetailOpen === lastRouteDetailOpenRef.current\) return;/);
 });

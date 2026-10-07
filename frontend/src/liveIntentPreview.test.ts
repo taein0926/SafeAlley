@@ -17,20 +17,43 @@ async function until(predicate: () => boolean) {
   assert.fail("Preview event did not arrive");
 }
 
-test("seven cards preserve actual API decisions without inferring new conditions", () => {
+test("eight cards preserve actual API decisions without inferring new conditions", () => {
   const cards = conditionCards(["safety"], [{ factor: "streetlight", state: "applied" }, { factor: "time", state: "applied", period: "night" }]);
-  assert.equal(cards.length, 7);
+  assert.equal(cards.length, 8);
   assert.equal(cards.find((card) => card.factor === "cctv")?.state, "not_applied");
   assert.equal(cards.find((card) => card.factor === "time")?.period, "night");
 });
 
-test("condition cards always use the requested four-plus-three presentation order", () => {
-  const order = ["distance", "streetlight", "cctv", "safety", "stairs", "crossing", "time"];
+test("condition cards always use the requested four-plus-four order with bridge after crossing", () => {
+  const order = ["distance", "streetlight", "cctv", "safety", "stairs", "crossing", "bridge", "time"];
   assert.deepEqual(emptyConditionCards().map(card => card.factor), order);
   assert.deepEqual(conditionCards([], emptyConditionCards().reverse()).map(card => card.factor), order);
   assert.equal(CONDITION_LABELS.crossing, "건널목 회피");
+  assert.equal(CONDITION_LABELS.bridge, "육교");
   const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+});
+
+test("bridge condition preserves the preview answer but never invents a completed routing preference", () => {
+  const cards = conditionCards([], [{ factor: "bridge", state: "applied", direction: "avoid" }]);
+  assert.equal(cards[6].factor, "bridge");
+  assert.equal(cards[6].direction, "avoid");
+  assert.equal(conditionCards([])[6].state, "not_applied");
+  const icon = readFileSync(new URL("./components/ConditionIcon.tsx", import.meta.url), "utf8");
+  const bridge = readFileSync(new URL("./bridgeMarkers.ts", import.meta.url), "utf8");
+  const outline = 'M5 33h5v-6h5v-6h14v6h5v6h5';
+  assert.ok(icon.includes(outline) && bridge.includes(outline));
+  const badges = readFileSync(new URL("./components/RecommendationIcons.tsx", import.meta.url), "utf8");
+  assert.match(badges, /factor === "bridge" \? "육교 선호는 현재 경로 비용에 독립적으로 반영되지 않습니다"/);
+});
+
+test("inactive condition cards use a clearer border without changing selected or analyzing cards", () => {
+  const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  assert.match(css, /--result-inactive-badge-line: #64758a;/);
+  assert.match(css, /--result-inactive-badge-line: #a7b2c0;/);
+  assert.match(css, /\.recommendation-badge\[data-applied="false"\] \{[^}]*border-color: var\(--result-inactive-badge-line\);[^}]*border-style: dashed;/);
+  assert.match(css, /\.recommendation-badge \{[^}]*border: 1px solid var\(--result-badge-line\);/);
+  assert.match(css, /\.recommendation-badge\[data-state="analyzing"\] \{[^}]*border-color: #bd934c;/);
 });
 
 test("cards omit visible applied labels and footer hints but keep accessible state and errors", () => {
@@ -42,12 +65,44 @@ test("cards omit visible applied labels and footer hints but keep accessible sta
   assert.match(app, /live-preview-state.*role="status".*title=\{livePreview.notice/);
 });
 
-test("preview integrates with the shared example search and the current icon mode switch", () => {
+test("example typing and manual input share preview while route search and mode switches cancel typing", () => {
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   assert.match(app, /setQuery\(text\);\s+livePreview.pause\(\);\s+beginSearch\("ai"\)/);
-  assert.match(app, /onClick=\{\(\) => void runAiSearch\(example\)\}/);
+  assert.match(app, /onClick=\{\(\) => typeExample\(example\)\}/);
   assert.match(app, /livePreview.clear\(\);\s+setMode\(mode === "ai" \? "direct" : "ai"\)/);
-  assert.match(app, /setQuery\(event.target.value\); livePreview.update\(event.target.value\)/);
+  assert.match(app, /setQuery\(text\); livePreview.update\(text\)/);
+  assert.match(app, /onChange=\{\(event\) => editQuery\(event.target.value/);
+  assert.doesNotMatch(app, /onBlur=.*livePreview.update/);
+  assert.match(app, /async function runAiSearch[\s\S]*?exampleTyper.current\?\.cancel\(\)/);
+});
+
+test("editing or selecting an example replaces results with preview without clearing map routes", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const example = app.slice(app.indexOf("function typeExample"), app.indexOf("function editQuery"));
+  const edit = app.slice(app.indexOf("function editQuery"), app.indexOf("const processScrollRef"));
+  for (const handler of [example, edit]) {
+    assert.match(handler, /setQueryEditing\(true\)/);
+    assert.match(handler, /setActiveSearchMode\(null\)/);
+    assert.doesNotMatch(handler, /setSearchResult\(null\)|setSelectedRouteType\(null\)/);
+  }
+  assert.match(app, /const showSearchResults = !queryEditing && displayedCandidates.length > 0/);
+  assert.match(app, /const showLivePreview = mode === "ai" && livePreview.active && !showSearchResults && requestState !== "loading"/);
+  assert.match(app, /\{showLivePreview \? \(/);
+  assert.match(app, /!queryEditing && activeSearchMode === "ai"/);
+  for (const start of ["function beginSearch", "function finishSearch"]) {
+    const handler = app.slice(app.indexOf(start), app.indexOf("\n  }", app.indexOf(start)));
+    assert.match(handler, /setQueryEditing\(false\)/);
+  }
+});
+
+test("completed route cards use only saved routing conditions, never live analysis or its status", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const results = app.slice(app.indexOf('{searchResult && searchResult.result.recommendation_status'), app.indexOf('</aside>', app.indexOf('{searchResult && searchResult.result.recommendation_status')));
+  assert.doesNotMatch(results, /livePreview|live-preview-state|분석 중|previewRouteType/);
+  assert.match(results, /conditions=\{searchResult\?\.result.recommendation_conditions\}/);
+  const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
+  const update = hook.slice(hook.indexOf("const update ="), hook.indexOf("const pause ="));
+  assert.ok(update.indexOf("setActive(true)") < update.indexOf("scheduler.current?.update(text)"));
 });
 
 test("word boundaries are coalesced and the whole latest prefix is sent once", async () => {
@@ -56,7 +111,7 @@ test("word boundaries are coalesced and the whole latest prefix is sent once", a
   const scheduler = createPreviewScheduler({
     request: async (query) => { calls.push(query); return result(query); },
     onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult(data) { outputs.push(data.query); },
-    boundaryDelayMs: 10, idleDelayMs: 20, minimumIntervalMs: 0,
+    boundaryDelayMs: 10, minimumIntervalMs: 0,
   });
   try {
     scheduler.update("밤 "); scheduler.update("밤 10시에 "); scheduler.update("밤 10시에 계단을 피하고 ");
@@ -65,6 +120,77 @@ test("word boundaries are coalesced and the whole latest prefix is sent once", a
     scheduler.update("밤 10시에 계단을 피하고  ");
     await sleep(30);
     assert.equal(calls.length, 1);
+  } finally { scheduler.dispose(); }
+});
+
+test("letters wait for idle; a space flushes even when trim is unchanged and the final word needs no blur", async () => {
+  const calls: string[] = [];
+  const scheduler = createPreviewScheduler({
+    request: async query => { calls.push(query); return result(query); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult() {},
+    boundaryDelayMs: 1, idleDelayMs: 60, minimumIntervalMs: 0,
+  });
+  try {
+    scheduler.update("계"); scheduler.update("계단");
+    await sleep(20);
+    assert.deepEqual(calls, []);
+    scheduler.update("계단 ");
+    scheduler.update("계단 없"); // The next letter must not postpone the word snapshot.
+    await until(() => calls.length === 1);
+    assert.deepEqual(calls, ["계단"]);
+    scheduler.update("계단 없는");
+    await sleep(20);
+    assert.equal(calls.length, 1);
+    scheduler.update("계단 없는 ");
+    await until(() => calls.length === 2);
+    scheduler.update("계단 없는 길");
+    await sleep(20);
+    assert.equal(calls.length, 2);
+    await until(() => calls.length === 3);
+    assert.deepEqual(calls, ["계단", "계단 없는", "계단 없는 길"]);
+    scheduler.update("계단 없는 길");
+    await sleep(20);
+    assert.equal(calls.length, 3);
+  } finally { scheduler.dispose(); }
+});
+
+test("a completed prefix remains usable while more words are appended", async () => {
+  const calls: string[] = [];
+  const outputs: string[] = [];
+  const resolvers: Array<(response: PreviewResponse) => void> = [];
+  const scheduler = createPreviewScheduler({
+    request: query => { calls.push(query); return new Promise(resolve => resolvers.push(resolve)); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult(data) { outputs.push(data.query); },
+    boundaryDelayMs: 1, minimumIntervalMs: 0,
+  });
+  try {
+    scheduler.update("가로등 많은 ");
+    await until(() => calls.length === 1);
+    scheduler.update("가로등 많은 길 CCTV도 ");
+    resolvers[0](result(calls[0]));
+    await until(() => calls.length === 2);
+    assert.deepEqual(outputs, ["가로등 많은"]);
+    resolvers[1](result(calls[1]));
+    await until(() => outputs.length === 2);
+    assert.deepEqual(outputs, ["가로등 많은", "가로등 많은 길 CCTV도"]);
+  } finally { scheduler.dispose(); }
+});
+
+test("rapid boundaries coalesce under the minimum request interval", async () => {
+  const calls: string[] = [];
+  const times: number[] = [];
+  const scheduler = createPreviewScheduler({
+    request: async query => { calls.push(query); times.push(Date.now()); return result(query); },
+    onPending() {}, onEmpty() {}, onError(error) { throw error; }, onResult() {},
+    boundaryDelayMs: 1, minimumIntervalMs: 40,
+  });
+  try {
+    scheduler.update("밤 ");
+    await until(() => calls.length === 1);
+    scheduler.update("밤 CCTV ");scheduler.update("밤 CCTV 많은 ");scheduler.update("밤 CCTV 많은 길 ");
+    await until(() => calls.length === 2);
+    assert.deepEqual(calls, ["밤", "밤 CCTV 많은 길"]);
+    assert.ok(times[1] - times[0] >= 35);
   } finally { scheduler.dispose(); }
 });
 
@@ -118,7 +244,7 @@ test("preview API contract sends only the query and rejects invalid card states"
     return new Response(JSON.stringify(result("계단 피하기")));
   };
   try {
-    assert.equal((await requestIntentPreview("계단 피하기")).conditions.length, 7);
+    assert.equal((await requestIntentPreview("계단 피하기")).conditions.length, 8);
     globalThis.fetch = async () => new Response(JSON.stringify({ ...result("계단 피하기"), conditions: [{ factor: "stairs", state: "pending" }] }));
     await assert.rejects(requestIntentPreview("계단 피하기"));
   } finally { globalThis.fetch = original; }

@@ -29,6 +29,7 @@
   backdrop-filter: none;
 }
 .app-shell #facility-controls button {
+  --badge-cutout: var(--chrome-surface);
   width: 42px;
   height: 42px;
   border: 1px solid transparent;
@@ -40,6 +41,8 @@
   box-shadow: none;
 }
 .app-shell #facility-controls button[aria-pressed="true"] {
+  --badge-cutout: var(--chrome-active);
+  color: var(--chrome-accent);
   background: var(--chrome-active);
   border-color: var(--chrome-line);
   opacity: 1;
@@ -58,7 +61,7 @@
 .app-shell .map-navigation :is(.map-home, .map-zoom) { border-radius: 8px; box-shadow: 0 3px 12px #00000014; }
 .app-shell .map-navigation button:hover { color: var(--chrome-accent); background: var(--chrome-active); }
 .app-shell #map-weather {
-  padding: 9px 0;
+  padding: 0;
   color: var(--chrome-text);
   background: transparent;
   border: 0;
@@ -67,16 +70,22 @@
 }
 .app-shell #map-weather .weather-hud-toprow { justify-content: flex-end; }
 .app-shell #map-weather .weather-hud-heading {
+  display: flex;
+  align-items: flex-end;
+  height: var(--brand-logo-line-height);
+  justify-content: flex-end;
+  gap: 6px;
   color: var(--chrome-muted);
   font-size: 10px;
   line-height: 1.4;
   font-weight: 400;
   text-align: right;
 }
-.app-shell #map-weather .weather-hud-values { justify-content: flex-end; gap: 8px; margin-top: 5px; text-align: right; }
-.app-shell #map-weather .weather-time { color: #111; font-size: 15px; font-weight: 640; font-variant-numeric: tabular-nums; }
+.app-shell #map-weather .weather-hud-values { justify-content: flex-end; gap: 8px; margin-top: 0; text-align: right; }
+.app-shell #map-weather .weather-hud-values > span { min-height: 18px; line-height: 18px; }
+.app-shell #map-weather :is(.weather-location, .weather-time) { color: #111; font-size: 15px; font-weight: 640; font-variant-numeric: tabular-nums; }
 .app-shell #map-weather :is(.weather-condition, .weather-temperature, .weather-wind) { color: var(--chrome-muted); font-size: 12px; font-weight: 400; letter-spacing: normal; }
-.app-shell #map-weather .weather-hud-unavailable { color: var(--chrome-muted); font-size: 11px; line-height: 1.5; text-align: right; }
+.app-shell #map-weather .weather-hud-unavailable { color: var(--chrome-muted); font-size: 11px; line-height: 18px; margin-top: 0; text-align: right; }
 
 /* Keep the map-side shadow, but stop it spilling back onto the search card. */
 .app-shell .search-panel-handle { clip-path: inset(-40px -40px -40px 0); }

@@ -20,6 +20,7 @@ test("CCTV uses a white circular badge and dark camera, distinct from cyan build
   assert.match(svg, /stroke="#65717c"/);
   assert.match(svg, /fill="#424b55"/);
   assert.match(svg, /rotate\(-25 22 22\)/);
+  assert.doesNotMatch(svg, /scale\(-1 1\)/);
   assert.doesNotMatch(svg, /#125363|#a5f1ff|opacity=/);
 });
 

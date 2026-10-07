@@ -24,7 +24,8 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
         if factor == "time":
             applied = selected is not None
             period = "night" if time_context.is_night else "day"
-        elif selected is not None:
+        # Bridge preferences are recognized in previews, not independently costed in routing.
+        elif factor != "bridge" and selected is not None:
             metric, directions = METRIC_FACTORS[factor]
             preference = by_factor.get(metric)
             value = selected["metrics"].get(metric)
