@@ -10,6 +10,7 @@ export function useLiveIntentPreview() {
   const [updating, setUpdating] = useState(false);
   const status = useRef<PreviewStatus | null>(null);
   const latestText = useRef("");
+  const analyzedText = useRef("");
   const scheduler = useRef<ReturnType<typeof createPreviewScheduler> | null>(null);
 
   useEffect(() => {
@@ -26,7 +27,9 @@ export function useLiveIntentPreview() {
       // Keep the last accepted judgment visible while the revised input is evaluated.
       onPending: () => { setActive(true); setBlocked(false); setUpdating(true); setNotice(null); },
       onResult: (result) => {
-        setCards(result.conditions); setBlocked(false); setUpdating(false); setNotice(null);
+        analyzedText.current = result.query;
+        setCards(result.conditions); setBlocked(false);
+        setUpdating(result.query !== latestText.current.trim()); setNotice(null);
         void refreshStatus().catch(() => {}); // Free local status request; no additional Jev inference.
       },
       onError: (error) => {
@@ -38,7 +41,7 @@ export function useLiveIntentPreview() {
           .then((data) => { if (!stopped && !data.available) setNotice(previewUnavailableMessage(data)); })
           .catch(() => {});
       },
-      onEmpty: () => { setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); },
+      onEmpty: () => { analyzedText.current = ""; setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); },
     });
     scheduler.current = localScheduler;
     void refreshStatus()
@@ -57,7 +60,7 @@ export function useLiveIntentPreview() {
 
   const update = useCallback((text: string) => {
     latestText.current = text;
-    if (!text.trim()) { scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); return; }
+    if (!text.trim()) { analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); return; }
     // Show the input panel immediately; keep inference on the existing word/idle schedule.
     setActive(true);
     if (!status.current?.available) {
@@ -68,9 +71,12 @@ export function useLiveIntentPreview() {
       setNotice(previewUnavailableMessage(status.current));
       return;
     }
+    setBlocked(false);
+    setNotice(null);
+    setUpdating(text.trim() !== analyzedText.current);
     scheduler.current?.update(text);
   }, []);
   const pause = useCallback(() => { latestText.current = ""; scheduler.current?.pause(); setUpdating(false); }, []);
-  const clear = useCallback(() => { latestText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); }, []);
+  const clear = useCallback(() => { latestText.current = ""; analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); }, []);
   return { active, cards, notice, blocked, updating, update, pause, clear };
 }

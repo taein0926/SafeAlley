@@ -29,7 +29,7 @@ test("condition cards always use the requested four-plus-four order with bridge 
   assert.deepEqual(emptyConditionCards().map(card => card.factor), order);
   assert.deepEqual(conditionCards([], emptyConditionCards().reverse()).map(card => card.factor), order);
   assert.equal(CONDITION_LABELS.crossing, "건널목 회피");
-  assert.equal(CONDITION_LABELS.bridge, "육교");
+  assert.equal(CONDITION_LABELS.bridge, "육교 우선");
   const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 });
@@ -45,6 +45,7 @@ test("bridge condition preserves the preview answer but never invents a complete
   assert.ok(icon.includes(outline) && bridge.includes(outline));
   const badges = readFileSync(new URL("./components/RecommendationIcons.tsx", import.meta.url), "utf8");
   assert.match(badges, /factor === "bridge" \? "육교 선호는 현재 경로 비용에 독립적으로 반영되지 않습니다"/);
+  assert.doesNotMatch(badges, /건널목 회피에 연동된 표시/);
 });
 
 test("inactive condition cards use a clearer border without changing selected or analyzing cards", () => {
@@ -62,7 +63,29 @@ test("cards omit visible applied labels and footer hints but keep accessible sta
   assert.doesNotMatch(badges, /<small|recommendation-badge-status/);
   assert.match(badges, /aria-label=\{`\$\{CONDITION_LABELS\[factor\]\}: \$\{status\}`\}/);
   assert.doesNotMatch(app, /live-preview-hint|live-preview-notice|경로는 검색 후/);
-  assert.match(app, /live-preview-state.*role="status".*title=\{livePreview.notice/);
+  assert.match(app, /live-preview-error.*role="status".*title=\{livePreview.notice/);
+  assert.doesNotMatch(app, /live-preview-state|: "분석 중"/);
+});
+
+test("live preview shows three wave dots immediately and stops only for the latest accepted text", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
+  assert.match(app, /<strong>요구사항 분석중\{livePreview.updating && !livePreview.blocked &&/);
+  assert.doesNotMatch(app, /실시간 분석중/);
+  assert.match(app, /className="live-preview-dots"[^>]*><i \/><i \/><i \/>/);
+  assert.match(app, /aria-busy=\{livePreview.updating && !livePreview.blocked\}/);
+  assert.doesNotMatch(css, /live-preview-state/);
+  assert.match(css, /animation: live-preview-wave 1s ease-in-out infinite;/);
+  assert.match(css, /nth-child\(2\) \{ animation-delay: .15s;/);
+  assert.match(css, /nth-child\(3\) \{ animation-delay: .3s;/);
+  assert.match(css, /prefers-reduced-motion: reduce[^\n]*live-preview-dots i \{ animation: none;/);
+  const update = hook.slice(hook.indexOf("const update ="), hook.indexOf("const pause ="));
+  assert.ok(update.indexOf("setUpdating(text.trim() !== analyzedText.current)") < update.indexOf("scheduler.current?.update(text)"));
+  assert.match(hook, /analyzedText.current = result.query;[\s\S]*setUpdating\(result.query !== latestText.current.trim\(\)\)/);
+  assert.match(hook, /onError:[\s\S]*setUpdating\(false\)/);
+  assert.match(hook, /const pause =[^\n]*setUpdating\(false\)/);
+  assert.match(hook, /const clear =[^\n]*analyzedText.current = "";[^\n]*setUpdating\(false\)/);
 });
 
 test("example typing and manual input share preview while route search and mode switches cancel typing", () => {

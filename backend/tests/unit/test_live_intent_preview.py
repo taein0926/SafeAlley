@@ -73,6 +73,53 @@ def test_bridge_preview_reads_its_own_choice_without_assuming_stairs(choice, dir
     assert cards["stairs"].state == "not_applied"
 
 
+@pytest.mark.parametrize("choice", ["avoid", "minimize"])
+@pytest.mark.parametrize("bridge_choice,bridge_state,bridge_direction", [
+    ("skip", "not_applied", None), ("pending", "analyzing", None),
+    ("apply", "applied", "maximize"), ("avoid", "applied", "avoid"),
+    ("minimize", "applied", "minimize"),
+])
+def test_selected_crossing_preserves_independent_bridge_choice(choice, bridge_choice, bridge_state, bridge_direction):
+    payload = service.build_request("건널목을 적게 건너는 길로 안내해줘", "jev-test")
+    cards = {card.factor: card for card in service.parse_decisions(
+        payload, _response(payload, {"crossing": choice, "bridge": bridge_choice}), .7)}
+    assert cards["crossing"].direction == choice
+    assert cards["bridge"].state == bridge_state
+    assert cards["bridge"].direction == bridge_direction
+    assert cards["bridge"].judgment == bridge_choice
+    assert cards["stairs"].state == cards["cctv"].state == "not_applied"
+
+
+@pytest.mark.parametrize("choice,confidence", [("skip", .95), ("pending", .95), ("minimize", .55)])
+def test_unselected_or_uncertain_crossing_does_not_select_bridge(choice, confidence):
+    payload = service.build_request("건널목", "jev-test")
+    response = _response(payload, {"crossing": choice})
+    response["answers"]["crossing"]["confidence"] = confidence
+    cards = {card.factor: card for card in service.parse_decisions(payload, response, .7)}
+    assert cards["crossing"].state != "applied"
+    assert cards["bridge"].state == "not_applied"
+
+
+def test_preview_api_and_cache_do_not_select_bridge_from_crossing(monkeypatch):
+    calls = []
+    def post(url, **kwargs):
+        calls.append(kwargs["json"]["state"])
+        return httpx.Response(200, request=httpx.Request("POST", url),
+                              json=_response(kwargs["json"], {"crossing": "minimize"}))
+    monkeypatch.setattr(service.httpx, "post", post)
+    client = TestClient(app)
+    for cached in (False, True):
+        response = client.post("/api/agent/intent-preview", json={"query": "건널목을 적게 건너는 길로 안내해줘"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["cached"] is cached
+        cards = {card["factor"]: card for card in body["conditions"]}
+        assert cards["crossing"]["state"] == "applied"
+        assert cards["bridge"]["state"] == "not_applied"
+        assert cards["bridge"]["direction"] is None
+    assert len(calls) == 1
+
+
 def test_negative_choice_does_not_leave_unrequested_card_spinning():
     payload = service.build_request("계단을 피하고", "jev-test")
     response = _response(payload, {"stairs": "avoid"})

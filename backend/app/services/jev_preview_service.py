@@ -77,7 +77,7 @@ def build_request(query: str, model: str) -> dict:
 
 
 def parse_decisions(payload: dict, response: dict, minimum_confidence: float) -> list[ConditionCard]:
-    """SDK response projection only; semantic reconciliation lives outside this branch."""
+    """Project each independent Jev decision into its preview card."""
     answers = response.get("answers")
     if not isinstance(answers, dict):
         raise PreviewUnavailable("Jev 판단 응답 형식을 확인할 수 없습니다.")

@@ -132,7 +132,13 @@
   color: #bd934c;
   background: transparent;
 }
-#route-results .live-preview-state { color: var(--result-muted); font-size: 10px; font-weight: 400; }
+#route-results .live-preview-error { color: var(--result-muted); font-size: 10px; font-weight: 400; }
+#route-results .live-preview-dots { display: inline-flex; align-items: center; gap: 3px; height: 14px; color: var(--result-accent); }
+#route-results .live-preview-dots i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: live-preview-wave 1s ease-in-out infinite; }
+#route-results .live-preview-dots i:nth-child(2) { animation-delay: .15s; }
+#route-results .live-preview-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes live-preview-wave { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-3px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #route-results .live-preview-dots i { animation: none; opacity: .8; } }
 #route-results .route-card--preview { cursor: default; }
 #route-results .recommendation-icons span { font-size: 10px; font-weight: 600; }
 #route-results .recommendation-badge > span { white-space: nowrap; }
