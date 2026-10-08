@@ -9,6 +9,7 @@ import httpx
 
 from app.core.config import get_settings
 from app.schemas.intent_preview import CARD_ORDER, ConditionCard, IntentPreviewResponse, IntentPreviewStatus
+from app.services.incomplete_conditions import incomplete_condition_factors
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 _lock = Lock()
@@ -82,6 +83,10 @@ def parse_decisions(payload: dict, response: dict, minimum_confidence: float) ->
     if not isinstance(answers, dict):
         raise PreviewUnavailable("Jev 판단 응답 형식을 확인할 수 없습니다.")
     cards = []
+    unfinished = incomplete_condition_factors(payload.get("state", ""))
+    metric_for_card = {"distance": "distance_m", "safety": "safety_score", "streetlight": "streetlight_score",
+                       "cctv": "cctv_score", "stairs": "stairs_distance_m", "crossing": "crosswalk_count",
+                       "bridge": "pedestrian_bridge_count"}
     for factor in CARD_ORDER:
         answer = answers.get(factor)
         criteria = payload["questions"][factor]["criteria"]
@@ -92,6 +97,8 @@ def parse_decisions(payload: dict, response: dict, minimum_confidence: float) ->
             raise PreviewUnavailable("Jev 신뢰도 형식을 확인할 수 없습니다.")
         choice = answer["choice"]
         state = "analyzing" if choice == "pending" else "not_applied" if choice == "skip" or confidence < minimum_confidence else "applied"
+        if metric_for_card.get(factor) in unfinished:
+            state, choice = "analyzing", "pending"
         direction = None
         period = None
         if state == "applied":

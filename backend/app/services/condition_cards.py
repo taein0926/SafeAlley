@@ -18,6 +18,7 @@ METRIC_FACTORS = {
 def routing_condition_cards(selected, preferences, unsupported, arguments, time_context) -> list[ConditionCard]:
     excluded = {item.factor for item in unsupported}
     by_factor = {item.factor: item for item in preferences}
+    explicit_only = getattr(arguments, "preference_mode", "personalized") == "explicit_only"
     cards = []
     for factor in CARD_ORDER:
         applied = False
@@ -27,7 +28,7 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
         quality = None
         reason = None
         if factor == "time":
-            applied = selected is not None
+            applied = selected is not None and (not explicit_only or getattr(arguments, "departure_time", None) is not None)
             period = "night" if time_context.is_night else "day"
             if applied:
                 reason = ("지정한 출발 시각으로 주간·야간 정책을 적용했습니다" if getattr(arguments, "departure_time", None) is not None
@@ -45,7 +46,7 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
                     applied = True
                     direction = direction or "minimize"
                 if factor == "crossing" and selected["route"]["properties"].get("crossing_data_available"):
-                    if arguments.crossing_weight > 0 or selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0:
+                    if arguments.crossing_weight > 0 or (not explicit_only or preference is not None) and selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0:
                         applied = True
                         direction = direction or "minimize"
         if factor == "crossing" and selected is not None:
@@ -56,7 +57,9 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
             valid_cost = isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost > 0
             valid_count = isinstance(count, int) and not isinstance(count, bool) and count >= 0
             # Incomplete observations never prove a hard zero-crossing constraint.
-            if (preference is None or preference.direction == "minimize") and valid_cost and valid_count:
+            requested_soft = preference is not None and preference.direction == "minimize"
+            implicit_cost_allowed = preference is None and (not explicit_only or arguments.crossing_weight > 0)
+            if (requested_soft or implicit_cost_allowed) and valid_cost and valid_count:
                 applied, direction, scope = True, "minimize", "route_generation"
                 quality = "complete" if properties.get("crossing_data_available") else "partial"
         cards.append(ConditionCard(factor=factor, state="applied" if applied else "not_applied", direction=direction, period=period,

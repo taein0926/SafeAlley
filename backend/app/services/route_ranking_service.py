@@ -896,7 +896,10 @@ def _recommendation_factors(selected, preferences, unsupported, arguments) -> li
     if arguments.stairs_weight > 0:
         factors.add("stairs")
     properties = selected["route"]["properties"]
-    if ("crosswalk_count" not in excluded
+    crossing_requested = (getattr(arguments, "preference_mode", "personalized") != "explicit_only"
+                          or arguments.crossing_weight > 0
+                          or any(p.factor == "crosswalk_count" for p in preferences))
+    if (crossing_requested and "crosswalk_count" not in excluded
         and properties.get("crossing_data_available")
         and (arguments.crossing_weight > 0
              or properties.get("cost_weights", {}).get("crossing", 0) > 0)):
@@ -909,10 +912,13 @@ def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress:
     #2. 사용자 조건이없으면 시간대별 기본 조건 사용
     if arguments.preferences:
         requested_preferences = arguments.preferences
-    elif arguments.user_id:
+    elif arguments.user_id and arguments.preference_mode == "personalized":
         requested_preferences = learned_preferences_for_ranking(arguments.user_id)
         if not requested_preferences:
             requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
+    elif arguments.preference_mode == "explicit_only":
+        # A plain natural-language route request uses a basic route, not history.
+        requested_preferences = [RoutePreference(factor="distance_m", direction="minimize")]
     else:
         requested_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     requested_preferences = list(requested_preferences)
@@ -935,6 +941,10 @@ def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress:
         effective_preferences = _default_preferences(arguments.departure_time, is_night=time_context.is_night)
     for item in daytime_ignored:
         report(on_progress, f"policy-{item.factor}", "출발 시각이 낮이라 가로등 우선 조건은 이번 경로 계산에서 제외했어요.")
+    # Keep explicit requests separate from internal defaults used for calculation.
+    display_preferences = effective_preferences
+    if arguments.preference_mode == "explicit_only":
+        display_preferences = _apply_time_policy(list(arguments.preferences), arguments.departure_time, is_night=time_context.is_night)
     candidates = generate_route_candidates(arguments, time_context=time_context, preferences=effective_preferences, on_progress=on_progress)
     comparison_reports(on_progress, candidates, effective_preferences)
     #4. 후보 경로 점수 계산 및 최종 경로 선택
@@ -999,14 +1009,14 @@ def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress:
     #5. API에 결과 반환
     return {
         "recommendation_id": recommendation_id,
-        "recommendation_conditions": routing_condition_cards(selected, effective_preferences, unsupported, arguments, time_context),
+        "recommendation_conditions": routing_condition_cards(selected, display_preferences, unsupported, arguments, time_context),
         "selected_route_type": selected["route_type"] if selected else None,
         "selected_route": selected["route"] if selected else None,
         "recommendation_status": recommendation_status,
         "recommendation_reason": recommendation_reason,
         "recommendation_notes": recommendation_notes,
         "recommendation_factors": _recommendation_factors(
-            selected, effective_preferences, unsupported, arguments,
+            selected, display_preferences, unsupported, arguments,
         ),
         "compared_route_type": comparison["route_type"] if comparison else None,
         "recommendation_criteria": recommendation_criteria,

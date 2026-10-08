@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.agent import ParsedRouteIntent, RoutePreference
+from app.services.incomplete_conditions import incomplete_condition_factors
 
 
 class LocalLLMUnavailableError(RuntimeError):
@@ -35,6 +36,8 @@ SYSTEM_PROMPT = """한국어 보행 요청을 JSON으로만 추출한다. 좌표
 A보다 B를 원하면 A를 넣지 않는다. A도 중요하고 B도 중요하다고 하면 둘 다 넣는다.
 특정 시설에 가까운 길은 시설 접근성 요청이지 출발지-도착지 최단거리 요청이 아니다.
 단순히 안내해 달라는 요청도 distance_m 조건이 아니다. 기본 경로 정책은 백엔드가 정한다.
+문장 끝의 '건널목을', '계단을', '가로등이'처럼 명사와 조사만 적힌 조건은 방향을 추측하지 말고 생략한다.
+뒤에 적게/없이/많게 같은 요청 방향이 이어진 완성 조건은 보존한다.
 단어의 등장 횟수나 부정어만으로 조건을 추측하지 않는다.
 factor: 최단/짧은 길/빠른 길/가까운 길/거리=distance_m,
 안전=safety_score, 조명/가로등=streetlight_score,
@@ -685,6 +688,8 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _prune_comparison_antecedents(query, intent)
             _apply_explicit_correction(query, intent)
             _discard_unmentioned_distance(query, intent)
+            unfinished = incomplete_condition_factors(query)
+            intent.preferences = [p for p in intent.preferences if p.factor not in unfinished]
             _validate_query_semantics(query, intent)
             return intent
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:

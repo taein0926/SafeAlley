@@ -151,6 +151,7 @@ def _query_events(request: NaturalLanguageQueryRequest, *, stream_progress=False
             profile=interpretation.profile,
             source=request.source,
             user_id=request.user_id,
+            preference_mode="explicit_only",
             preferences=interpretation.preferences,
         ),
     )
