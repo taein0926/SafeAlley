@@ -1,4 +1,6 @@
-"""Display actual routing conditions without changing legacy ranking or badges."""
+"""Distinguish executed soft routing costs from complete metric comparisons."""
+
+import math
 
 from app.schemas.intent_preview import CARD_ORDER, ConditionCard
 
@@ -21,9 +23,15 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
         applied = False
         direction = None
         period = None
+        scope = None
+        quality = None
+        reason = None
         if factor == "time":
             applied = selected is not None
             period = "night" if time_context.is_night else "day"
+            if applied:
+                reason = ("지정한 출발 시각으로 주간·야간 정책을 적용했습니다" if getattr(arguments, "departure_time", None) is not None
+                          else "출발 시각을 지정하지 않아 현재 시각으로 주간·야간 정책을 적용했습니다")
         # Bridge preferences are recognized in previews, not independently costed in routing.
         elif factor != "bridge" and selected is not None:
             metric, directions = METRIC_FACTORS[factor]
@@ -40,5 +48,17 @@ def routing_condition_cards(selected, preferences, unsupported, arguments, time_
                     if arguments.crossing_weight > 0 or selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0:
                         applied = True
                         direction = direction or "minimize"
-        cards.append(ConditionCard(factor=factor, state="applied" if applied else "not_applied", direction=direction, period=period))
+        if factor == "crossing" and selected is not None:
+            preference = by_factor.get("crosswalk_count")
+            properties = selected["route"]["properties"]
+            cost = properties.get("cost_weights", {}).get("crossing", 0)
+            count = properties.get("total_crosswalk_count")
+            valid_cost = isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost > 0
+            valid_count = isinstance(count, int) and not isinstance(count, bool) and count >= 0
+            # Incomplete observations never prove a hard zero-crossing constraint.
+            if (preference is None or preference.direction == "minimize") and valid_cost and valid_count:
+                applied, direction, scope = True, "minimize", "route_generation"
+                quality = "complete" if properties.get("crossing_data_available") else "partial"
+        cards.append(ConditionCard(factor=factor, state="applied" if applied else "not_applied", direction=direction, period=period,
+                                   application_scope=scope, data_quality=quality, reason=reason))
     return cards

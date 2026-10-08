@@ -108,6 +108,10 @@ export function conditionDecisions(
 
   function application(factor: string): Pick<ConditionDecision, "application" | "state"> {
     if (!result) return { application: "경로 반영 여부 확인 중", state: "pending" };
+    if (factor === "crosswalk_count" && result.recommendation_conditions?.some(card =>
+      card.factor === "crossing" && card.state === "applied" && card.application_scope === "route_generation")) {
+      return { application: "경로 탐색 비용에 반영 — 전체 건널목 비교는 별도", state: "applied" };
+    }
     const reason = unsupported.get(factor);
     if (reason === "Excluded during daylight") return { application: "주간 경로에서 제외", state: "excluded" };
     if (reason?.includes("No generated route satisfies")) return { application: "조건을 만족하는 경로 없음", state: "excluded" };

@@ -15,6 +15,9 @@ class ConditionCard(BaseModel):
     period: Literal["day", "night"] | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
     judgment: Literal["apply", "skip", "pending", "avoid", "minimize", "day", "night"] | None = None
+    application_scope: Literal["evaluation", "route_generation"] | None = None
+    data_quality: Literal["complete", "partial"] | None = None
+    reason: str | None = None
 
 
 class IntentPreviewRequest(BaseModel):

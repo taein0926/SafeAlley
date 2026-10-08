@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emptyConditionCards, type ConditionCard } from "./conditionCards";
 import { createPreviewScheduler, previewUnavailableMessage, requestIntentPreview, type PreviewStatus } from "./liveIntentPreview";
+import { createPreviewCompletion } from "./previewCompletion";
 
 export function useLiveIntentPreview() {
   const [active, setActive] = useState(false);
@@ -8,6 +9,8 @@ export function useLiveIntentPreview() {
   const [notice, setNotice] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const completion = useRef<ReturnType<typeof createPreviewCompletion> | null>(null);
   const status = useRef<PreviewStatus | null>(null);
   const latestText = useRef("");
   const analyzedText = useRef("");
@@ -16,6 +19,8 @@ export function useLiveIntentPreview() {
   useEffect(() => {
     let stopped = false;
     const controller = new AbortController();
+    const completionGate = createPreviewCompletion({ onChange: setCompleted });
+    completion.current = completionGate;
     const refreshStatus = () => fetch("/api/agent/intent-preview/status", { signal: controller.signal })
       .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<PreviewStatus>; })
       .then((data) => {
@@ -25,14 +30,16 @@ export function useLiveIntentPreview() {
     const localScheduler = createPreviewScheduler({
       request: requestIntentPreview,
       // Keep the last accepted judgment visible while the revised input is evaluated.
-      onPending: () => { setActive(true); setBlocked(false); setUpdating(true); setNotice(null); },
+      onPending: () => { completionGate.pending(); setActive(true); setBlocked(false); setUpdating(true); setNotice(null); },
       onResult: (result) => {
         analyzedText.current = result.query;
         setCards(result.conditions); setBlocked(false);
         setUpdating(result.query !== latestText.current.trim()); setNotice(null);
+        completionGate.accept(result.query);
         void refreshStatus().catch(() => {}); // Free local status request; no additional Jev inference.
       },
       onError: (error) => {
+        completionGate.reset();
         localScheduler.pause(); // Do not leave another paid request queued after a failure.
         setBlocked(true);
         setUpdating(false);
@@ -41,7 +48,7 @@ export function useLiveIntentPreview() {
           .then((data) => { if (!stopped && !data.available) setNotice(previewUnavailableMessage(data)); })
           .catch(() => {});
       },
-      onEmpty: () => { analyzedText.current = ""; setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); },
+      onEmpty: () => { completionGate.reset(); analyzedText.current = ""; setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); },
     });
     scheduler.current = localScheduler;
     void refreshStatus()
@@ -49,21 +56,23 @@ export function useLiveIntentPreview() {
         if (!stopped) {
           status.current = data;
           if (latestText.current.trim()) {
-            if (data.available) localScheduler.update(latestText.current);
+            if (data.available) { completionGate.edit(latestText.current); localScheduler.update(latestText.current); }
             else { setBlocked(true); setNotice(previewUnavailableMessage(data)); }
           }
         }
       })
       .catch(() => { if (!stopped) status.current = null; });
-    return () => { stopped = true; controller.abort(); localScheduler.dispose(); scheduler.current = null; };
+    return () => { stopped = true; controller.abort(); localScheduler.dispose(); scheduler.current = null; completionGate.dispose(); completion.current = null; };
   }, []);
 
   const update = useCallback((text: string) => {
+    completion.current?.edit(text);
     latestText.current = text;
     if (!text.trim()) { analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); return; }
     // Show the input panel immediately; keep inference on the existing word/idle schedule.
     setActive(true);
     if (!status.current?.available) {
+      completion.current?.reset();
       scheduler.current?.pause();
       setActive(true);
       setBlocked(true);
@@ -76,7 +85,7 @@ export function useLiveIntentPreview() {
     setUpdating(text.trim() !== analyzedText.current);
     scheduler.current?.update(text);
   }, []);
-  const pause = useCallback(() => { latestText.current = ""; scheduler.current?.pause(); setUpdating(false); }, []);
-  const clear = useCallback(() => { latestText.current = ""; analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); }, []);
-  return { active, cards, notice, blocked, updating, update, pause, clear };
+  const pause = useCallback(() => { completion.current?.reset(); latestText.current = ""; scheduler.current?.pause(); setUpdating(false); }, []);
+  const clear = useCallback(() => { completion.current?.reset(); latestText.current = ""; analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); }, []);
+  return { active, cards, notice, blocked, updating, completed, update, pause, clear };
 }

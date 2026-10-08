@@ -34,12 +34,15 @@ SYSTEM_PROMPT = """한국어 보행 요청을 JSON으로만 추출한다. 좌표
 어떤 요소가 있어도/없어도 괜찮다는 허용이지 그 요소를 줄이거나 늘려 달라는 요청이 아니다.
 A보다 B를 원하면 A를 넣지 않는다. A도 중요하고 B도 중요하다고 하면 둘 다 넣는다.
 특정 시설에 가까운 길은 시설 접근성 요청이지 출발지-도착지 최단거리 요청이 아니다.
+단순히 안내해 달라는 요청도 distance_m 조건이 아니다. 기본 경로 정책은 백엔드가 정한다.
 단어의 등장 횟수나 부정어만으로 조건을 추측하지 않는다.
 factor: 최단/짧은 길/빠른 길/가까운 길/거리=distance_m,
 안전=safety_score, 조명/가로등=streetlight_score,
 CCTV=cctv_score, 건널목/횡단보도=crosswalk_count, 계단=stairs_distance_m,
 보도/인도=sidewalk_coverage_percent,
 경사/평지/완만한 길=max_slope_percent, 경찰서 접근성=police_accessibility.
+police_accessibility는 접근하기 좋은 정도다. 경찰서가 가까운 길은 maximize이며,
+시설까지의 거리를 뜻하는 값이 아니다. 경찰서를 피하는 요청은 avoid로 보존한다.
 미지원 조건도 snake_case factor로 보존한다. flatness는 쓰지 않는다.
 direction: 적게/짧게/평지=minimize, 많게/밝게/안전하게=maximize, 없이/피해/없는 길=avoid.
 각 조건에 인접한 수식어를 적용: 횡단보도는 적고 CCTV가 많은=각각 minimize, maximize.
@@ -75,6 +78,21 @@ _intent_cache_lock = Lock()
 def clear_intent_cache() -> None:
     with _intent_cache_lock:
         _intent_cache.clear()
+
+
+KOREAN_HOURS = {"한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6,
+                "일곱": 7, "여덟": 8, "아홉": 9, "열": 10, "열한": 11, "열두": 12}
+KOREAN_CLOCK_PATTERN = re.compile(
+    r"(?<![가-힣])(" + "|".join(sorted(KOREAN_HOURS, key=len, reverse=True)) + r")\s*시"
+)
+
+
+def _clock_text(query: str) -> str:
+    """Normalize native Korean hour numerals only for clock validation.
+
+    The original query/place strings sent to the model are not rewritten.
+    """
+    return KOREAN_CLOCK_PATTERN.sub(lambda m: f"{KOREAN_HOURS[m.group(1)]}시", query)
 
 
 EXPLICIT_TIME_PATTERN = re.compile(
@@ -428,6 +446,7 @@ def _corrects_previous_clock(
 
 
 def _arrival_time_only(query: str) -> bool:
+    query = _clock_text(query)
     mentions = _period_hour_mentions(query)
     if not mentions or len(EXPLICIT_TIME_PATTERN.findall(query)) != len(mentions):
         return False
@@ -443,6 +462,7 @@ def _arrival_time_only(query: str) -> bool:
 
 def _unambiguous_departure_clock(query: str) -> time | None:
     """Correct only a clear departure time, not an arrival deadline."""
+    query = _clock_text(query)
     mentions = _period_hour_mentions(query)
     if len(EXPLICIT_TIME_PATTERN.findall(query)) != len(mentions):
         # An unqualified additional clock may be the user's correction.
@@ -475,6 +495,7 @@ def _unambiguous_departure_clock(query: str) -> time | None:
 
 def _discard_invented_time(query: str, intent: ParsedRouteIntent) -> None:
     """A vague daypart or an arrival-only deadline is not a departure time."""
+    query = _clock_text(query)
     if intent.departure_time is not None and (
         not (EXPLICIT_TIME_PATTERN.search(query) or re.search(r"자정|정오", query))
         or _arrival_time_only(query)
@@ -491,7 +512,7 @@ def _correct_explicit_departure_time(query: str, intent: ParsedRouteIntent) -> N
 
 def _discard_deadline_inferred_distance(query: str, intent: ParsedRouteIntent) -> None:
     """An arrival deadline alone does not request the shortest route."""
-    if not any(role == "arrival" for _, role in _period_hour_mentions(query)):
+    if not any(role == "arrival" for _, role in _period_hour_mentions(_clock_text(query))):
         return
     if (
         EXPLICIT_SHORT_ROUTE.search(query)
@@ -537,7 +558,7 @@ def _preserve_explicit_flat_ground(query: str, intent: ParsedRouteIntent) -> Non
 
 
 def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
-    if EXPLICIT_TIME_PATTERN.search(query) and not _arrival_time_only(query) and intent.departure_time is None:
+    if EXPLICIT_TIME_PATTERN.search(_clock_text(query)) and not _arrival_time_only(query) and intent.departure_time is None:
         raise ValueError("An explicit departure time was omitted")
     expected_clock = _unambiguous_departure_clock(query)
     if expected_clock is not None and intent.departure_time is not None:
@@ -562,6 +583,16 @@ def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
         raise ValueError("flatness duplicates the mapped max_slope_percent factor")
 
 
+def _discard_unmentioned_distance(query: str, intent: ParsedRouteIntent) -> None:
+    """Keep backend defaults separate from preferences actually requested.
+
+    Only prune an invented distance preference when no distance/urgency wording
+    exists; do not fabricate positive conditions from bare facility names.
+    """
+    if not re.search(r"거리|최단|짧|가까|가깝|멀|먼|길게|긴\s*(?:길|경로)|빠르|빠른|빠르게|빨리|신속|서둘|급하|급해|우회|돌아", query):
+        _drop_preference(intent, "distance_m")
+
+
 def _request_ollama(payload: dict[str, object]) -> dict[str, object]:
     settings = get_settings()
     url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
@@ -574,7 +605,9 @@ def _request_ollama(payload: dict[str, object]) -> dict[str, object]:
         response.raise_for_status()
         data = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        raise LocalLLMUnavailableError("Local Ollama service is unavailable") from exc
+        raise LocalLLMUnavailableError(
+            "GPU 모델 서버 연결 또는 응답에 실패했습니다. SSH 터널 창과 서버 상태를 확인한 뒤 다시 검색해 주세요."
+        ) from exc
     if not isinstance(data, dict):
         raise LocalLLMOutputError("Ollama returned an invalid response envelope")
     return data
@@ -651,6 +684,7 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _prune_explicit_nonrequests(query, intent)
             _prune_comparison_antecedents(query, intent)
             _apply_explicit_correction(query, intent)
+            _discard_unmentioned_distance(query, intent)
             _validate_query_semantics(query, intent)
             return intent
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:

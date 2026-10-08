@@ -442,7 +442,13 @@ def _recommendation_criteria(
             "factor": item.factor,
             "label": CRITERION_LABELS.get(item.factor, item.factor.replace("_", " ")),
             "outcome": "unavailable",
-            "summary": "자료가 부족해 추천 조건에 반영하지 않았습니다.",
+            "summary": (
+                "등록된 건널목을 줄이는 비용은 경로 탐색에 사용했습니다. 전체 건널목 수를 비교할 자료는 부족합니다."
+                if item.factor == "crosswalk_count" and selected is not None
+                and any(p.factor == "crosswalk_count" and p.direction == "minimize" for p in preferences)
+                and selected["route"]["properties"].get("cost_weights", {}).get("crossing", 0) > 0
+                else "자료가 부족해 추천 조건에 반영하지 않았습니다."
+            ),
             "confidence": "low",
             "confidence_reason": confidence_reason,
         })

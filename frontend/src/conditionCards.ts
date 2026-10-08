@@ -6,6 +6,9 @@ export type ConditionCard = {
   direction?: "maximize" | "minimize" | "avoid" | null;
   period?: "day" | "night" | null;
   confidence?: number | null;
+  application_scope?: "evaluation" | "route_generation" | null;
+  data_quality?: "complete" | "partial" | null;
+  reason?: string | null;
   judgment?: "apply" | "skip" | "pending" | "avoid" | "minimize" | "day" | "night" | null;
 };
 export const CONDITION_LABELS: Record<CardFactor, string> = {

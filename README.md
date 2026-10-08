@@ -1,5 +1,7 @@
 # SafeAlley
 
+이번 로컬 개선의 원인·구현·평가·GPU 연결 복구 방법은 [Qwen3.6 품질 보정 기록](docs/qwen36-quality-20261008.md)에 정리했습니다.
+
 사내 서버 이전 시 [배포 준비 체크리스트](docs/deployment-checklist.md)를 먼저 확인합니다.
 소스 push만으로 공간 데이터·Ollama·인증/HTTPS 설정이 배포되지는 않습니다.
 

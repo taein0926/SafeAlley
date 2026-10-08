@@ -517,8 +517,8 @@ function App() {
         <aside id="route-results" className="result-panel result-panel--floating" aria-label={showSearchResults ? "경로 검색 결과" : "실시간 분석"}>
           <div id="route-candidate-cards" className="floating-results-body">
           {showLivePreview ? (
-            <section className="route-card route-card--preview" aria-label="맞춤경로 입력 조건" aria-busy={livePreview.updating && !livePreview.blocked}>
-              <span className="route-card-title"><strong>요구사항 분석중{livePreview.updating && !livePreview.blocked && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</span>
+            <section className="route-card route-card--preview" aria-label="맞춤경로 입력 조건" aria-busy={!livePreview.completed && !livePreview.blocked}>
+              <span className="route-card-title"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : "요구사항 분석 중"}{!livePreview.completed && !livePreview.blocked && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</span>
               {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
             </section>
           ) : <>

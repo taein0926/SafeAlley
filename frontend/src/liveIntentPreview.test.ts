@@ -71,10 +71,10 @@ test("live preview shows three wave dots immediately and stops only for the late
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
-  assert.match(app, /<strong>요구사항 분석중\{livePreview.updating && !livePreview.blocked &&/);
+  assert.match(app, /livePreview.completed \? "요구사항 분석 완료" : "요구사항 분석 중"/);
   assert.doesNotMatch(app, /실시간 분석중/);
   assert.match(app, /className="live-preview-dots"[^>]*><i \/><i \/><i \/>/);
-  assert.match(app, /aria-busy=\{livePreview.updating && !livePreview.blocked\}/);
+  assert.match(app, /aria-busy=\{!livePreview.completed && !livePreview.blocked\}/);
   assert.doesNotMatch(css, /live-preview-state/);
   assert.match(css, /animation: live-preview-wave 1s ease-in-out infinite;/);
   assert.match(css, /nth-child\(2\) \{ animation-delay: .15s;/);

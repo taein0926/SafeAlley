@@ -95,3 +95,16 @@
 .map-view-toggle button[aria-pressed="true"] { color: #1769df; border-color: #bad4f8; background: #eaf2ff; }
 .map-view-toggle button:hover { background: #f1f6fd; }
 .map-view-toggle button:focus-visible { outline: 2px solid #1769df; outline-offset: 1px; }
+
+@media (max-width: 600px) {
+  .app-shell .floating-secondary,
+  .app-shell #route-results.result-panel--floating {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 12px;
+    width: auto;
+    max-height: 40vh;
+  }
+  .app-shell .map-view-toggle { top: 100px; }
+}
