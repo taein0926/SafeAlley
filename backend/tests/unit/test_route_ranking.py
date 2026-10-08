@@ -727,29 +727,81 @@ def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> 
     assert payload["recommendation_notes"]
 
 
-def test_unverified_major_road_candidates_are_not_final_recommendations(monkeypatch) -> None:
+def test_unverified_major_road_candidates_are_fallback_recommendations_with_warning(monkeypatch) -> None:
     def unverified_route(route_type: str, distance: float, score: float):
         route = _route(route_type, distance, score)
         route["properties"]["unverified_major_road_count"] = 1
+        route["properties"]["review_status"] = "needs_field_review"
         return route
 
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: unverified_route("shortest", 100, 20))
     monkeypatch.setattr(route_ranking_service, "get_custom_route",
-                        lambda **_: unverified_route("balanced", 115, 55))
-    monkeypatch.setattr(route_ranking_service, "get_custom_route",
                         lambda **_: unverified_route("custom", 130, 90))
 
-    result = route_ranking_service.rank_route_candidates(_arguments([]))
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "safety_score", "direction": "maximize"},
+    ]))
 
-    assert result["selected_route_type"] is None
-    assert result["selected_route"] is None
-    assert result["recommendation_status"] == "field_review_required"
+    assert result["selected_route_type"] == "custom"
+    assert result["selected_route"]["properties"]["review_status"] == "needs_field_review"
+    assert result["selected_route"]["properties"]["unverified_major_road_count"] == 1
+    assert result["recommendation_status"] == "ready"
     assert len(result["candidates"]) == 2
-    assert "자동 추천을 보류" in result["recommendation_reason"]
-    assert any("위험하다는 뜻은 아닙니다" in note for note in result["recommendation_notes"])
-    assert result["recommendation_criteria"][0]["outcome"] == "unavailable"
-    assert "추천 경로가 확정되지 않아" in result["recommendation_criteria"][0]["summary"]
+    assert "보행 정보가 미확인" in result["recommendation_reason"]
+    assert any("일반 도로를 포함해 안내" in note for note in result["recommendation_notes"])
+    assert not any("추천에서 뺐어요" in note for note in result["recommendation_notes"])
+    assert result["compared_route_type"] == "shortest"
+    assert result["recommendation_criteria"][0]["outcome"] != "unavailable"
+
+
+def test_confirmed_candidate_still_wins_over_custom_general_road_fallback(monkeypatch):
+    shortest = _route("shortest", 120, 40)
+    custom = _route("custom", 100, 90)
+    custom["properties"]["unverified_major_road_count"] = 1
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "cctv_score", "direction": "maximize"},
+    ]))
+    assert result["selected_route_type"] == "shortest"
+    assert result["recommendation_status"] == "ready"
+
+
+@pytest.mark.parametrize("factor,field", [("stairs_distance_m", "stairs_distance_m"),
+                                         ("crosswalk_count", "total_crosswalk_count")])
+def test_general_road_fallback_never_relaxes_hard_avoidance(monkeypatch, factor, field):
+    shortest = _route("shortest", 100, 20)
+    custom = _route("custom", 120, 90)
+    for route in (shortest, custom):
+        route["properties"].update(unverified_major_road_count=1)
+        route["properties"][field] = 1
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "cctv_score", "direction": "maximize"},
+        {"factor": factor, "direction": "avoid"},
+    ]))
+    assert result["selected_route_type"] is None
+    assert result["recommendation_status"] == "no_supported_preferences"
+
+
+def test_general_road_fallback_uses_only_candidates_satisfying_hard_avoidance(monkeypatch):
+    shortest = _route("shortest", 100, 90)
+    custom = _route("custom", 120, 40)
+    for route in (shortest, custom):
+        route["properties"]["unverified_major_road_count"] = 1
+    shortest["properties"]["stairs_distance_m"] = 10
+    custom["properties"]["stairs_distance_m"] = 0
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: shortest)
+    monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: custom)
+    result = route_ranking_service.rank_route_candidates(_arguments([
+        {"factor": "cctv_score", "direction": "maximize"},
+        {"factor": "stairs_distance_m", "direction": "avoid"},
+    ]))
+    assert result["selected_route_type"] == "custom"
+    assert result["selected_route"]["properties"]["stairs_distance_m"] == 0
+
 
 
 def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:

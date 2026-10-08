@@ -50,6 +50,24 @@ def test_fewer_crossings_still_wins_between_pedestrian_paths():
     assert sum(e.crossing_cost_units for e in p.edges) == 0
 
 
+@pytest.mark.parametrize('road_type', ['service', 'residential', 'secondary'])
+def test_missing_walking_connection_uses_existing_general_road(road_type):
+    g = network(road_type)
+    g.adjacency[2] = []  # The mapped footway stops before the destination.
+    p = find_pedestrian_first_path(g, 1, 4, lambda e: e.distance_m)
+    assert p.total_distance_m == 20
+    assert nonpreferred_distance(p.edges) == 20
+    assert all(e.highway == road_type for e in p.edges)
+
+
+def test_blocked_general_road_cannot_be_used_as_missing_walkway_fallback():
+    g = network('secondary')
+    g.adjacency[2] = []
+    with pytest.raises(PathNotFoundError):
+        find_pedestrian_first_path(g, 1, 4,
+                                   lambda e: float('inf') if e.highway == 'secondary' else e.distance_m)
+
+
 def test_hard_stairs_constraint_remains_hard():
     g = network('footway')
     g.adjacency[1] = [replace(e,is_steps=True,highway='steps') for e in g.adjacency[1]]

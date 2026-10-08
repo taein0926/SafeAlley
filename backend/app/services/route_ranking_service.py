@@ -274,7 +274,8 @@ def _comparison_candidates(
     return [
         candidate for candidate in candidates
         if candidate is not selected
-        and candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0
+        and (selected["route"]["properties"].get("unverified_major_road_count", 0) > 0
+             or candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0)
         and _route_identity(candidate) != _route_identity(selected)
         and all(candidate["metrics"].get(p.factor) is not None for p in preferences)
     ]
@@ -721,7 +722,7 @@ def _recommendation_explanation(
                 notes.append("보행공간 비율 0%는 지도에서 보행공간으로 확인된 구간이 없다는 뜻이며, 실제 보도가 없다는 뜻은 아닙니다.")
             elif item.factor == "stairs_distance_m":
                 notes.append("계단 구간 0m는 지도에 기록된 계단이 없다는 뜻이며, 현장에 계단이 없음을 보장하지 않습니다.")
-        if excluded:
+        if excluded and selected["route"]["properties"].get("unverified_major_road_count", 0) == 0:
             notes.append(
                 f"다른 길 {len(excluded)}개는 큰 도로의 보행로 정보가 없어 추천에서 뺐어요."
             )
@@ -747,6 +748,9 @@ def _recommendation_explanation(
     if not night:
         notes = [note.replace("가로등·CCTV", "CCTV") for note in notes]
         notes.append("낮 시간에는 가로등을 제외하고 CCTV·도움시설 위치만으로 안전 관련 지표를 계산했습니다.")
+    if selected is not None and selected["route"]["properties"].get("unverified_major_road_count", 0) > 0:
+        summary += " 일부 일반 도로 구간은 보행 정보가 미확인입니다."
+        notes.append("확인된 보행 경로 후보가 없어 일반 도로를 포함해 안내합니다. 해당 구간의 실제 보행 가능 여부와 현장 통행 상태는 확인되지 않았습니다.")
     if selected is not None and selected["route"]["properties"].get("centreline_fallback_distance_m", 0) > 0:
         notes.append("OSM에 분리된 인도가 없는 일부 구간은 기존 도로망을 사용하며 실제 횡단 횟수는 미확인입니다.")
     notes.append("지도 자료만으로 실제 길 상태나 통행 가능 여부를 보장할 수 없습니다.")
@@ -829,12 +833,13 @@ def rank_generated_candidates(
                 ) for item in avoidance
             )
             return None, unsupported
-        eligible = [
+        confirmed = [
             candidate for candidate in hard_constraint_eligible
             if candidate["route"]["properties"].get("unverified_major_road_count", 0) == 0
         ]
-        if not eligible:
-            return None, unsupported
+        # Preserve walking priority, but missing sidewalk evidence is not a ban.
+        # Hard avoidance constraints were applied before allowing this fallback.
+        eligible = confirmed or hard_constraint_eligible
         # Ranking must not undo the walking-network priority used during search.
         outside = [c["route"]["properties"].get("nonpreferred_walking_distance_m") for c in eligible]
         if outside and all(value is not None for value in outside):
@@ -949,24 +954,14 @@ def rank_route_candidates(arguments: RouteOptimizationArguments, *, on_progress:
         custom_outside = properties.get("nonpreferred_walking_distance_m")
         walking_priority_met = (selected_outside is None or custom_outside is None
                                 or custom_outside <= selected_outside + .001)
-        if custom_objective and hard_conditions_met and walking_priority_met and properties.get("unverified_major_road_count", 0) == 0:
+        confirmed_selected = (selected is not None
+                              and selected["route"]["properties"].get("unverified_major_road_count", 0) == 0)
+        review_priority_met = properties.get("unverified_major_road_count", 0) == 0 or not confirmed_selected
+        if custom_objective and hard_conditions_met and walking_priority_met and review_priority_met:
             selected = custom
     unsupported.extend(daytime_ignored)
     supported, _ = _supported_preferences(effective_preferences, candidates)
-    avoidance = [item for item in supported if item.direction == "avoid"]
-    condition_eligible = [
-        candidate for candidate in candidates
-        if all(float(candidate["metrics"][item.factor]) <= 0 for item in avoidance)
-    ]
-    field_review_required = (
-        selected is None and bool(supported) and bool(condition_eligible)
-        and all(candidate["route"]["properties"].get("unverified_major_road_count", 0) > 0
-                for candidate in condition_eligible)
-    )
-    recommendation_status = (
-        "field_review_required" if field_review_required
-        else "ready" if selected else "no_supported_preferences"
-    )
+    recommendation_status = "ready" if selected else "no_supported_preferences"
     if selected:
         name = "최단 후보" if selected["route_type"] == "shortest" else "맞춤 후보"
         report(on_progress, "selection", f"적용 가능한 조건을 종합해 {name}를 선택했어요. 추천 이유와 경로를 정리하고 있어요.")
