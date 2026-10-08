@@ -17,6 +17,7 @@ def test_stream_and_regular_query_share_the_same_workflow(monkeypatch):
         "latitude": 37.46, "longitude": 126.68,
     })
     def execute(call, **kwargs):
+        assert call.arguments.preference_mode == "explicit_only"
         return AgentExecutionResponse(
             tool_call=call, selected_route_type=None, selected_route=None,
             recommendation_status="no_supported_preferences", candidates=[], unsupported_preferences=[],

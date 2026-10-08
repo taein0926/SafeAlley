@@ -32,6 +32,7 @@ class RouteOptimizationArguments(BaseModel):
     profile: Literal["pedestrian"] = "pedestrian"
     source: str | None = Field(default=None, min_length=1, max_length=32)
     user_id: str | None = Field(default=None, min_length=1, max_length=128)
+    preference_mode: Literal["explicit_only", "personalized"] = "personalized"
     stairs_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     intersection_weight: float = Field(default=0.0, ge=0.0, le=1.0)  # legacy API only
     crossing_weight: float = Field(default=0.0, ge=0.0, le=1.0)

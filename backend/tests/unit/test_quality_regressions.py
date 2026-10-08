@@ -63,3 +63,11 @@ def test_model_outage_is_not_replaced_with_another_model(monkeypatch):
     monkeypatch.setattr(llm.httpx, "post", fail)
     with pytest.raises(llm.LocalLLMUnavailableError, match="SSH 터널"):
         llm._request_ollama({})
+
+
+def test_internal_crossing_cost_does_not_light_an_unrequested_card():
+    selected = {"metrics": {"crosswalk_count": 3}, "route": {"properties": {
+        "crossing_data_available": True, "cost_weights": {"crossing": .5}, "total_crosswalk_count": 3}}}
+    args = SimpleNamespace(preference_mode="explicit_only", departure_time=time(14), stairs_weight=0, crossing_weight=0)
+    cards = routing_condition_cards(selected, [], [], args, SimpleNamespace(is_night=False))
+    assert {c.factor for c in cards if c.state == "applied"} == {"time"}

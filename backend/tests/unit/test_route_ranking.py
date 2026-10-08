@@ -74,6 +74,44 @@ def _arguments(
     )
 
 
+@pytest.mark.parametrize("departure,preferences,expected", [
+    ("14:00:00", [], {"time"}),
+    ("22:00:00", [], {"time"}),
+    (None, [], set()),
+    ("14:00:00", [{"factor": "cctv_score", "direction": "maximize"}], {"time", "cctv"}),
+    ("14:00:00", [{"factor": "streetlight_score", "direction": "maximize"}], {"time"}),
+    ("14:00:00", [{"factor": "distance_m", "direction": "minimize"}], {"time", "distance"}),
+])
+def test_natural_request_does_not_read_history_or_display_internal_defaults(monkeypatch, departure, preferences, expected):
+    def unexpected_history(_):
+        raise AssertionError("Natural-language requests must not read saved preferences")
+    monkeypatch.setattr(route_ranking_service, "learned_preferences_for_ranking", unexpected_history)
+    monkeypatch.setattr(route_ranking_service, "save_recommendation", lambda *_: None)
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    arguments = _arguments(preferences, departure)
+    arguments.user_id = "fixture-history-user"
+    arguments.preference_mode = "explicit_only"
+    result = route_ranking_service.rank_route_candidates(arguments)
+    assert result["selected_route_type"] is not None
+    assert {c.factor for c in result["recommendation_conditions"] if c.state == "applied"} == expected
+    if not preferences:
+        assert result["recommendation_factors"] == []
+
+
+def test_direct_api_personalization_remains_opt_in_by_mode(monkeypatch):
+    calls = []
+    monkeypatch.setattr(route_ranking_service, "learned_preferences_for_ranking", lambda uid:
+        calls.append(uid) or [RoutePreference(factor="cctv_score", direction="maximize")])
+    monkeypatch.setattr(route_ranking_service, "save_recommendation", lambda *_: None)
+    monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
+    arguments = _arguments([], "14:00:00")
+    arguments.user_id = "fixture-history-user"
+    arguments.preference_mode = "personalized"
+    result = route_ranking_service.rank_route_candidates(arguments)
+    assert calls == [arguments.user_id]
+    assert next(c for c in result["recommendation_conditions"] if c.factor == "cctv").state == "applied"
+
+
 def test_routing_progress_keeps_recommendation_identical(monkeypatch):
     from app.services import route_progress
     monkeypatch.setattr(route_ranking_service, "get_shortest_route", lambda **_: _route("shortest", 100, 20))
