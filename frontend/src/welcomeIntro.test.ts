@@ -17,7 +17,7 @@ test("intro is wired to the app without any reopening control or model request",
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   const intro = readFileSync(new URL("./components/WelcomeIntro.tsx", import.meta.url), "utf8");
   assert.match(app, /<WelcomeIntro\s*\/>/); assert.match(intro, /element.showModal\(\)/);
-  assert.match(intro, /보행환경과 도로망을 분석해/);
+  assert.match(intro, /AI가 분석해 맞춤 안전 경로를 제안합니다/);
   assert.match(intro, /골목에 <strong>안전<\/strong>을 더하다/);
   assert.doesNotMatch(intro, /CONDITION_ORDER|ConditionIcon|welcome-condition-card/);
   assert.doesNotMatch(intro, /계단 회피 · 건널목 최소 · 가로등·CCTV 고려 · 추천 근거 제공/);
