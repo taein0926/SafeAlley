@@ -19,10 +19,10 @@
 .welcome-close:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
 .welcome-title { margin: 34px 0 22px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
 .welcome-subtitle { margin: 0; text-align: center; color: #284966; font-size: clamp(23px, 2.8vw, 34px); font-weight: 750; line-height: 1.35; letter-spacing: -.035em; }
-.welcome-subtitle > span { position: relative; display: inline-block; min-width: min(520px, calc(100% - 48px)); padding: 9px 34px 11px; border-top: 2px solid #c7d7e7; border-bottom: 2px solid #c7d7e7; }
-.welcome-subtitle > span::before, .welcome-subtitle > span::after { position: absolute; z-index: 1; color: #1268c4; background: #fff; font-family: Georgia, "Times New Roman", serif; font-size: 48px; font-weight: 800; line-height: 1; }
-.welcome-subtitle > span::before { content: "“"; top: -20px; left: -2px; padding-right: 10px; }
-.welcome-subtitle > span::after { content: "”"; right: -2px; bottom: -33px; padding-left: 10px; }
+.welcome-subtitle > span { position: relative; display: inline-block; padding: 2px 54px 5px; }
+.welcome-subtitle > span::before, .welcome-subtitle > span::after { position: absolute; color: #78a8d8; font-family: Georgia, "Times New Roman", serif; font-size: 58px; font-weight: 800; line-height: 1; }
+.welcome-subtitle > span::before { content: "“"; top: -13px; left: 0; }
+.welcome-subtitle > span::after { content: "”"; right: 0; bottom: -31px; }
 .welcome-subtitle strong { color: #1268c4; font-weight: 850; }
 .welcome-technologies { display: grid; grid-template-columns: 1fr 1.25fr 1fr; width: min(760px, 100%); margin: 34px auto 0; }
 .welcome-technologies > div { text-align: center; padding: 0 16px; min-width: 0; }
@@ -50,10 +50,10 @@
   .welcome-company { width: 145px; height: 48px; }
   .welcome-title { margin-top: 26px; font-size: clamp(36px, 9vw, 54px); }
   .welcome-subtitle { font-size: 20px; }
-  .welcome-subtitle > span { min-width: min(310px, calc(100% - 28px)); padding: 8px 22px 10px; }
-  .welcome-subtitle > span::before, .welcome-subtitle > span::after { font-size: 38px; }
-  .welcome-subtitle > span::before { top: -16px; padding-right: 7px; }
-  .welcome-subtitle > span::after { bottom: -27px; padding-left: 7px; }
+  .welcome-subtitle > span { padding: 2px 36px 5px; }
+  .welcome-subtitle > span::before, .welcome-subtitle > span::after { font-size: 44px; }
+  .welcome-subtitle > span::before { top: -10px; }
+  .welcome-subtitle > span::after { bottom: -23px; }
   .welcome-technologies { margin-top: 26px; grid-template-columns: 1fr; gap: 14px; }
   .welcome-technologies > div { display: flex; align-items: center; justify-content: space-between; padding: 0; gap: 10px; }
   .welcome-technologies > div + div { border-left: 0; }
