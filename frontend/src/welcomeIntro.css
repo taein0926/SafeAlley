@@ -19,7 +19,7 @@
 .welcome-close:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
 .welcome-title { margin: 34px 0 12px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
 .welcome-subtitle { margin: 0; text-align: center; color: #284966; font-size: clamp(23px, 2.8vw, 34px); font-weight: 750; line-height: 1.35; letter-spacing: -.035em; }
-.welcome-subtitle > span { display: inline-block; padding: 7px 22px 9px; border-radius: 999px; background: #edf6ff; }
+.welcome-subtitle > span { display: inline-block; }
 .welcome-subtitle strong { color: #1268c4; font-weight: 850; }
 .welcome-technologies { display: grid; grid-template-columns: 1fr 1.25fr 1fr; width: min(760px, 100%); margin: 34px auto 0; }
 .welcome-technologies > div { text-align: center; padding: 0 16px; min-width: 0; }
@@ -47,7 +47,6 @@
   .welcome-company { width: 145px; height: 48px; }
   .welcome-title { margin-top: 26px; font-size: clamp(36px, 9vw, 54px); }
   .welcome-subtitle { font-size: 20px; }
-  .welcome-subtitle > span { padding: 6px 16px 7px; }
   .welcome-technologies { margin-top: 26px; grid-template-columns: 1fr; gap: 14px; }
   .welcome-technologies > div { display: flex; align-items: center; justify-content: space-between; padding: 0; gap: 10px; }
   .welcome-technologies > div + div { border-left: 0; }
