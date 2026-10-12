@@ -18,7 +18,8 @@ test("intro is wired to the app without any reopening control or model request",
   const intro = readFileSync(new URL("./components/WelcomeIntro.tsx", import.meta.url), "utf8");
   assert.match(app, /<WelcomeIntro\s*\/>/); assert.match(intro, /element.showModal\(\)/);
   assert.match(intro, /가로등·CCTV·보행시설과 도로망을 분석해/);
-  assert.match(intro, /계단 회피 · 건널목 최소 · 가로등·CCTV 고려 · 추천 근거 제공/);
+  assert.match(intro, /CONDITION_ORDER\.map/);
+  assert.doesNotMatch(intro, /계단 회피 · 건널목 최소 · 가로등·CCTV 고려 · 추천 근거 제공/);
   assert.doesNotMatch(intro, /reopen|welcome-open|welcome-start|길찾기 시작하기|fetch\(|\/api\/|setTimeout|자동 닫힘/);
   assert.equal(intro.match(/className="welcome-agency-row"/g)?.length, 1);
   assert.match(intro, /onClick=\{dismissFromBackdrop\}/);

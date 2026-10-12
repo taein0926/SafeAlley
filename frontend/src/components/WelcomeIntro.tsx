@@ -1,6 +1,8 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {MouseEvent} from "react";
+import {CONDITION_LABELS, CONDITION_ORDER} from "../conditionCards";
 import {hasDismissedWelcome, rememberWelcomeDismissed} from "../welcomeIntro";
+import {ConditionIcon} from "./ConditionIcon";
 import "../welcomeIntro.css";
 
 function sessionStore(): Storage | null { try { return window.sessionStorage; } catch { return null; } }
@@ -44,7 +46,11 @@ export function WelcomeIntro() {
         <div><div className="welcome-tech-name"><TechnologyIcon type="gis"/><strong>GIS</strong></div><span>도로망 분석</span></div>
       </div>
       <p className="welcome-description" id="welcome-description">원하는 이동 조건을 말로 입력하면,<br/>가로등·CCTV·보행시설과 도로망을 분석해<br/>조건에 맞는 보행 경로를 제안합니다.</p>
-      <p className="welcome-capabilities">계단 회피 · 건널목 최소 · 가로등·CCTV 고려 · 추천 근거 제공</p>
+      <div className="welcome-condition-grid" role="list" aria-label="경로 분석 항목">
+        {CONDITION_ORDER.map((factor) => <span className="welcome-condition-card" role="listitem" key={factor}>
+          <ConditionIcon factor={factor}/><span>{CONDITION_LABELS[factor]}</span>
+        </span>)}
+      </div>
       <footer className="welcome-footer">
         <div className="welcome-agencies" aria-label="사용한 데이터의 출처 기관">
           <div className="welcome-agency-row">

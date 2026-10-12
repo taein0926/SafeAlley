@@ -28,8 +28,10 @@
 .welcome-tech-icon--twin { color: #14a9c2; }
 .welcome-tech-icon--gis { color: #078c80; }
 .welcome-technologies span { display: block; margin-top: 8px; font-size: 16px; color: #3b526a; }
-.welcome-description { margin: 28px 0 12px; font-size: 19px; line-height: 1.65; text-align: center; font-weight: 550; }
-.welcome-capabilities { margin: 0; color: #3f6287; font-size: 14px; font-weight: 650; letter-spacing: -.01em; line-height: 1.5; text-align: center; }
+.welcome-description { margin: 28px 0 16px; font-size: 19px; line-height: 1.65; text-align: center; font-weight: 550; }
+.welcome-condition-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: min(760px, 100%); margin: 0 auto; }
+.welcome-condition-card { --badge-cutout: #f7f9fc; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 42px; padding: 7px 10px; border: 1px solid #d7e2ef; border-radius: 10px; color: #315d8c; background: #f7f9fc; font-size: 13px; font-weight: 650; white-space: nowrap; }
+.welcome-condition-card svg { width: 22px; height: 22px; flex: none; }
 .welcome-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 22px; margin-top: 26px; padding-top: 20px; border-top: 1px solid #d7e2ef; }
 .welcome-agencies { min-width: 0; flex: 1 1 720px; overflow-x: auto; scrollbar-width: thin; }
 .welcome-agency-row { display: flex; align-items: center; gap: 18px; width: max-content; min-width: 100%; flex-wrap: nowrap; }
@@ -53,8 +55,10 @@
   .welcome-tech-name strong { font-size: 21px; }
   .welcome-tech-icon { width: 30px; height: 30px; }
   .welcome-technologies span { margin: 0; font-size: 13px; }
-  .welcome-description { font-size: 16px; margin: 22px 0 10px; }
-  .welcome-capabilities { font-size: 12px; }
+  .welcome-description { font-size: 16px; margin: 22px 0 12px; }
+  .welcome-condition-grid { gap: 5px; }
+  .welcome-condition-card { flex-direction: column; gap: 2px; min-height: 52px; padding: 5px 2px; border-radius: 8px; font-size: 10.5px; line-height: 1.15; }
+  .welcome-condition-card svg { width: 18px; height: 18px; }
   .welcome-footer { gap: 18px; margin-top: 24px; padding-top: 18px; }
   .welcome-agencies { flex-basis: 100%; }
   .welcome-agency-row { gap: 12px; }
