@@ -240,7 +240,7 @@ Tool 이름은 allowlist로 제한되고, 추가 JSON 필드와 임의 Tool 이�
 
 ### 로컬 LLM 자연어 입력
 
-`POST /api/agent/query`는 한 문장에서 출발 장소, 도착 장소, 출발 시각, 경로 선호조건을 로컬 Ollama의 `qwen3:4b` Structured Output으로 추출합니다. 장소명은 SQL이나 좌표로 자유 생성하지 않고 직접 검색과 동일한 Resolver가 실제 좌표로 변환합니다. Resolver는 `places`의 이름·별칭·주소를 정규화하여 먼저 검색하고, 로컬 결과가 없을 때만 로드된 미추홀구 OSM 도로 bbox로 제한한 공식 Nominatim 검색을 사용합니다. fallback 결과는 `source=nominatim-osm`으로 기존 `places`에 캐시됩니다. 변환된 좌표와 검증된 조건만 동일한 Tool Router로 전달됩니다. 기존 클라이언트를 위해 `origin`과 `destination` 좌표를 직접 전달하는 방식도 유지합니다.
+`POST /api/agent/query`는 한 문장에서 출발 장소, 도착 장소, 출발 시각, 경로 선호조건을 GPU 서버 Ollama의 `gemma4:26b` Structured Output으로 추출합니다. 장소명은 SQL이나 좌표로 자유 생성하지 않고 직접 검색과 동일한 Resolver가 실제 좌표로 변환합니다. Resolver는 `places`의 이름·별칭·주소를 정규화하여 먼저 검색하고, 로컬 결과가 없을 때만 로드된 미추홀구 OSM 도로 bbox로 제한한 공식 Nominatim 검색을 사용합니다. fallback 결과는 `source=nominatim-osm`으로 기존 `places`에 캐시됩니다. 변환된 좌표와 검증된 조건만 동일한 Tool Router로 전달됩니다. 기존 클라이언트를 위해 `origin`과 `destination` 좌표를 직접 전달하는 방식도 유지합니다.
 
 ```http
 POST /api/agent/query
@@ -252,11 +252,11 @@ Content-Type: application/json
 }
 ```
 
-Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=qwen3:4b`, `OLLAMA_TIMEOUT_SECONDS=300`입니다. Windows에서는 [공식 Ollama 앱](https://ollama.com/download/windows)을 설치하고 실행한 다음, 새 PowerShell 창에서 모델을 내려받습니다.
+Ollama가 실행 중이어야 하며 기본 설정은 `OLLAMA_BASE_URL=http://host.docker.internal:11434`, `OLLAMA_MODEL=gemma4:26b`, `OLLAMA_TIMEOUT_SECONDS=300`입니다. GPU 서버를 쓰는 개발 환경에서는 SSH 터널의 로컬 포트에 맞춰 `OLLAMA_BASE_URL`을 설정합니다. Ollama 호스트에는 다음 모델이 준비되어 있어야 합니다.
 
 ```powershell
 winget install --id Ollama.Ollama --exact --source winget
-ollama pull qwen3:4b
+ollama pull gemma4:26b
 ollama list
 docker compose up -d --build backend frontend
 ```

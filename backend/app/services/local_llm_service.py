@@ -166,7 +166,8 @@ REJECTED_COMPARISON_TAIL = re.compile(r"보(?:다|다는?|단)")
 SENTENCE_BOUNDARY = re.compile(r"[.!?]")
 EXPLICIT_SHORT_ROUTE = re.compile(
     r"최단\s*(?:거리|경로|길)|(?:가장\s*)?짧(?:은\s*(?:길|경로)|게)"
-    r"|(?:길|경로)보다\s*짧고"
+    r"|(?:길|경로)보다\s*짧고|빠른\s*(?:길|경로)"
+    r"|(?:빠르게|빨리|신속하게|서둘러)"
 )
 
 
@@ -249,7 +250,10 @@ def _preserve_explicit_short_route(query: str, intent: ParsedRouteIntent) -> Non
         # Do not reinterpret a standalone non-request as a request.
         sentence_end = SENTENCE_BOUNDARY.search(query, match.end())
         clause = query[match.end():sentence_end.start() if sentence_end else len(query)]
-        if re.search(r"(?:필요(?:는|가)?\s*없|상관\s*없|싫)", clause[:25]):
+        if re.search(
+            r"(?:필요(?:는|가)?\s*없|상관\s*없|싫|가지\s*않아도|안\s*(?:가|걸어|도착)도)",
+            clause[:25],
+        ):
             continue
         _set_preference(intent, "distance_m", "minimize")
         return

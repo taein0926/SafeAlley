@@ -40,7 +40,7 @@
 | 설정 | 기본값 | 확인 사항 |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | 서버 OS/배치 방식에 맞춰 컨테이너에서 접근 가능한 주소 설정 |
-| `OLLAMA_MODEL` | `qwen3:4b` | 서버에서 동일 모델 준비, GPU 인식과 메모리 확인 |
+| `OLLAMA_MODEL` | `gemma4:26b` | 서버에서 동일 모델 준비, GPU 인식과 메모리 확인 |
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | 모델 초기 로딩과 오류 처리 시간 검증 |
 | `OLLAMA_KEEP_ALIVE` | `10m` | 요청 후 모델 유지 시간, 다른 GPU 작업과 메모리 경합 확인 |
 | `OLLAMA_INTENT_CACHE_SECONDS` | `300` | 검증된 동일 문장의 분석만 메모리 캐시, `0`이면 비활성화 |
