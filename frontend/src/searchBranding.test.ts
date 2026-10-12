@@ -181,7 +181,7 @@ test("slogan and weather rows have no extra vertical spacing", () => {
 test("weather is separated by spacing without an upper divider", () => {
   const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
   assert.doesNotMatch(chrome, /\.search-weather::before/);
-  assert.match(chrome, /\.search-weather \{[^}]*margin: 12px auto 0;[^}]*padding: 10px 12px;[^}]*border: 0;/);
+  assert.match(chrome, /\.search-weather \{[^}]*margin: 0 auto;[^}]*padding: 10px 12px;[^}]*border: 0;/);
 });
 
 test("sentence input starts empty with a placeholder and uses existing search handlers", () => {

@@ -14,6 +14,13 @@ import package
 
 
 class PackageTests(unittest.TestCase):
+    def test_frontend_image_normalizes_public_asset_permissions(self):
+        dockerfile = (package.ROOT / 'frontend' / 'Dockerfile').read_text(encoding='utf-8')
+        copy = dockerfile.index('COPY --from=build /app/dist /usr/share/nginx/html')
+        self.assertGreater(dockerfile.index('find /usr/share/nginx/html -type d -exec chmod 755 {} +'), copy)
+        self.assertGreater(dockerfile.index('find /usr/share/nginx/html -type f -exec chmod 644 {} +'), copy)
+        self.assertNotIn('chmod 777', dockerfile)
+
     def test_private_paths_excluded(self):
         for path in (".env", "deployment/.env", "backend/.env.prod", "frontend/node_modules/a.js",
                      "data_pipeline/raw/source.json", "backend/key.pem", "backend/data.dump",

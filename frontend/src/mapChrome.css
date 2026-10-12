@@ -68,7 +68,7 @@
   border-radius: 0;
   box-shadow: none;
 }
-.search-weather { position: relative; width: var(--search-content-width); margin: 12px auto 0; padding: 10px 12px; border: 0; border-radius: 0; background: transparent; }
+.search-weather { position: relative; width: var(--search-content-width); margin: 0 auto; padding: 10px 12px; border: 0; border-radius: 0; background: transparent; }
 #route-search-panel:has(.search-weather) { padding-bottom: 0; }
 .app-shell .search-weather #map-weather { width: 100%; margin: 0; }
 .app-shell #map-weather .weather-hud-heading {

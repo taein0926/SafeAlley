@@ -57,13 +57,19 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
     assert.equal(weatherSurface.border, '0px');
     assert.equal(weatherSurface.lineBorder, '0px');
     assert.equal(weatherSurface.lineContent, 'none');
-    const weatherGaps = await page.locator('.search-weather').evaluate(element => {
-      const weather = element.getBoundingClientRect(), hud = element.querySelector('#map-weather').getBoundingClientRect();
-      const panel = element.closest('#route-search-panel'), bounds = panel.getBoundingClientRect();
-      return { top: hud.top - weather.top,
-        bottom: bounds.bottom - parseFloat(getComputedStyle(panel).borderBottomWidth) - hud.bottom };
-    });
-    assert(Math.abs(weatherGaps.top - weatherGaps.bottom) < 1);
+    async function assertWeatherGaps() {
+      const gaps = await page.locator('.search-weather').evaluate(element => {
+        const hud = element.querySelector('#map-weather').getBoundingClientRect();
+        const panel = element.closest('#route-search-panel'), bounds = panel.getBoundingClientRect();
+        const toolbar = panel.querySelector('.search-mode-toolbar').getBoundingClientRect();
+        return { top: hud.top - toolbar.bottom,
+          bottom: bounds.bottom - parseFloat(getComputedStyle(panel).borderBottomWidth) - hud.bottom };
+      });
+      assert(Math.abs(gaps.top - gaps.bottom) < 1, `Weather edge gaps: ${JSON.stringify(gaps)}`);
+      assert(Math.abs(gaps.top - 10) < 1, 'Both weather edge gaps should be 10px');
+      return gaps;
+    }
+    const weatherGaps = await assertWeatherGaps();
     const logo = page.getByRole('img', { name: '기상청', exact: true });
     await logo.waitFor();
     await logo.evaluate(image => image.decode());
@@ -88,6 +94,7 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
     assert.equal(rows.verticalAlign, 'center');
     assert.equal(rows.horizontalAlign, 'center');
     await page.getByRole('button', { name: '직접 설정', exact: true }).click();
+    await assertWeatherGaps();
     await page.getByRole('textbox', { name: '출발지', exact: true }).fill('주안역');
     await page.getByRole('textbox', { name: '도착지', exact: true }).fill('인하대학교');
     await page.getByRole('button', { name: /경로 기준/ }).click();
@@ -134,6 +141,6 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
     fs.mkdirSync(output, { recursive: true });
     await page.locator('.search-weather').screenshot({ path: path.join(output, 'ui-weather-reference.png') });
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ rows, directTime: '22:00', completedAiTime: '21:00', pendingAndFailedSearchPreserveWeather: true, requestedFits, browserErrors: errors, result: 'passed' }));
+    console.log(JSON.stringify({ rows, weatherGaps, directTime: '22:00', completedAiTime: '21:00', pendingAndFailedSearchPreserveWeather: true, requestedFits, browserErrors: errors, result: 'passed' }));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

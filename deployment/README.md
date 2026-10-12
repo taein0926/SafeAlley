@@ -102,6 +102,11 @@ health/공간 API/지도 타일/화면 확인 순서입니다. DB·weather 컨�
 새 버전 검증 후 이전 전달용 tar.gz만 정리하며, 이전 소스 폴더·백업·이미지는 롤백용으로 남깁니다.
 저장소의 전달본 커밋과 아카이브 내부 release.json의 소스 base_commit은 구분합니다.
 
+frontend 이미지 빌드는 공개 정적 파일의 권한을 디렉터리 755/파일 644로 정규화합니다.
+서버의 제한적인 umask로 추출된 이미지도 Nginx worker가 읽을 수 있어야 합니다.
+운영 검증에는 `frontend/tests/welcome-intro.e2e.cjs`도 포함해 첫 안내창의 로고 8개를
+실제로 디코딩하는지 확인합니다. `/healthz` 성공만으로 이미지 접근 권한은 검증되지 않습니다.
+
 ## 검증·운영
 
 [전체 테스트](../docs/testing.md), [배포 점검](../docs/deployment-checklist.md)을 따릅니다.
