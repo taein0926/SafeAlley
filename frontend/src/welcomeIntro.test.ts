@@ -18,7 +18,8 @@ test("intro is wired to the app without any reopening control or model request",
   const intro = readFileSync(new URL("./components/WelcomeIntro.tsx", import.meta.url), "utf8");
   assert.match(app, /<WelcomeIntro\s*\/>/); assert.match(intro, /element.showModal\(\)/);
   assert.match(intro, /맞춤 안전 보행 경로를 보여줍니다/);
-  assert.doesNotMatch(intro, /reopen|welcome-open|fetch\(|\/api\/|setTimeout|자동 닫힘/);
+  assert.doesNotMatch(intro, /reopen|welcome-open|welcome-start|길찾기 시작하기|fetch\(|\/api\/|setTimeout|자동 닫힘/);
+  assert.equal(intro.match(/className="welcome-agency-row"/g)?.length, 1);
   for (const asset of ["ltmetric.png", "kma.png", "molit.png", "incheon.png", "michuhol-color.png", "osm.png", "police.png", "nfa.jpg"]) {
     assert.ok(readFileSync(new URL(`../public/branding/${asset}`, import.meta.url)).length > 0);
   }

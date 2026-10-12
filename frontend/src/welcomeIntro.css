@@ -16,7 +16,7 @@
 .welcome-company { display: block; width: 180px; height: 60px; object-fit: contain; }
 .welcome-close { width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; font-size: 34px; cursor: pointer; border-radius: 8px; }
 .welcome-close:hover { background: #edf4fb; }
-.welcome-close:focus-visible, .welcome-start:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
+.welcome-close:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
 .welcome-title { margin: 8px 0 8px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
 .welcome-subtitle { margin: 0; text-align: center; color: #526780; font-size: clamp(20px, 2.7vw, 30px); font-weight: 650; line-height: 1.4; }
 .welcome-technologies { display: grid; grid-template-columns: 1fr 1.25fr 1fr; width: min(760px, 100%); margin: 34px auto 0; }
@@ -29,12 +29,9 @@
 .welcome-tech-icon--gis { color: #078c80; }
 .welcome-technologies span { display: block; margin-top: 8px; font-size: 16px; color: #3b526a; }
 .welcome-description { margin: 28px 0 22px; font-size: 19px; line-height: 1.65; text-align: center; font-weight: 550; }
-.welcome-actions { display: flex; align-items: center; flex-direction: column; }
-.welcome-start { width: min(320px, 100%); min-height: 54px; padding: 12px 24px; border: 0; border-radius: 10px; background: #1769df; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; }
-.welcome-start:hover { background: #105dc9; }
 .welcome-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 22px; margin-top: 26px; padding-top: 20px; border-top: 1px solid #d7e2ef; }
-.welcome-agencies { display: grid; gap: 16px; }
-.welcome-agency-row { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+.welcome-agencies { min-width: 0; flex: 1 1 720px; overflow-x: auto; scrollbar-width: thin; }
+.welcome-agency-row { display: flex; align-items: center; gap: 18px; width: max-content; min-width: 100%; flex-wrap: nowrap; }
 .welcome-agency-row > img { display: block; height: 18px; width: auto; max-width: 110px; object-fit: contain; }
 .welcome-agency-row > img[alt="미추홀구"] { height: 22px; }
 .welcome-osm, .welcome-fire { display: inline-flex; align-items: center; gap: 6px; color: #253e57; font-size: 12px; white-space: nowrap; }
@@ -57,6 +54,12 @@
   .welcome-technologies span { margin: 0; font-size: 13px; }
   .welcome-description { font-size: 16px; margin: 22px 0; }
   .welcome-footer { gap: 18px; margin-top: 24px; padding-top: 18px; }
-  .welcome-agency-row { gap: 16px; }
-  .welcome-agency-row > img { height: 16px; max-width: 95px; }
+  .welcome-agencies { flex-basis: 100%; }
+  .welcome-agency-row { gap: 12px; }
+  .welcome-agency-row > img { height: 14px; max-width: 82px; }
+  .welcome-agency-row > img[alt="미추홀구"] { height: 17px; }
+  .welcome-osm, .welcome-fire { font-size: 11px; }
+  .welcome-osm > img { width: 20px; height: 20px; }
+  .welcome-fire-symbol { width: 36px; height: 20px; }
+  .welcome-fire-symbol > img { width: 36px; }
 }

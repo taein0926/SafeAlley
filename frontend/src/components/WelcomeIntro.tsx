@@ -23,16 +23,11 @@ export function WelcomeIntro() {
     if (open && !element.open) element.showModal();
     else if (!open && element.open) element.close();
   }, [open]);
-  function start() {
-    dismiss();
-    dialog.current?.close();
-    window.requestAnimationFrame(() => document.getElementById("ai-route-query")?.focus({preventScroll: true}));
-  }
   return <dialog ref={dialog} className="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description"
       onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss}>
       <header className="welcome-header">
         <img className="welcome-company" src="/branding/ltmetric.png" alt="엘티메트릭" width="180" height="60"/>
-        <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss}>×</button>
+        <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss} autoFocus>×</button>
       </header>
       <h1 className="welcome-title" id="welcome-title">안전 골목길</h1>
       <p className="welcome-subtitle">골목에 안전을 더하다</p>
@@ -42,14 +37,11 @@ export function WelcomeIntro() {
         <div><div className="welcome-tech-name"><TechnologyIcon type="gis"/><strong>GIS</strong></div><span>도로망 분석</span></div>
       </div>
       <p className="welcome-description" id="welcome-description">원하는 이동 조건을 말로 입력하면,<br/>시설 정보와 도로망을 분석해<br/>맞춤 안전 보행 경로를 보여줍니다.</p>
-      <div className="welcome-actions"><button className="welcome-start" type="button" onClick={start} autoFocus>길찾기 시작하기</button></div>
       <footer className="welcome-footer">
         <div className="welcome-agencies" aria-label="사용한 데이터의 출처 기관">
           <div className="welcome-agency-row">
             <img src="/branding/kma.png" alt="기상청"/><img src="/branding/molit.png" alt="국토교통부"/>
             <img src="/branding/incheon.png" alt="인천광역시"/><img src="/branding/michuhol-color.png" alt="미추홀구"/>
-          </div>
-          <div className="welcome-agency-row">
             <span className="welcome-osm"><img src="/branding/osm.png" alt=""/>OpenStreetMap</span>
             <img src="/branding/police.png" alt="경찰청"/>
             <span className="welcome-fire"><span className="welcome-fire-symbol"><img src="/branding/nfa.jpg" alt=""/></span>소방청</span>
