@@ -5,6 +5,7 @@ import { PreferenceSlider } from "./components/PreferenceSlider";
 import { RecommendationIcons } from "./components/RecommendationIcons";
 import { RouteProgressPanel } from "./components/RouteProgressPanel";
 import { SpeechInput } from "./components/SpeechInput";
+import { WelcomeIntro } from "./components/WelcomeIntro";
 import { useWeather, WeatherHud } from "./components/WeatherHud";
 import { facilityToggleFactor } from "./facilityToggleIcons";
 import { ConditionIcon } from "./components/ConditionIcon";
@@ -498,6 +499,7 @@ function App() {
 
   return (
     <main className={`app-shell ${mapInfo ? "app-shell--map-info" : ""} ${searchPanelOpen ? "" : "app-shell--sidebar-closed"}`} data-theme="day">
+      <WelcomeIntro />
       <div className="map-stage">
       <CesiumRoadMap
         onStatusChange={handleRoadStatus}

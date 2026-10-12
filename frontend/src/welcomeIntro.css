@@ -1,0 +1,63 @@
+.welcome-dialog {
+  width: min(1040px, calc(100vw - 64px));
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 22px 30px 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: none;
+  border-radius: 24px;
+  color: #102a3a;
+  background: #fff;
+  box-shadow: 0 24px 80px #071a2b38;
+}
+.welcome-dialog::backdrop { background: rgb(7 26 43 / 32%); }
+.welcome-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.welcome-company { display: block; width: 180px; height: 60px; object-fit: contain; }
+.welcome-close { width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; font-size: 34px; cursor: pointer; border-radius: 8px; }
+.welcome-close:hover { background: #edf4fb; }
+.welcome-close:focus-visible, .welcome-start:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
+.welcome-title { margin: 8px 0 8px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
+.welcome-subtitle { margin: 0; text-align: center; color: #526780; font-size: clamp(20px, 2.7vw, 30px); font-weight: 650; line-height: 1.4; }
+.welcome-technologies { display: grid; grid-template-columns: 1fr 1.25fr 1fr; width: min(760px, 100%); margin: 34px auto 0; }
+.welcome-technologies > div { text-align: center; padding: 0 16px; min-width: 0; }
+.welcome-technologies > div + div { border-left: 1px solid #d7e2ef; }
+.welcome-tech-name { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 50px; color: #145cae; }
+.welcome-tech-name strong { font-size: 28px; font-weight: 750; white-space: nowrap; }
+.welcome-tech-icon { width: 42px; height: 42px; flex: none; }
+.welcome-tech-icon--twin { color: #14a9c2; }
+.welcome-tech-icon--gis { color: #078c80; }
+.welcome-technologies span { display: block; margin-top: 8px; font-size: 16px; color: #3b526a; }
+.welcome-description { margin: 28px 0 22px; font-size: 19px; line-height: 1.65; text-align: center; font-weight: 550; }
+.welcome-actions { display: flex; align-items: center; flex-direction: column; gap: 10px; }
+.welcome-start { width: min(320px, 100%); min-height: 54px; padding: 12px 24px; border: 0; border-radius: 10px; background: #1769df; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; }
+.welcome-start:hover { background: #105dc9; }
+.welcome-timer { font-size: 13px; color: #6e8098; }
+.welcome-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 22px; margin-top: 26px; padding-top: 20px; border-top: 1px solid #d7e2ef; }
+.welcome-agencies { display: grid; gap: 16px; }
+.welcome-agency-row { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+.welcome-agency-row > img { display: block; height: 18px; width: auto; max-width: 110px; object-fit: contain; }
+.welcome-agency-row > img[alt="미추홀구"] { height: 22px; }
+.welcome-osm, .welcome-fire { display: inline-flex; align-items: center; gap: 6px; color: #253e57; font-size: 12px; white-space: nowrap; }
+.welcome-osm > img { width: 24px; height: 24px; }
+/* Show only the main official emblem, excluding the guide's 10mm annotation. */
+.welcome-fire-symbol { display: block; width: 44px; height: 24px; overflow: hidden; }
+.welcome-fire-symbol > img { display: block; width: 44px; height: auto; max-width: none; }
+.welcome-creators { margin: 0 0 2px auto; font-size: 13px; color: #61748f; white-space: nowrap; }
+@media (max-width: 700px) {
+  .welcome-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 16px 18px 20px; border-radius: 18px; }
+  .welcome-company { width: 145px; height: 48px; }
+  .welcome-title { font-size: clamp(36px, 9vw, 54px); }
+  .welcome-subtitle { font-size: 20px; }
+  .welcome-technologies { margin-top: 26px; grid-template-columns: 1fr; gap: 14px; }
+  .welcome-technologies > div { display: flex; align-items: center; justify-content: space-between; padding: 0; gap: 10px; }
+  .welcome-technologies > div + div { border-left: 0; }
+  .welcome-tech-name { min-height: 36px; gap: 8px; }
+  .welcome-tech-name strong { font-size: 21px; }
+  .welcome-tech-icon { width: 30px; height: 30px; }
+  .welcome-technologies span { margin: 0; font-size: 13px; }
+  .welcome-description { font-size: 16px; margin: 22px 0; }
+  .welcome-footer { gap: 18px; margin-top: 24px; padding-top: 18px; }
+  .welcome-agency-row { gap: 16px; }
+  .welcome-agency-row > img { height: 16px; max-width: 95px; }
+}
