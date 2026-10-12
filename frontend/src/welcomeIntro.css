@@ -17,7 +17,7 @@
 .welcome-close { width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; font-size: 34px; cursor: pointer; border-radius: 8px; }
 .welcome-close:hover { background: #edf4fb; }
 .welcome-close:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
-.welcome-title { margin: 34px 0 12px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
+.welcome-title { margin: 34px 0 22px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }
 .welcome-subtitle { margin: 0; text-align: center; color: #284966; font-size: clamp(23px, 2.8vw, 34px); font-weight: 750; line-height: 1.35; letter-spacing: -.035em; }
 .welcome-subtitle > span { display: inline-block; }
 .welcome-subtitle strong { color: #1268c4; font-weight: 850; }
