@@ -11,7 +11,7 @@
   background: #fff;
   box-shadow: 0 24px 80px #071a2b38;
 }
-.welcome-dialog::backdrop { background: rgb(7 26 43 / 32%); }
+.welcome-dialog::backdrop { background: rgb(7 26 43 / 42%); }
 .welcome-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .welcome-company { display: block; width: 180px; height: 60px; object-fit: contain; }
 .welcome-close { width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; font-size: 34px; cursor: pointer; border-radius: 8px; }
@@ -32,13 +32,13 @@
 .welcome-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 22px; margin-top: 26px; padding-top: 20px; border-top: 1px solid #d7e2ef; }
 .welcome-agencies { min-width: 0; flex: 1 1 720px; overflow-x: auto; scrollbar-width: thin; }
 .welcome-agency-row { display: flex; align-items: center; gap: 18px; width: max-content; min-width: 100%; flex-wrap: nowrap; }
-.welcome-agency-row > img { display: block; height: 18px; width: auto; max-width: 110px; object-fit: contain; }
-.welcome-agency-row > img[alt="미추홀구"] { height: 22px; }
-.welcome-osm, .welcome-fire { display: inline-flex; align-items: center; gap: 6px; color: #253e57; font-size: 12px; white-space: nowrap; }
-.welcome-osm > img { width: 24px; height: 24px; }
+.welcome-agency-row > img { display: block; height: 20px; width: auto; max-width: 122px; object-fit: contain; }
+.welcome-agency-row > img[alt="미추홀구"] { height: 25px; }
+.welcome-osm, .welcome-fire { display: inline-flex; align-items: center; gap: 6px; color: #253e57; font-size: 12.5px; white-space: nowrap; }
+.welcome-osm > img { width: 27px; height: 27px; }
 /* Show only the main official emblem, excluding the guide's 10mm annotation. */
-.welcome-fire-symbol { display: block; width: 44px; height: 24px; overflow: hidden; }
-.welcome-fire-symbol > img { display: block; width: 44px; height: auto; max-width: none; }
+.welcome-fire-symbol { display: block; width: 49px; height: 27px; overflow: hidden; }
+.welcome-fire-symbol > img { display: block; width: 49px; height: auto; max-width: none; }
 .welcome-creators { margin: 0 0 2px auto; font-size: 13px; color: #61748f; white-space: nowrap; }
 @media (max-width: 700px) {
   .welcome-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 16px 18px 20px; border-radius: 18px; }
@@ -56,10 +56,10 @@
   .welcome-footer { gap: 18px; margin-top: 24px; padding-top: 18px; }
   .welcome-agencies { flex-basis: 100%; }
   .welcome-agency-row { gap: 12px; }
-  .welcome-agency-row > img { height: 14px; max-width: 82px; }
-  .welcome-agency-row > img[alt="미추홀구"] { height: 17px; }
+  .welcome-agency-row > img { height: 16px; max-width: 92px; }
+  .welcome-agency-row > img[alt="미추홀구"] { height: 19px; }
   .welcome-osm, .welcome-fire { font-size: 11px; }
-  .welcome-osm > img { width: 20px; height: 20px; }
-  .welcome-fire-symbol { width: 36px; height: 20px; }
-  .welcome-fire-symbol > img { width: 36px; }
+  .welcome-osm > img { width: 22px; height: 22px; }
+  .welcome-fire-symbol { width: 40px; height: 22px; }
+  .welcome-fire-symbol > img { width: 40px; }
 }

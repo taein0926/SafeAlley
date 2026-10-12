@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from "react";
+import type {MouseEvent} from "react";
 import {hasDismissedWelcome, rememberWelcomeDismissed} from "../welcomeIntro";
 import "../welcomeIntro.css";
 
@@ -16,6 +17,12 @@ export function WelcomeIntro() {
   const [open, setOpen] = useState(() => !hasDismissedWelcome(sessionStore()));
   const dialog = useRef<HTMLDialogElement>(null);
   const dismiss = useCallback(() => { rememberWelcomeDismissed(sessionStore()); setOpen(false); }, []);
+  function dismissFromBackdrop(event: MouseEvent<HTMLDialogElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const outside = event.clientX < bounds.left || event.clientX > bounds.right
+      || event.clientY < bounds.top || event.clientY > bounds.bottom;
+    if (outside) dismiss();
+  }
 
   useEffect(() => {
     const element = dialog.current;
@@ -24,7 +31,7 @@ export function WelcomeIntro() {
     else if (!open && element.open) element.close();
   }, [open]);
   return <dialog ref={dialog} className="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description"
-      onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss}>
+      onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss} onClick={dismissFromBackdrop}>
       <header className="welcome-header">
         <img className="welcome-company" src="/branding/ltmetric.png" alt="엘티메트릭" width="180" height="60"/>
         <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss} autoFocus>×</button>
