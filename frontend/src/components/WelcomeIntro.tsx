@@ -1,6 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import type {MouseEvent} from "react";
-import {createWelcomeCountdown, hasDismissedWelcome, rememberWelcomeDismissed} from "../welcomeIntro";
+import {hasDismissedWelcome, rememberWelcomeDismissed} from "../welcomeIntro";
 import "../welcomeIntro.css";
 
 function sessionStore(): Storage | null { try { return window.sessionStorage; } catch { return null; } }
@@ -15,20 +14,8 @@ function TechnologyIcon({type}: {type: "ai" | "twin" | "gis"}) {
 
 export function WelcomeIntro() {
   const [open, setOpen] = useState(() => !hasDismissedWelcome(sessionStore()));
-  const [seconds, setSeconds] = useState(8);
-  const [pointerInside, setPointerInside] = useState(false);
-  const [keyboardActive, setKeyboardActive] = useState(false);
-  const [tabHidden, setTabHidden] = useState(document.hidden);
   const dialog = useRef<HTMLDialogElement>(null);
-  const countdown = useRef<ReturnType<typeof createWelcomeCountdown> | null>(null);
-  const paused = pointerInside || keyboardActive || tabHidden;
   const dismiss = useCallback(() => { rememberWelcomeDismissed(sessionStore()); setOpen(false); }, []);
-  function updatePointer(event: MouseEvent<HTMLDialogElement>) {
-    // Native dialog backdrop events target the dialog too; only its visible box pauses reading.
-    const bounds = event.currentTarget.getBoundingClientRect();
-    setPointerInside(event.clientX >= bounds.left && event.clientX <= bounds.right
-      && event.clientY >= bounds.top && event.clientY <= bounds.bottom);
-  }
 
   useEffect(() => {
     const element = dialog.current;
@@ -36,28 +23,13 @@ export function WelcomeIntro() {
     if (open && !element.open) element.showModal();
     else if (!open && element.open) element.close();
   }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const timer = createWelcomeCountdown({onTick: setSeconds, onElapsed: dismiss});
-    countdown.current = timer;
-    return () => { timer.dispose(); countdown.current = null; };
-  }, [open, dismiss]);
-  useEffect(() => { if (paused) countdown.current?.pause(); else countdown.current?.resume(); }, [open, paused]);
-  useEffect(() => {
-    const visibility = () => setTabHidden(document.hidden);
-    document.addEventListener("visibilitychange", visibility);
-    return () => document.removeEventListener("visibilitychange", visibility);
-  }, []);
-
   function start() {
     dismiss();
     dialog.current?.close();
     window.requestAnimationFrame(() => document.getElementById("ai-route-query")?.focus({preventScroll: true}));
   }
   return <dialog ref={dialog} className="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description"
-      onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss}
-      onMouseEnter={updatePointer} onMouseMove={updatePointer} onMouseLeave={() => setPointerInside(false)}
-      onKeyDown={(event) => { if (event.key === "Tab") setKeyboardActive(true); }}>
+      onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss}>
       <header className="welcome-header">
         <img className="welcome-company" src="/branding/ltmetric.png" alt="엘티메트릭" width="180" height="60"/>
         <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss}>×</button>
@@ -70,9 +42,7 @@ export function WelcomeIntro() {
         <div><div className="welcome-tech-name"><TechnologyIcon type="gis"/><strong>GIS</strong></div><span>도로망 분석</span></div>
       </div>
       <p className="welcome-description" id="welcome-description">원하는 이동 조건을 말로 입력하면,<br/>시설 정보와 도로망을 분석해<br/>맞춤 안전 보행 경로를 보여줍니다.</p>
-      <div className="welcome-actions"><button className="welcome-start" type="button" onClick={start} autoFocus>길찾기 시작하기</button>
-        <span className="welcome-timer" role="timer" aria-live="off">{paused ? "자동 닫힘 일시정지" : `${seconds}초 후 자동 닫힘`}</span>
-      </div>
+      <div className="welcome-actions"><button className="welcome-start" type="button" onClick={start} autoFocus>길찾기 시작하기</button></div>
       <footer className="welcome-footer">
         <div className="welcome-agencies" aria-label="사용한 데이터의 출처 기관">
           <div className="welcome-agency-row">

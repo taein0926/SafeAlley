@@ -29,10 +29,9 @@
 .welcome-tech-icon--gis { color: #078c80; }
 .welcome-technologies span { display: block; margin-top: 8px; font-size: 16px; color: #3b526a; }
 .welcome-description { margin: 28px 0 22px; font-size: 19px; line-height: 1.65; text-align: center; font-weight: 550; }
-.welcome-actions { display: flex; align-items: center; flex-direction: column; gap: 10px; }
+.welcome-actions { display: flex; align-items: center; flex-direction: column; }
 .welcome-start { width: min(320px, 100%); min-height: 54px; padding: 12px 24px; border: 0; border-radius: 10px; background: #1769df; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; }
 .welcome-start:hover { background: #105dc9; }
-.welcome-timer { font-size: 13px; color: #6e8098; }
 .welcome-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 22px; margin-top: 26px; padding-top: 20px; border-top: 1px solid #d7e2ef; }
 .welcome-agencies { display: grid; gap: 16px; }
 .welcome-agency-row { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
