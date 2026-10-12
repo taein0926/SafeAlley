@@ -43,7 +43,8 @@ export function WelcomeIntro() {
         <div><div className="welcome-tech-name"><TechnologyIcon type="twin"/><strong>Digital Twin</strong></div><span>3D 공간 시각화</span></div>
         <div><div className="welcome-tech-name"><TechnologyIcon type="gis"/><strong>GIS</strong></div><span>도로망 분석</span></div>
       </div>
-      <p className="welcome-description" id="welcome-description">원하는 이동 조건을 말로 입력하면,<br/>시설 정보와 도로망을 분석해<br/>맞춤 안전 보행 경로를 보여줍니다.</p>
+      <p className="welcome-description" id="welcome-description">원하는 이동 조건을 말로 입력하면,<br/>가로등·CCTV·보행시설과 도로망을 분석해<br/>조건에 맞는 보행 경로를 제안합니다.</p>
+      <p className="welcome-capabilities">계단 회피 · 건널목 최소 · 가로등·CCTV 고려 · 추천 근거 제공</p>
       <footer className="welcome-footer">
         <div className="welcome-agencies" aria-label="사용한 데이터의 출처 기관">
           <div className="welcome-agency-row">
