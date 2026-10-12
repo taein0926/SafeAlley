@@ -577,10 +577,6 @@ def _recommendation_explanation(
         "safety_score": "CCTV·도움시설(경찰·소방·응급의료) 접근성을 종합했을 때",
     }
     notes: list[str] = []
-    excluded = [
-        candidate for candidate in candidates
-        if candidate["route"]["properties"].get("unverified_major_road_count", 0) > 0
-    ]
     if status == "field_review_required":
         summary = "현재 도로 자료만으로는 이 경로의 보행 가능 여부를 판단할 수 없어 자동 추천을 보류했습니다."
         notes.append("비교한 길 모두 큰 도로의 보행로 정보가 부족합니다. 위험하다는 뜻은 아닙니다.")
@@ -728,10 +724,6 @@ def _recommendation_explanation(
                 notes.append("보행공간 비율 0%는 지도에서 보행공간으로 확인된 구간이 없다는 뜻이며, 실제 보도가 없다는 뜻은 아닙니다.")
             elif item.factor == "stairs_distance_m":
                 notes.append("계단 구간 0m는 지도에 기록된 계단이 없다는 뜻이며, 현장에 계단이 없음을 보장하지 않습니다.")
-        if excluded and selected["route"]["properties"].get("unverified_major_road_count", 0) == 0:
-            notes.append(
-                f"다른 길 {len(excluded)}개는 큰 도로의 보행로 정보가 없어 추천에서 뺐어요."
-            )
         if night and any(item.factor in PROXY_FACTORS for item in supported):
             notes.append("밤 시간 질문으로 처리했지만, 가로등 점등 상태나 CCTV 작동 여부는 알 수 없습니다.")
         if any(item.factor in PROXY_FACTORS for item in supported):
@@ -754,9 +746,6 @@ def _recommendation_explanation(
     if not night:
         notes = [note.replace("가로등·CCTV", "CCTV") for note in notes]
         notes.append("낮 시간에는 가로등을 제외하고 CCTV·도움시설 위치만으로 안전 관련 지표를 계산했습니다.")
-    if selected is not None and selected["route"]["properties"].get("unverified_major_road_count", 0) > 0:
-        summary += " 일부 일반 도로 구간은 보행 정보가 미확인입니다."
-        notes.append("확인된 보행 경로 후보가 없어 일반 도로를 포함해 안내합니다. 해당 구간의 실제 보행 가능 여부와 현장 통행 상태는 확인되지 않았습니다.")
     if selected is not None and selected["route"]["properties"].get("centreline_fallback_distance_m", 0) > 0:
         notes.append("OSM에 분리된 인도가 없는 일부 구간은 기존 도로망을 사용하며 실제 횡단 횟수는 미확인입니다.")
     notes.append("지도 자료만으로 실제 길 상태나 통행 가능 여부를 보장할 수 없습니다.")

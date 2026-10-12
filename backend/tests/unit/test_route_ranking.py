@@ -270,13 +270,11 @@ def test_cctv_explanation_uses_plain_language_without_claiming_device_count(monk
     assert "CCTV가 더 많" not in reason
 
 
-def test_explanation_does_not_compare_with_excluded_route_or_exaggerate_small_gap(monkeypatch) -> None:
+def test_explanation_does_not_compare_with_review_only_route_or_show_retired_notice(monkeypatch) -> None:
     excluded = _route("balanced", 1959, 55)
     excluded["properties"]["unverified_major_road_count"] = 5
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
                         lambda **_: _route("shortest", 1292.5, 45))
-    monkeypatch.setattr(route_ranking_service, "get_custom_route",
-                        lambda **_: _route("custom", 1296.77, 48))
     monkeypatch.setattr(route_ranking_service, "get_custom_route", lambda **_: excluded)
 
     result = route_ranking_service.rank_route_candidates(
@@ -289,7 +287,12 @@ def test_explanation_does_not_compare_with_excluded_route_or_exaggerate_small_ga
         "거리를 우선해 약 1.29km 길을 골랐어요."
 
     )
-    assert any("다른 길 1개" in note for note in result["recommendation_notes"])
+    # Review metadata still affects candidate selection, but its old warning
+    # was deliberately removed from both the UI and recommendation notes.
+    assert all(
+        "다른 길" not in note and "현장 확인" not in note and "대로 구간" not in note
+        for note in result["recommendation_notes"]
+    )
     assert result["compared_route_type"] is None
     assert all("1959" not in text and "100점" not in text
                for text in [result["recommendation_reason"], *result["recommendation_notes"]])
@@ -765,7 +768,7 @@ def test_agent_endpoint_validates_and_returns_ranked_candidates(monkeypatch) -> 
     assert payload["recommendation_notes"]
 
 
-def test_unverified_major_road_candidates_are_fallback_recommendations_with_warning(monkeypatch) -> None:
+def test_unverified_major_road_candidates_are_recommended_without_review_notice(monkeypatch) -> None:
     def unverified_route(route_type: str, distance: float, score: float):
         route = _route(route_type, distance, score)
         route["properties"]["unverified_major_road_count"] = 1
@@ -786,8 +789,8 @@ def test_unverified_major_road_candidates_are_fallback_recommendations_with_warn
     assert result["selected_route"]["properties"]["unverified_major_road_count"] == 1
     assert result["recommendation_status"] == "ready"
     assert len(result["candidates"]) == 2
-    assert "보행 정보가 미확인" in result["recommendation_reason"]
-    assert any("일반 도로를 포함해 안내" in note for note in result["recommendation_notes"])
+    assert "보행 정보가 미확인" not in result["recommendation_reason"]
+    assert not any("일반 도로를 포함해 안내" in note for note in result["recommendation_notes"])
     assert not any("추천에서 뺐어요" in note for note in result["recommendation_notes"])
     assert result["compared_route_type"] == "shortest"
     assert result["recommendation_criteria"][0]["outcome"] != "unavailable"

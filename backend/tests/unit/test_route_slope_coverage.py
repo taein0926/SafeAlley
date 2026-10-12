@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 from app.repositories.road_repository import NearestRoadNode
+from app.schemas.route import RouteFeature
 from app.services.route_service import _route_feature
 from app.services.routing.astar import PathResult
 from app.services.routing.graph import GraphEdge
@@ -36,21 +37,25 @@ def test_partial_slope_coverage_is_not_reported_as_route_maximum() -> None:
     assert complete["max_slope_percent"] == 8
 
 
-def test_unverified_major_road_is_reported_without_claiming_field_verification() -> None:
+def test_review_flags_are_internal_only_and_not_serialized_in_route_response() -> None:
     node = NearestRoadNode(1, 0, 0, 126.68, 37.46, 0)
     policy = SafetyCostPolicy(distance_weight=1, risk_weight=0)
     fallback = replace(_edge(1, None), walkability_class="major_road_fallback")
-    properties = _route_feature(
+    feature = _route_feature(
         PathResult((fallback,), 20, 20), node, node, "shortest", policy,
-    )["properties"]
+    )
+    properties = feature["properties"]
 
-    assert properties["review_status"] == "needs_field_review"
     assert properties["unverified_major_road_count"] == 1
-    assert properties["unverified_major_road_source_ids"] == ["test-1"]
+    payload = RouteFeature.model_validate(feature).model_dump(mode="json")
+    for key in ("review_status", "unverified_major_road_count", "unverified_major_road_source_ids"):
+        assert key not in payload["properties"]
+    assert "field_status" not in payload["properties"]["road_segments"][0]
+    assert payload["properties"]["total_cost"] == properties["total_cost"]
+    assert payload["geometry"] == feature["geometry"]
 
     reviewed = replace(fallback, field_status="verified_walkable")
     reviewed_properties = _route_feature(
         PathResult((reviewed,), 20, 20), node, node, "shortest", policy,
     )["properties"]
-    assert reviewed_properties["review_status"] == "map_data_only"
     assert reviewed_properties["unverified_major_road_count"] == 0

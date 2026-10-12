@@ -15,6 +15,7 @@ import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
 import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
 import { createExampleTyper } from "./exampleTyping";
+import { ExamplePicker } from "./components/ExamplePicker";
 
 import {
   CesiumRoadMap,
@@ -124,6 +125,7 @@ function App() {
   const [crossingWeight, setCrossingWeight] = useState(50);
   const [departureTime, setDepartureTime] = useState(() => currentLocalTime());
   const [appliedDepartureTime, setAppliedDepartureTime] = useState<string | null>(departureTime);
+  const [weatherRequested, setWeatherRequested] = useState(false);
   const [query, setQuery] = useState("");
   const [queryEditing, setQueryEditing] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>("idle");
@@ -377,6 +379,7 @@ function App() {
 
   function finishSearch(result: RouteSearchResult) {
     setAppliedDepartureTime(result.departureTime ?? currentLocalTime());
+    setWeatherRequested(true);
     setSearchResult(result);
     setQueryEditing(false);
     setSelectedRouteType(
@@ -399,7 +402,6 @@ function App() {
       failSearch(new Error("출발 시간을 올바르게 설정해주세요."));
       return;
     }
-    setAppliedDepartureTime(departureTime);
     beginSearch("direct");
     try {
       const [origin, destination] = await Promise.all([
@@ -445,7 +447,9 @@ function App() {
     try {
       const data = await queryRouteWithProgress(text.trim(), userId, (event) => {
         if (event.type === "stage") setProgressStage(event.stage);
-        if (event.type === "interpreted") setProgressInterpretation(event.data);
+        if (event.type === "interpreted") {
+          setProgressInterpretation(event.data);
+        }
         if (event.type === "route_progress") setProgressWork((updates) => mergeWorkUpdate(updates, event.data));
         if (event.type === "resolved") setProgressPlaces({
           origin: event.origin?.name ?? null,
@@ -515,15 +519,9 @@ function App() {
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
       />
-      {(showSearchResults || showLivePreview) && !mapInfo && (
-        <aside id="route-results" className="result-panel result-panel--floating" aria-label={showSearchResults ? "경로 검색 결과" : "실시간 분석"}>
+      {showSearchResults && !mapInfo && (
+        <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
           <div id="route-candidate-cards" className="floating-results-body">
-          {showLivePreview ? (
-            <section className="route-card route-card--preview" aria-label="맞춤경로 입력 조건" aria-busy={!livePreview.completed && !livePreview.blocked}>
-              <span className="route-card-title"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : "요구사항 분석 중"}{!livePreview.completed && !livePreview.blocked && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</span>
-              {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
-            </section>
-          ) : <>
           {searchResult && searchResult.result.recommendation_status !== "ready" && (
             <p className="route-review-warning" role="status">
               {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
@@ -539,27 +537,27 @@ function App() {
                 <button type="button" className={`route-card ${active ? "route-card--active" : ""}`} onClick={() => void selectRoute(candidate.route_type)} aria-pressed={active}>
                   <span className="route-card-title"><strong><i className={`route-swatch ${active ? "route-swatch--active" : ""}`} aria-hidden="true" />{label}</strong></span>
                   <span className="route-card-primary"><strong>{walkingMinutes === null ? "시간 미제공" : <>{walkingMinutes}<span className="route-time-unit">분</span></>}</strong><span>{formatDistance(candidate.route.properties.total_distance_m)}</span></span>
-                  {showConditions && <RecommendationIcons factors={searchResult?.result.recommendation_factors ?? []} conditions={searchResult?.result.recommendation_conditions} />}
                   <span className="route-card-details">
                     계단 {candidate.route.properties.stairs_segment_count}개
                     {" | "}육교 {candidate.route.properties.intersection_data_available ? `${candidate.route.properties.pedestrian_bridge_count ?? 0}개` : "확인 불가"}
                     {" | "}{formatCrosswalkCount(candidate.route.properties.total_crosswalk_count)}
                   </span>
+                  {showConditions && <RecommendationIcons factors={searchResult?.result.recommendation_factors ?? []} conditions={searchResult?.result.recommendation_conditions} />}
                 </button>
                 </div>
               );
             })}
           </div>
-          {selectedCandidate?.route.properties.unverified_major_road_count ? (
-            <p className="route-review-warning">현장 확인이 필요한 대로 구간 {selectedCandidate.route.properties.unverified_major_road_count}개가 포함됩니다.</p>
-          ) : null}
-          </>}
           </div>
         </aside>
       )}
       <nav className="map-view-toggle" aria-label="지도 시점">
-        <button type="button" aria-pressed={!routeDetailOpen} onClick={() => setRouteDetailOpen(false)} title="전체 경로를 위에서 보기">탑뷰</button>
-        <button type="button" aria-pressed={routeDetailOpen} onClick={() => setRouteDetailOpen(true)} title="건물과 경로를 사선으로 보기">사이드뷰</button>
+        <button type="button" aria-label="2D 지도" aria-pressed={!routeDetailOpen} onClick={() => setRouteDetailOpen(false)} title="2D · 전체 경로를 위에서 보기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1" /></svg><span>2D</span>
+        </button>
+        <button type="button" aria-label="3D 지도" aria-pressed={routeDetailOpen} onClick={() => setRouteDetailOpen(true)} title="3D · 건물과 경로를 사선으로 보기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><path d="m12 2 10 5v10l-10 5-10-5V7Z" /><path d="m2 7 10 5 10-5M12 12v10" /></svg><span>3D</span>
+        </button>
       </nav>
       {nightMode && facilityVisibility.streetlights && (
         <div className="density-legend" role="img" aria-label="등록된 가로등의 상대 밀집도입니다. 색상은 적음, 보통, 많음을 구분하며 실제 조도나 안전을 나타내지 않습니다.">
@@ -624,7 +622,6 @@ function App() {
           <button type="button" className="brand-chip" aria-label="안전골목길 새로고침" onClick={() => window.location.reload()}><strong>안전골목길</strong></button>
           <p className="brand-slogan">골목에 안전을 더하다</p>
           </div>
-          <WeatherHud {...weather} />
         </div>
       </header>
       <section id="route-search-panel" className="search-panel" aria-label="경로 검색">
@@ -667,6 +664,12 @@ function App() {
             </div>
           </form>
         )}
+        {showLivePreview && (
+          <section className="search-intent-preview" aria-label="맞춤경로 입력 조건" aria-busy={!livePreview.completed && !livePreview.blocked}>
+            <div className="search-intent-heading"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : "요구사항 분석 중"}{!livePreview.completed && !livePreview.blocked && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</div>
+            {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
+          </section>
+        )}
         <div className="search-mode-toolbar">
           <button type="button" className="search-mode-switch" aria-label={mode === "ai" ? "직접 설정" : "문장 입력"} title={mode === "ai" ? "직접 설정" : "문장 입력"} disabled={requestState === "loading"} onClick={() => {
             ++buildingRequestSerial.current;
@@ -677,17 +680,14 @@ function App() {
             livePreview.clear();
             setMode(mode === "ai" ? "direct" : "ai");
           }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
               {mode === "ai" ? <><path d="M3 5h4m4 0h10M3 12h10m4 0h4M3 19h4m4 0h10" /><circle cx="9" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="9" cy="19" r="2" /></> : <path d="M20 4H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3v3l5-3h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM7 9h10M7 13h6" />}
             </svg>
           </button>
+          <ExamplePicker examples={SEARCH_EXAMPLES} disabled={requestState === "loading" || !searchPanelOpen} onSelect={typeExample} />
           <button className="search-button" type="submit" form="route-search-form" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "길찾기"}</button>
         </div>
-        <div className="search-examples" role="group" aria-label="예시 경로 검색">
-          {SEARCH_EXAMPLES.map((example, index) => <button key={example} type="button" disabled={requestState === "loading"} onClick={() => typeExample(example)}>
-            <span className="search-example-label">예시 {index + 1}) {index === 0 ? "가로등 · 계단" : index === 1 ? "CCTV" : index === 2 ? "가로등 · 건널목" : "CCTV · 건널목"}</span>
-          </button>)}
-        </div>
+        <div className="search-weather"><WeatherHud {...weather} requested={weatherRequested} /></div>
         {requestState === "error" && <p className="route-error" role="alert">{errorMessage}</p>}
       </section>
 

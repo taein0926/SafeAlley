@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { koreaDate, koreaTime, matchingWeather, weatherRefreshDelay, weatherSymbol, type WeatherData } from "../weather";
+// Official KMA symbol and wordmark: https://www.kma.go.kr/kma/resources/images/common/logo.png
+import kmaLogo from "../assets/kma-logo.png";
 
 export function useWeather(departureTime: string | null) {
   const [clock, setClock] = useState(() => new Date());
@@ -56,16 +58,17 @@ export function useWeather(departureTime: string | null) {
   return { data: matchingWeather(data, date, time), solar, error, date, time };
 }
 
-export function WeatherHud({ data, error, date, time }: ReturnType<typeof useWeather>) {
+export function WeatherHud({ data, error, date, time, requested = false }: ReturnType<typeof useWeather> & { requested?: boolean }) {
   const forecast = data?.forecast ?? null;
   const symbol = weatherSymbol(forecast);
   return <section id="map-weather" className="weather-hud" aria-label="출발 시간 날씨" aria-live="polite">
-    <div className="weather-hud-toprow">
-      <div className="weather-hud-heading"><strong className="weather-location">미추홀구</strong><strong className="weather-time">{date.slice(5).replace("-", "/")} {time.slice(0, 5)}</strong></div>
+    <div className="weather-hud-heading">
+      {requested ? "요청하신" : "현재"}{" "}<strong className="weather-location">미추홀구</strong>{" "}<strong className="weather-time">{date.slice(5).replace("-", "/")} {time.slice(0, 5)}</strong>{" "}기준의 예보입니다
     </div>
     {forecast ? <div className="weather-hud-values">
-      <span className="weather-condition">{symbol.label}</span>
-      <span className="weather-temperature" title="예보 기온">{forecast.temperature_c === null ? "기온 미제공" : `${forecast.temperature_c}°C`}</span>
+      <span className="weather-provider"><img src={kmaLogo} alt="기상청" width="51" height="20" /></span>{" "}
+      <span className="weather-condition">{symbol.label}</span>{" "}
+      <span className="weather-temperature" title="예보 기온">{forecast.temperature_c === null ? "기온 미제공" : `${forecast.temperature_c}°C`}</span>{" "}
       <span className="weather-wind" title="예보 풍속">{forecast.wind_speed_ms === null ? "풍속 미제공" : `${forecast.wind_speed_ms} m/s`}</span>
     </div> : <div className="weather-hud-unavailable">{error ? "날씨 연결 재시도 중…" : !data ? "날씨 확인 중…" : data.forecast_status === "stale" ? "최신 예보 자동 갱신 대기 중…" : "해당 시간 예보 미연결 · 자동 재조회 중"}</div>}
   </section>;

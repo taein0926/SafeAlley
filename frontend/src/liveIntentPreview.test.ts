@@ -69,7 +69,7 @@ test("cards omit visible applied labels and footer hints but keep accessible sta
 
 test("live preview shows three wave dots immediately and stops only for the latest accepted text", () => {
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
-  const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
   const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
   assert.match(app, /livePreview.completed \? "요구사항 분석 완료" : "요구사항 분석 중"/);
   assert.doesNotMatch(app, /실시간 분석중/);
@@ -91,7 +91,7 @@ test("live preview shows three wave dots immediately and stops only for the late
 test("example typing and manual input share preview while route search and mode switches cancel typing", () => {
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   assert.match(app, /setQuery\(text\);\s+livePreview.pause\(\);\s+beginSearch\("ai"\)/);
-  assert.match(app, /onClick=\{\(\) => typeExample\(example\)\}/);
+  assert.match(app, /onSelect=\{typeExample\}/);
   assert.match(app, /livePreview.clear\(\);\s+setMode\(mode === "ai" \? "direct" : "ai"\)/);
   assert.match(app, /setQuery\(text\); livePreview.update\(text\)/);
   assert.match(app, /onChange=\{\(event\) => editQuery\(event.target.value/);
@@ -110,7 +110,11 @@ test("editing or selecting an example replaces results with preview without clea
   }
   assert.match(app, /const showSearchResults = !queryEditing && displayedCandidates.length > 0/);
   assert.match(app, /const showLivePreview = mode === "ai" && livePreview.active && !showSearchResults && requestState !== "loading"/);
-  assert.match(app, /\{showLivePreview \? \(/);
+  assert.match(app, /\{showLivePreview && \(/);
+  const previewPosition = app.indexOf('className="search-intent-preview"');
+  assert.ok(previewPosition > app.indexOf('id="route-search-panel"'));
+  assert.ok(previewPosition < app.indexOf('className="search-mode-toolbar"'));
+  assert.match(app, /\{showSearchResults && !mapInfo && \(/);
   assert.match(app, /!queryEditing && activeSearchMode === "ai"/);
   for (const start of ["function beginSearch", "function finishSearch"]) {
     const handler = app.slice(app.indexOf(start), app.indexOf("\n  }", app.indexOf(start)));
@@ -146,7 +150,16 @@ test("word boundaries are coalesced and the whole latest prefix is sent once", a
   } finally { scheduler.dispose(); }
 });
 
-test("letters wait for idle; a space flushes even when trim is unchanged and the final word needs no blur", async () => {
+test("letters wait for idle; a space flushes even when trim is unchanged and the final word needs no blur", async (context) => {
+  // Keep the idle-vs-word-boundary contract deterministic under browser/build
+  // load rather than assuming a 20 ms sleep resumes before a 60 ms timer.
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1000 });
+  async function advance(ms: number) {
+    context.mock.timers.tick(ms);
+    await Promise.resolve();
+    context.mock.timers.tick(0);
+    await Promise.resolve();
+  }
   const calls: string[] = [];
   const scheduler = createPreviewScheduler({
     request: async query => { calls.push(query); return result(query); },
@@ -155,24 +168,24 @@ test("letters wait for idle; a space flushes even when trim is unchanged and the
   });
   try {
     scheduler.update("계"); scheduler.update("계단");
-    await sleep(20);
+    await advance(20);
     assert.deepEqual(calls, []);
     scheduler.update("계단 ");
     scheduler.update("계단 없"); // The next letter must not postpone the word snapshot.
-    await until(() => calls.length === 1);
+    await advance(1);
     assert.deepEqual(calls, ["계단"]);
     scheduler.update("계단 없는");
-    await sleep(20);
+    await advance(20);
     assert.equal(calls.length, 1);
     scheduler.update("계단 없는 ");
-    await until(() => calls.length === 2);
+    await advance(1);
     scheduler.update("계단 없는 길");
-    await sleep(20);
+    await advance(20);
     assert.equal(calls.length, 2);
-    await until(() => calls.length === 3);
+    await advance(40);
     assert.deepEqual(calls, ["계단", "계단 없는", "계단 없는 길"]);
     scheduler.update("계단 없는 길");
-    await sleep(20);
+    await advance(20);
     assert.equal(calls.length, 3);
   } finally { scheduler.dispose(); }
 });

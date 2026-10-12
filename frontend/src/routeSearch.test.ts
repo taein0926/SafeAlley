@@ -68,9 +68,6 @@ function candidate(routeType: RouteType): RouteCandidate {
         sidewalk_coverage_percent: 100,
         max_slope_percent: null,
         slope_coverage_percent: 0,
-        review_status: "map_data_only",
-        unverified_major_road_count: 0,
-        unverified_major_road_source_ids: [],
         road_segments: [{
           id: routeIndex,
           source_id: `segment-${routeIndex}`,

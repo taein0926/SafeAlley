@@ -1,70 +1,42 @@
-# Database Schema
+# DB 구조
 
-## road_segments
+스키마 정본은 backend/alembic/versions이며 현재 head는 **0016**입니다.
+적용된 0011(정밀 CCTV 좌표 품질) 등 migration 이력은 삭제/downgrade하지 않습니다.
 
-도로 geometry, 그래프 연결 정보와 Phase 4 안전도 점수를 저장하는 edge 테이블입니다.
+| 테이블 | 역할 |
+| --- | --- |
+| road_segments | 그래프 edge·OSM node 연결·방향·거리·시설 점수·원본 JSONB |
+| road_safety_segments | 짧게 분할한 분석 구간, 시설 거리/밀도/공백 지표·구성/종합 점수 |
+| buildings | 공식 GIS 건물 이름·주소·용도·면적·높이·층수·원천 속성 |
+| streetlights | 등록 가로등 위치·표찰·출처 |
+| cctvs | 정밀 CCTV 위치·목적·좌표 품질·원본 속성 |
+| help_points | 경찰/119/병원 분류·주소·연락처·출처 |
+| places | 장소명/별칭/주소·좌표, Nominatim 재사용 캐시 |
+| public_crosswalks | 공식 POI/OSM 건널목 원천 Point; 임의 연결을 만들지 않음 |
+| pedestrian_references | 교차로/육교 참조·검증·원천 metadata |
+| weather_forecasts | 격자·발표/예보 시각별 기상 캐시 |
+| solar_times | 기관·지역·날짜별 일출/일몰 |
+| route_recommendations | 최종 추천·후보 지표 요약 |
+| route_selection_events | 사용자 후보 선택 기록 |
+| user_route_preferences | 선택 기반 선호 요약 |
+| osm_display_roads | 이전 표시 전용 테이블; 호환을 위해 보존, 현재 서비스 미사용 |
 
-| Column | Type | Description |
-| --- | --- | --- |
-| `id` | `bigserial` | 내부 PK |
-| `source`, `source_id` | `varchar` | 데이터 출처와 원본 식별자 |
-| `source_node_id`, `target_node_id` | `bigint` | 향후 경로 그래프용 노드 식별자 |
-| `geom` | `geometry(LineString, 5179)` | 도로 구간 |
-| `length_m` | `double precision` | PostGIS에서 계산한 미터 길이 |
-| `streetlight_score` | `numeric(5,2)` | 정규화된 가로등 점수, 0–100 |
-| `cctv_score` | `numeric(5,2)` | 정규화된 CCTV 점수, 0–100 |
-| `help_point_score` | `numeric(5,2)` | 비상 안전서비스 상대 접근성 점수, 0–100 |
-| `population_score` | `numeric(5,2)` | 정규화된 유동인구 점수, 0–100 |
-| `safety_score` | `numeric(5,2)` | 세 구성 점수의 가중 평균, 0–100 |
-| `properties` | `jsonb` | 원본 속성 보존 |
+공간 컬럼은 EPSG:5179와 GIST를 사용합니다. API는 ST_Transform(...,4326) 후 GeoJSON을 생성합니다.
+도로 node/출처 ID에도 조회·멱등 적재용 인덱스가 있습니다.
 
-인덱스:
+도로 핵심: id/source/source_id, source_node_id/target_node_id, 통행 방향,
+LineString geom/length_m, streetlight/cctv/help_point/population/safety 점수, properties, 시각.
+점수는 0–100의 위치 기반 상대 지표입니다. population은 호환 컬럼이며 실제 연동되지 않았습니다.
+계단은 properties.highway/is_steps/osm_tags로 보존하며 safety_score와 독립입니다.
+road_safety_segments는 원본 topology를 바꾸지 않는 별도 분석 구간입니다.
 
-- `ix_road_segments_geom_gist`: geometry GiST
-- `ix_road_segments_source_node`: 시작 노드 B-tree
-- `ix_road_segments_target_node`: 종료 노드 B-tree
-- `(source, source_id)`: fixture와 실제 데이터의 멱등 적재를 위한 unique index
+건물 Polygon/MultiPolygon은 MultiPolygon(5179), 시설은 Point(5179)로 관리합니다.
+없는 이름·높이·층수는 null이며 가상의 높이를 만들지 않습니다.
+UI의 안전시설 버튼 하나가 경찰/119/병원을 제어해도 DB category는 그대로 유지합니다.
 
-초기 스키마는 `0001_create_road_segments.py`, 안전도 구성 점수는 `0002_add_safety_components.py` migration에서 관리합니다.
+Git clone만으로 기존 데이터를 얻을 수 없습니다. 별도 적재/백업 복원이 필요합니다.
+.env 변경은 기존 DB 암호를 자동 변경하지 않습니다.
+사용자 식별/선택 기록은 로그인 인증을 대체하지 않습니다.
+테스트는 전용 fixture·롤백을 사용하며 운영 DB에 실행하지 않습니다.
 
-## buildings
-
-건물 속성과 면 geometry를 도로 그래프와 분리해 저장합니다. 원본 Polygon과 MultiPolygon은 적재 시 `MultiPolygon`으로 정규화합니다.
-
-| Column | Type | Description |
-| --- | --- | --- |
-| `id` | `bigserial` | 내부 PK |
-| `source`, `building_id` | `varchar` | 검증된 데이터 출처와 원본 식별자 |
-| `building_name`, `address`, `main_use` | `text/varchar` | 건물 기본 속성 |
-| `building_area`, `total_floor_area` | `double precision` | 원본에 존재할 때만 저장하는 면적 |
-| `height_m`, `floors` | `double precision/integer` | 원본에 존재할 때만 저장하는 높이·층수 |
-| `source_updated_at` | `text` | 원천 데이터가 제공한 갱신값 원문 |
-| `geom` | `geometry(MultiPolygon, 5179)` | 정제·정규화된 건물 geometry |
-| `properties` | `jsonb` | 데이터셋명과 원본 파일 식별 정보 |
-
-`ix_buildings_geom_gist`가 bbox 공간 조회를 지원하고 `(source, building_id)` unique 제약이 반복 적재를 멱등하게 만듭니다. 스키마는 `0003_create_buildings.py` migration에서 관리합니다.
-
-## streetlights
-
-원본 WGS84 경위도와 EPSG:5179 `Point` geometry, 원본 표찰 속성, 최근접 원본 도로 매칭 결과를 저장합니다. `(source, source_id)`는 unique이며 `ix_streetlights_geom_gist`와 source-aware KNN용 `ix_streetlights_source_geom_gist`가 공간 계산을 지원합니다.
-
-## road_safety_segments
-
-`road_segments`를 20m 이하로 나눈 분석 전용 `LineString(EPSG:5179)`입니다. `road_id` FK로 원본에 연결되며 원본의 node ID와 geometry는 바꾸지 않습니다. 최근접 거리, 주변 개수·100m 환산 밀도, 5m 샘플의 최대 최근접 거리, 세 percentile 점수와 최종 점수를 저장합니다. `(road_id, segment_index)` unique 및 geometry GiST index를 사용합니다.
-
-두 테이블은 migration `0004`, source-aware KNN 최적화는 `0005`에서 관리합니다.
-
-Migration `0006`은 기존 `road_safety_segments.safety_score`를 `streetlight_score`로 먼저 복사해 보존한 뒤 다음 값을 추가합니다.
-
-- CCTV raw metric: `nearest_cctv_distance_m`, `nearby_cctv_count`, `cctv_density`, `cctv_gap_proxy_m`
-- CCTV component score와 `cctv_score`
-- Help Point 최근접 ID/category/전체 및 category별 거리, `help_point_score`
-- `safety_score`: 세 component의 종합 점수
-
-## cctvs
-
-공식 API의 모든 record를 보존합니다. 좌표가 없거나 잘못된 행은 `geom=NULL`이며 공간분석에서 제외됩니다. 유효 geometry는 `Point(EPSG:5179)`, API 경위도 원문은 별도 컬럼, 원본 속성은 JSONB입니다. `(source, source_id)` unique, geometry GiST 및 유효 방범 CCTV partial index를 사용합니다.
-
-## help_points
-
-AI-ready GeoJSON validation을 통과한 Point만 저장합니다. 이름/category/연락처/원천 메타데이터와 원본 properties JSONB를 보존하고 geometry는 `Point(EPSG:5179)`입니다. `(source, external_id)` unique, geometry GiST, `(source, category)` index를 사용합니다.
+[데이터 운영](data-pipeline.md), [건물 원천/매핑](building-data.md).

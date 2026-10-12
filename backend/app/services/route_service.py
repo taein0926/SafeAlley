@@ -246,11 +246,8 @@ def _route_feature(
             "slope_coverage_percent": round(
                 known_slope_distance_m / result.total_distance_m * 100, 2
             ) if result.total_distance_m else 0.0,
-            "review_status": (
-                "needs_field_review" if unverified_major_road_ids else "map_data_only"
-            ),
+            # Internal candidate selection only; omitted by the API response schema.
             "unverified_major_road_count": len(unverified_major_road_ids),
-            "unverified_major_road_source_ids": unverified_major_road_ids,
             # A partial DEM must not silently imply the unmeasured route is flat.
             "max_slope_percent": (
                 round(max(explicit_slopes), 2)

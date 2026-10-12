@@ -11,6 +11,7 @@ test("search panel uses 95vh and is vertically centered while building details k
   assert.match(css, /\.sidebar-primary \{[^}]*height: 95vh; max-height: 95vh;[^}]*overflow: hidden;/);
   assert.match(css, /\.search-panel-shell \{[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/);
   assert.match(css, /--floating-panel-top: 2\.5vh;/);
+  assert.match(css, /--sidebar-width: 328px;/);
   assert.match(css, /\.floating-secondary \{[^}]*top: var\(--floating-panel-top\);[^}]*max-height: 70vh;[^}]*overflow-y: auto;/);
   assert.match(css, /--route-card-width: clamp\(244px, 30%, 304px\);/);
   assert.match(css, /--detail-width: var\(--route-card-width\);/);
@@ -43,6 +44,16 @@ test("candidate cards and object details share their top-left anchor and collaps
   assert.match(cards, /--route-panel-gap: max\(calc\(var\(--panel-gap\) \* 0\.7 \+ 14px\), 36\.4px\);/);
   assert.match(cards, /left: calc\(var\(--panel-edge\) \+ var\(--sidebar-width\) \+ var\(--route-panel-gap\)\);/);
   assert.match(cards, /\.app-shell--sidebar-closed #route-results\.result-panel--floating \{ left: var\(--route-panel-gap\); \}/);
+});
+
+test("floating route backgrounds reveal the map with minimal blur without fading text", () => {
+  const cards = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
+  assert.match(cards, /--result-surface: rgba\(255, 255, 255, \.5\);/);
+  assert.match(cards, /--result-selected: rgba\(242, 247, 255, \.58\);/);
+  assert.match(cards, /--result-inactive-badge: rgba\(242, 244, 247, \.7\);/);
+  assert.match(cards, /\.recommendation-badge\[data-applied="false"\] \{[^}]*background: var\(--result-inactive-badge\);/);
+  assert.match(cards, /backdrop-filter: blur\(1px\);/);
+  assert.doesNotMatch(cards, /\bopacity\s*:/);
 });
 
 test("streaming progress scrolls independently below the fixed search controls", () => {

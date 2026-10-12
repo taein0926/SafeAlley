@@ -13,3 +13,8 @@ test("map does not fetch or render inspection roads, while keeping routes and st
   assert.match(source, /\/api\/streetlight-heatmap\/manifest/);
   assert.match(source, /\/api\/pedestrian-bridges/);
 });
+
+test("route results do not render an unverified major-road review notice", () => {
+  const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /현장 확인이 필요한 대로|unverified_major_road_count/);
+});

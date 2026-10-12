@@ -1,6 +1,11 @@
 import { type RecommendationFactor } from "../recommendationBadges";
-import { CARD_STATE_LABELS, CONDITION_LABELS, conditionCards, type ConditionCard } from "../conditionCards";
+import { CARD_STATE_LABELS, CONDITION_LABELS, conditionCards, type ConditionCard, type CardFactor } from "../conditionCards";
 import { ConditionIcon } from "./ConditionIcon";
+
+const PREVIEW_LABELS: Record<CardFactor, string> = {
+  distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "안전시설",
+  stairs: "계단", crossing: "건널목", bridge: "육교", time: "시간대",
+};
 
 export function RecommendationIcons({ factors, conditions, preview = false }: {
   factors: RecommendationFactor[]; conditions?: ConditionCard[]; preview?: boolean;
@@ -19,8 +24,11 @@ export function RecommendationIcons({ factors, conditions, preview = false }: {
           : factor === "bridge" ? "육교 선호는 현재 경로 비용에 독립적으로 반영되지 않습니다"
           : factor === "time" && applied ? `${period === "night" ? "야간" : "주간"} 시간대 정책을 사용했습니다`
           : applied ? "이번 추천의 평가 조건에 반영되었습니다" : "이번 추천의 평가 조건에 반영되지 않았습니다"}>
+        {preview && applied && <svg className="condition-recognized-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m3 8 3 3 7-7" />
+        </svg>}
         <ConditionIcon factor={factor} applied={applied} />
-        <span>{CONDITION_LABELS[factor]}</span>
+        <span>{preview ? PREVIEW_LABELS[factor] : CONDITION_LABELS[factor]}</span>
       </span>;
     })}
   </span>;

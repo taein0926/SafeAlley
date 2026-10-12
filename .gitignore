@@ -28,6 +28,12 @@ build/
 # Keep generated presentation/output files local only.
 /output/
 
+# Private deployment backups/configuration must never enter source control.
+/deployment/backups/
+/deployment/.private/
+*.dump
+*.dump.sha256
+
 data_pipeline/raw/*
 !data_pipeline/raw/.gitkeep
 data_pipeline/processed/*

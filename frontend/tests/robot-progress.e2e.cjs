@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
+const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
 
 // Scope: robot/blue-check rendering only. No paid inference or routing.
 (async () => {
@@ -7,7 +8,7 @@ const { chromium } = require('playwright');
   let finish;
   const held = new Promise(resolve => { finish = resolve; });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const page = await createTestPage(browser);
     await page.route('**/api/agent/intent-preview/status', route => route.fulfill({ json: { enabled: false, configured: false, available: false } }));
     await page.route('**/api/agent/intent-preview', () => { throw new Error('Unexpected paid preview'); });
     await page.route('**/api/agent/query/stream', async route => {
@@ -19,7 +20,7 @@ const { chromium } = require('playwright');
       await route.fulfill({ contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'interpreted', data: interpretation }) + '\n' +
         JSON.stringify({ type: 'result', data: { query: route.request().postDataJSON().query, model: 'fixture', interpretation, resolved_origin: null, resolved_destination: null, result } }) + '\n' });
     });
-    await page.goto(process.env.E2E_BASE_URL || 'http://127.0.0.1:3003/', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('textbox', { name: '문장으로 경로 요청' }).fill('밤 10시에 주안역에서 병원까지 안내해줘');
     await page.getByRole('button', { name: '길찾기', exact: true }).click();
     await page.locator('.route-progress-robot').waitFor();

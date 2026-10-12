@@ -15,5 +15,5 @@ React의 `WelcomeIntro`가 브라우저 네이티브 `dialog`로 소개창을 �
   이 경우 새로고침하면 다시 나타날 수 있다.
 - 작은 화면에서는 소개창 내부를 스크롤할 수 있다.
 
-테스트: `cd frontend`에서 `npm test`, `npm run build`.
+테스트: `cd frontend`에서 `npm test`, `npm run test:ui`, `npm run build`.
 별도의 API 호출·외부 모델 전송이나 DB 변경은 없다.

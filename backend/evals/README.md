@@ -1,42 +1,45 @@
-# 자연어 경로 요청 평가셋
+# 자연어 경로 요청 평가
 
-evaluate_intent.py는 실제 Ollama 응답을 캐시 없이 받아 출발지, 도착지,
-출발 시각, 경로 선호조건을 각각 채점한다. 이 평가는 문장 해석만 확인하며,
-장소의 DB 존재 여부, 실제 보행 가능성, 추천 경로의 현장 안전을 보장하지 않는다.
+`evaluate_intent.py`는 현재 설정된 Ollama에 문장을 보내 출발지·도착지·시각·
+선호조건을 채점한다. 해석 캐시는 끄고 문장마다 새 응답을 받는다.
+장소 DB, 경로 생성, 시설 밀집도, 현장 안전을 평가하는 도구는 아니다.
 
-## 2026-10-02 새 질문 120개
+## 실행
 
-- route_intent_prospective_probe_20261002.json: 30개. 첫 실행 뒤 오류 분석과
-  코드 수정에 사용했으므로 이제 개발·회귀 질문이다.
-- route_intent_prospective_reserve_20261002.json: 30개. 수정 중에는 실행하지
-  않았던 예약 평가셋이다. 첫 실행은 27/30이었고 실패 3건을 확인한 뒤
-  더 이상 미공개 평가셋으로 취급하지 않는다.
-- route_intent_prospective_validation_20261002.json: 추가 20개. 예약 평가의
-  실패를 수정하기 전에 기대값을 작성했다. 첫 실행 17/20, 실패 분석 후
-  보정한 회귀 실행 20/20.
-- route_intent_prospective_final_20261002.json: 추가 20개. 이전 보정 전에
-  기대값을 작성했다. 첫 실행 17/20, 실패 분석 후 보정한 회귀 실행 20/20.
-- route_intent_acceptance_20261002.json: 마지막 보정 뒤 작성한 추가 20개.
-  첫 실행 18/20, 허용·정정 실패 2건을 보정한 뒤 회귀 실행 20/20.
-- 다섯 파일은 기존 질문과 문자열이 겹치지 않도록 테스트한다. 중립/허용, 비교,
-  정정, 시각, 복합조건, 장소 누락, 미지원 조건을 포함한다.
-- 질문과 기대값은 Codex가 초안 작성·자체 검토했다. 별도의 참여자가 작성하고
-  독립된 사람이 정답을 승인한 자료가 아니므로 '사람 검수 평가셋'이나
-  실제 사용자 정확도로 부르지 않는다. 팀원 검수 전 상태로 관리한다.
+Ollama 연결과 모델 준비는 [AI 실행 설정](../../docs/ai-setup.md)을 따른다.
+저장소 루트에서 실행한다. 실제 모델을 호출하므로 단위 테스트보다 오래 걸린다.
 
-실행: python -m evals.evaluate_intent --set prospective_probe_20261002 --quiet
-예약 평가: python -m evals.evaluate_intent --set prospective_reserve_20261002 --quiet
-새 질문 첫 평가: python -m evals.evaluate_intent --set prospective_validation_20261002 --quiet
-추가 질문 첫 평가: python -m evals.evaluate_intent --set prospective_final_20261002 --quiet
-최종 수용 평가: python -m evals.evaluate_intent --set acceptance_20261002 --quiet
+```powershell
+docker compose exec backend python -m evals.evaluate_intent --set dev --quiet
+docker compose exec backend python -m evals.evaluate_intent --set regression --quiet
+docker compose exec backend python -m evals.evaluate_intent --set holdout --quiet
+```
 
-평가 요약의 categories에서 유형별 정답 수와 출발지·도착지·시각·조건
-오류, 요청하지 않은 조건 추가, 필요한 조건 누락, 방향 오류를 확인한다.
-기존 --set all에는 이번 질문을 의도적으로 포함하지 않았다.
-수정 과정에서 본 질문을 새로운 미공개 질문처럼 재사용하지 않기 위해서다.
+`--set all`은 위 세 묶음을 합친다. 다음 추가 세트는 별도로 실행한다.
 
-최종 검증은 --set all(기존 195개)과 위 다섯 세트(추가 120개)를 각각
-실행한다. 실제 Qwen3:4b 응답을 사용하므로 Ollama가 실행 중이어야 한다.
-2026-10-02 최종 코드에서 315/315, 백엔드 단위 테스트 245개가 통과했다.
-단, 315/315는 이미 확인하고 보정한 문장을 포함한 회귀 수치이며,
-처음 보는 실제 사용자 질문의 정확도를 의미하지 않는다.
+```powershell
+docker compose exec backend python -m evals.evaluate_intent --set prospective_probe_20261002 --quiet
+docker compose exec backend python -m evals.evaluate_intent --set prospective_reserve_20261002 --quiet
+docker compose exec backend python -m evals.evaluate_intent --set prospective_validation_20261002 --quiet
+docker compose exec backend python -m evals.evaluate_intent --set prospective_final_20261002 --quiet
+docker compose exec backend python -m evals.evaluate_intent --set acceptance_20261002 --quiet
+```
+
+세트 이름과 파일 매핑은 [evaluate_intent.py](evaluate_intent.py)의 `CASE_SETS`를
+기준으로 한다. 특정 실패만 확인하려면 `--ids ID1,ID2`를 사용한다.
+
+## 결과 해석
+
+요약에는 필드별 오류, 요청하지 않은 조건 추가, 필요한 조건 누락, 선호 방향
+오류, 강한 회피조건 오류, 지연시간 중앙값·95백분위, 실패 ID가 포함된다.
+명령은 모든 사례가 기대값과 맞을 때만 종료 코드 0을 반환한다.
+
+기존 질문은 개발 중 확인·보정에 사용한 회귀 자료다. 파일이나 세트 이름에
+`holdout`, `prospective`가 있어도 새로운 미공개 질문의 정확도로 해석하지
+않는다. 질문·기대값 초안은 독립된 사용자 검수 자료가 아니다.
+실제 사용자 정확도를 평가하려면 새 질문과 별도 정답 검수가 필요하다.
+
+과거 모델의 점수·속도와 당시 테스트 개수는 현재 서비스 성능으로 제공하지 않는다.
+새 측정에서는 코드 revision, 모델, 실행 환경, 세트, 캐시 여부를 함께 기록한다.
+현재 문장 해석 흐름은 [자연어 처리](../../docs/natural-language.md),
+전체 회귀 테스트는 [테스트 안내](../../docs/testing.md)를 참고한다.

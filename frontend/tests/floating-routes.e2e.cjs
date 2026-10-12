@@ -2,9 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { baseUrl, createTestPage, rankingResult } = require('./ui-fixtures.cjs');
 
-const output = process.env.E2E_OUTPUT || path.resolve(__dirname, '../../../output/screenshots');
-const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
+const output = process.env.E2E_OUTPUT || path.resolve(__dirname, '../../output/screenshots');
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });
@@ -13,11 +13,23 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
     args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
-    // Exercise real Qwen/DB routing without writing test recommendation/selection records.
-    await page.route('**/api/agent/query/stream', async (route) => {
-      const payload = route.request().postDataJSON();
-      await route.continue({ postData: JSON.stringify({ ...payload, user_id: null }) });
+    const page = await createTestPage(browser);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    // Layout and selection tests must not depend on model speed, real route
+    // deduplication, paid preview requests or persistent recommendation writes.
+    await page.route('**/api/agent/intent-preview/status', route => route.fulfill({ json: { enabled: false, configured: false, available: false } }));
+    await page.route('**/api/agent/query/stream', async route => {
+      const { query } = route.request().postDataJSON();
+      const interpretation = { origin_name: '청사', destination_name: '어린이집',
+        departure_time: query.includes('밤') ? '22:00:00' : '13:00:00', profile: 'pedestrian', preferences: [] };
+      const events = [{ type: 'interpreted', data: interpretation },
+        ...Array.from({ length: 18 }, (_, i) => ({ type: 'route_progress', data: {
+          id: `ui-step-${i}`, message: `UI 검증 단계 ${i + 1}: 경로 조건을 비교했어요.`, state: 'completed',
+        } })),
+        { type: 'result', data: { query, model: 'ui-test', interpretation,
+          resolved_origin: null, resolved_destination: null, result: rankingResult() } }];
+      await route.fulfill({ contentType: 'application/x-ndjson', body: events.map(event => JSON.stringify(event)).join('\n') + '\n' });
     });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
 
@@ -39,7 +51,7 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
       const buttonAfter = await searchButton.boundingBox();
       assert.equal(questionBefore.y, questionAfter.y, 'Question must stay fixed');
       assert.equal(buttonBefore.y, buttonAfter.y, 'Search button must stay fixed');
-      await page.screenshot({ path: path.join(output, `safealley-fixed-question-scrolled-${theme}-20261006.png`) });
+      await page.screenshot({ path: path.join(output, `fixed-question-scrolled-${theme}.png`) });
       await processing.evaluate((element) => { element.scrollTop = 0; });
       const panel = await page.locator('#route-results').boundingBox();
       const map = await page.locator('.map-stage').boundingBox();
@@ -61,7 +73,7 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
       await cards[1].click();
       assert.equal(await cards[1].getAttribute('aria-pressed'), 'true');
       assert.equal(await page.locator('#route-results .route-card[aria-pressed=true]').count(), 1);
-      await page.screenshot({ path: path.join(output, `safealley-floating-routes-${theme}-20261006.png`) });
+      await page.screenshot({ path: path.join(output, `floating-routes-${theme}.png`) });
       console.log(JSON.stringify({ theme, panel, map, cards: cards.length, background: color }));
     }
 
@@ -77,6 +89,7 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/';
     assert.equal(await page.locator('#route-results .route-card').count(), 2);
     await page.getByRole('button', { name: '검색·결과·상세 패널 열기' }).click();
     assert(await page.locator('#route-results').isVisible());
+    assert.deepEqual(errors, []);
     console.log('Floating route UI: passed');
   } finally {
     await browser.close();

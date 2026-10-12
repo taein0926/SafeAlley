@@ -53,9 +53,6 @@ export type RouteCandidate = {
       sidewalk_coverage_percent: number;
       max_slope_percent: number | null;
       slope_coverage_percent: number;
-      review_status: "needs_field_review" | "map_data_only";
-      unverified_major_road_count: number;
-      unverified_major_road_source_ids: string[];
       road_segments?: RouteRoadSegment[];
       [key: string]: unknown;
     };

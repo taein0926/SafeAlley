@@ -68,30 +68,34 @@
   border-radius: 0;
   box-shadow: none;
 }
-.app-shell #map-weather .weather-hud-toprow { justify-content: flex-end; }
+.search-weather { position: relative; width: var(--search-content-width); margin: 12px auto 0; padding: 10px 12px; border: 0; border-radius: 0; background: transparent; }
+#route-search-panel:has(.search-weather) { padding-bottom: 0; }
+.app-shell .search-weather #map-weather { width: 100%; margin: 0; }
 .app-shell #map-weather .weather-hud-heading {
-  display: flex;
-  align-items: flex-end;
-  height: var(--brand-logo-line-height);
-  justify-content: flex-end;
-  gap: 6px;
+  display: block;
+  width: 100%;
   color: var(--chrome-muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
   font-weight: 400;
-  text-align: right;
+  text-align: center;
+  white-space: nowrap;
 }
-.app-shell #map-weather .weather-hud-values { justify-content: flex-end; gap: 8px; margin-top: 0; text-align: right; }
-.app-shell #map-weather .weather-hud-values > span { min-height: 18px; line-height: 18px; }
-.app-shell #map-weather :is(.weather-location, .weather-time) { color: #111; font-size: 15px; font-weight: 640; font-variant-numeric: tabular-nums; }
+.app-shell #map-weather .weather-hud-values { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 0; padding-top: 4px; font-size: 12px; text-align: center; }
+.app-shell #map-weather .weather-hud-values > span { display: inline-flex; align-items: center; min-height: 0; line-height: 18px; }
+.app-shell #map-weather .weather-provider { margin-right: 8px; }
+.app-shell #map-weather .weather-provider img { width: auto; height: 20px; vertical-align: middle; }
+.app-shell #map-weather :is(.weather-location, .weather-time) { color: #111; font-size: inherit; font-weight: 640; font-variant-numeric: tabular-nums; }
 .app-shell #map-weather :is(.weather-condition, .weather-temperature, .weather-wind) { color: var(--chrome-muted); font-size: 12px; font-weight: 400; letter-spacing: normal; }
-.app-shell #map-weather .weather-hud-unavailable { color: var(--chrome-muted); font-size: 11px; line-height: 18px; margin-top: 0; text-align: right; }
+.app-shell #map-weather .weather-hud-unavailable { color: var(--chrome-muted); font-size: 12px; line-height: 18px; margin-top: 0; text-align: center; }
 
 /* Keep the map-side shadow, but stop it spilling back onto the search card. */
 .app-shell .search-panel-handle { clip-path: inset(-40px -40px -40px 0); }
 
 .map-view-toggle { position: absolute; top: 18px; right: var(--map-edge); z-index: 30; display: flex; gap: 3px; padding: 4px; border: 1px solid var(--chrome-line); border-radius: 8px; background: #fff; box-shadow: 0 3px 12px #00000014; }
 .map-view-toggle button { min-width: 64px; padding: 9px 12px; border: 1px solid transparent; border-radius: 5px; color: #566274; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.map-view-toggle button { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.map-view-toggle button svg { width: 22px; height: 22px; flex: none; }
 .map-view-toggle button[aria-pressed="true"] { color: #1769df; border-color: #bad4f8; background: #eaf2ff; }
 .map-view-toggle button:hover { background: #f1f6fd; }
 .map-view-toggle button:focus-visible { outline: 2px solid #1769df; outline-offset: 1px; }

@@ -56,7 +56,6 @@ class RouteRoadSegment(BaseModel):
     sidewalk_confirmed: bool = False
     incline_percent: float | None = None
     walkability_class: str | None = None
-    field_status: str = "unverified"
     distance_factor: float
     risk_factor: float
     stairs_penalty: float = 0.0
@@ -111,9 +110,6 @@ class RouteProperties(BaseModel):
     sidewalk_coverage_percent: float = 0
     max_slope_percent: float | None = None
     slope_coverage_percent: float = 0
-    review_status: Literal["needs_field_review", "map_data_only"] = "map_data_only"
-    unverified_major_road_count: int = Field(default=0, ge=0)
-    unverified_major_road_source_ids: list[str] = Field(default_factory=list)
     road_segments: list[RouteRoadSegment]
 
 

@@ -36,7 +36,7 @@ textarea { font: inherit; }
 .ai-query-editor .speech-actions button[aria-pressed="true"] { color: #fff; background: #bd3546; border-color: #ff9ca8; }
 
 .app-shell {
-  --sidebar-width: 380px;
+  --sidebar-width: 328px;
   --route-card-width: clamp(244px, 30%, 304px);
   --detail-width: var(--route-card-width);
   --panel-gap: 16px;
@@ -74,8 +74,8 @@ textarea { font: inherit; }
 .sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .search-empty { padding: 36px 20px; text-align: center; color: #9bb2c0; }
 .search-empty > span { display: block; margin-bottom: 14px; font-size: 2rem; color: #4fe0ae; }
-.search-empty strong { font-size: .9rem; }
-.search-empty p { font-size: .8rem; line-height: 1.8; }
+.search-empty strong { font-size: 12px; }
+.search-empty p { font-size: 12px; line-height: 1.8; }
 .reopen-results { width: calc(100% - 40px); margin: 20px; padding: 12px; border: 1px solid #547386; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; }
 
 .map-info-panel,

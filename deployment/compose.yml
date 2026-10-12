@@ -1,0 +1,163 @@
+name: safealley-deploy
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-db: &db
+  POSTGRES_DB: safealley
+  POSTGRES_USER: safealley
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong server password in deployment/.env}
+  DB_HOST: database
+  DB_PORT: "5432"
+
+services:
+  database:
+    <<: *runtime
+    image: postgis/postgis:17-3.5
+    environment: *db
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ../database/init:/docker-entrypoint-initdb.d:ro
+    networks: [private]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U safealley -d safealley && psql -U safealley -d safealley -tAc 'SELECT PostGIS_Version()'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  ollama:
+    <<: *runtime
+    # Set a tested tag/digest for the target server; never silently track latest.
+    image: ${OLLAMA_IMAGE:?Set OLLAMA_IMAGE to an approved ollama/ollama tag or digest}
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ollama_models:/root/.ollama
+    networks: [app]
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  backend:
+    <<: *runtime
+    image: safealley-deploy/backend:${RELEASE_TAG:-local}
+    build:
+      context: ../backend
+    environment:
+      <<: *db
+      DB_CONNECT_TIMEOUT_SECONDS: "5"
+      ROUTE_SNAP_MAX_DISTANCE_M: ${ROUTE_SNAP_MAX_DISTANCE_M:-500}
+      SAFE_ROUTE_DISTANCE_WEIGHT: ${SAFE_ROUTE_DISTANCE_WEIGHT:-1.0}
+      SAFE_ROUTE_RISK_WEIGHT: ${SAFE_ROUTE_RISK_WEIGHT:-5.0}
+      SAFETY_CCTV_WEIGHT: ${SAFETY_CCTV_WEIGHT:-0.40}
+      SAFETY_HELP_POINT_WEIGHT: ${SAFETY_HELP_POINT_WEIGHT:-0.20}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OLLAMA_TIMEOUT_SECONDS: "300"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      OLLAMA_INTENT_CACHE_SECONDS: ${OLLAMA_INTENT_CACHE_SECONDS:-300}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_PREVIEW_ENABLED: ${JEV_PREVIEW_ENABLED:-false}
+      JEV_PREVIEW_MIN_CONFIDENCE: ${JEV_PREVIEW_MIN_CONFIDENCE:-0.7}
+      STT_MODEL: ${STT_MODEL:-small}
+      STT_MODEL_DIR: /models/stt
+      NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
+      NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-SafeAlley/0.1}
+      NOMINATIM_TIMEOUT_SECONDS: "10"
+    volumes:
+      - stt_models:/models/stt
+      - map_tiles:/map-tiles:ro
+    depends_on:
+      database:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks: [app, private]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  frontend:
+    <<: *runtime
+    image: safealley-deploy/frontend:${RELEASE_TAG:-local}
+    build:
+      context: ../frontend
+      args:
+        # VITE_* is public browser code. No server secrets may be placed here.
+        VITE_CESIUM_ION_TOKEN: ""
+        VITE_OSM_TILE_URL: ${VITE_OSM_TILE_URL:-https://tile.openstreetmap.org/}
+        VITE_BUILDING_SOURCE: ${VITE_BUILDING_SOURCE:-molit-gis-building}
+        VITE_SHOW_STREETLIGHTS: "true"
+        VITE_SHOW_CCTVS: "true"
+        VITE_SHOW_HELP_POINTS: "true"
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [app]
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  heatmap:
+    image: safealley-deploy/weather:${RELEASE_TAG:-local}
+    profiles: [tools]
+    entrypoint: [python, -m, analysis.streetlight_heatmap]
+    environment: *db
+    volumes:
+      - map_tiles:/map-tiles
+    networks: [private]
+
+  weather:
+    <<: *runtime
+    image: safealley-deploy/weather:${RELEASE_TAG:-local}
+    build:
+      context: ../data_pipeline
+    command: [weather-worker]
+    environment:
+      <<: *db
+      KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-}
+      KMA_GRID_NX: ${KMA_GRID_NX:-}
+      KMA_GRID_NY: ${KMA_GRID_NY:-}
+      KASI_SERVICE_KEY: ${KASI_SERVICE_KEY:-}
+      KASI_LOCATION: ${KASI_LOCATION:-인천}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [app, private]
+
+volumes:
+  postgis_data:
+  ollama_models:
+  stt_models:
+  map_tiles:
+
+networks:
+  app:
+  private:
+    internal: true

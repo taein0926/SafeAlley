@@ -4,6 +4,7 @@ import test from "node:test";
 
 const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
+const picker = readFileSync(new URL("./components/ExamplePicker.tsx", import.meta.url), "utf8");
 
 test("examples animate input without searching; the search button retains the existing route handler", () => {
   assert.match(app, /밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해\. 가로등이 많고 계단 없는 길로 안내해줘\./);
@@ -12,7 +13,8 @@ test("examples animate input without searching; the search button retains the ex
   const examplesArray = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)?.[1];
   assert.equal(examplesArray?.match(/"[^"\n]+"/g)?.length, 4);
   assert.match(app, /await runAiSearch\(query\)/);
-  assert.match(app, /onClick=\{\(\) => typeExample\(example\)\}/);
+  assert.match(app, /onSelect=\{typeExample\}/);
+  assert.match(picker, /setOpen\(false\); onSelect\(example\)/);
   const example = app.slice(app.indexOf("function typeExample"), app.indexOf("function editQuery"));
   assert.match(example, /livePreview.clear\(\)/);
   assert.match(example, /exampleTyper.current\?\.start\(text\)/);
@@ -23,23 +25,22 @@ test("examples animate input without searching; the search button retains the ex
   assert.match(sharedSearch, /setQuery\(text\)/);
   assert.match(sharedSearch, /queryRouteWithProgress\(text.trim\(\), userId/);
   assert.equal(app.match(/await queryRouteWithProgress\(/g)?.length, 1);
-  assert.ok(app.indexOf('aria-label="예시 경로 검색"') < app.indexOf('나에게 맞는 길을 찾아보세요'));
+  assert.match(picker, /aria-label="예시 경로 검색"/);
   assert.match(app, /\{displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">/);
 });
 
-test("compact examples use two columns and element-only labels below the search button", () => {
-  const start = app.indexOf('className="search-examples"');
-  const end = app.indexOf('</section>', start);
-  const examples = app.slice(start, end);
-  assert.ok(start > app.indexOf('className="search-button"'));
-  assert.ok(start < app.indexOf('ref={processScrollRef}'));
-  assert.equal(app.match(/className="search-examples"/g)?.length, 1);
-  assert.match(examples, /예시 \{index \+ 1\}\)/);
-  assert.match(examples, /"가로등 · 계단".*"CCTV".*index === 2 \? "가로등 · 건널목" : "CCTV · 건널목"/);
-  assert.doesNotMatch(examples, /많음|회피/);
-  assert.doesNotMatch(examples, /<span>\{example\}<\/span>/);
-  assert.match(examples, /disabled=\{requestState === "loading"\}/);
-  assert.match(css, /\.search-examples \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 6px;.*margin: 12px auto 0;/);
+test("example selector opens the same four element-only labels above the button in two columns", () => {
+  assert.ok(app.indexOf('<ExamplePicker') < app.indexOf('className="search-button"'));
+  assert.equal(app.match(/<ExamplePicker/g)?.length, 1);
+  assert.match(picker, /open && <div/);
+  assert.match(picker, /className="search-example-label">\{LABELS\[index\]\}/);
+  assert.match(picker, /"가로등 · 계단", "CCTV", "가로등 · 건널목", "CCTV · 건널목"/);
+  assert.doesNotMatch(picker, /많음|회피/);
+  assert.doesNotMatch(picker, /<span>\{example\}<\/span>/);
+  assert.match(picker, /disabled=\{disabled\}/);
+  assert.match(picker, /event.key !== "Escape"/);
+  assert.match(picker, /document.addEventListener\("pointerdown", outside\)/);
+  assert.match(css, /\.search-examples \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 6px;.*bottom: calc\(100% \+ 8px\);.*margin: 0;/);
   assert.match(css, /\.search-examples button \{[^}]*min-height: 32px;[^}]*background: #f5f8fc;/);
 });
 
@@ -54,11 +55,11 @@ test("compact route badges align small icons and labels without visible status t
   assert.doesNotMatch(badges, /<small|recommendation-badge-status/);
 });
 
-test("sentence input restores the original height and reserves the smaller microphone footprint", () => {
+test("taller sentence input reserves the smaller microphone footprint", () => {
   assert.match(css, /--speech-button-size: 28\.8px;/);
   assert.match(css, /--speech-button-inset: 12px;/);
-  assert.match(css, /--search-input-height: 104px;/);
-  assert.match(css, /--direct-input-height: 82px;/);
+  assert.match(css, /--search-input-height: 124\.8px;/);
+  assert.match(css, /--direct-input-height: 83px;/);
   assert.match(css, /\.place-inputs \{ height: var\(--direct-input-height\); grid-template-rows: minmax\(0, 1fr\) 1px minmax\(0, 1fr\);/);
   assert.match(css, /\.ai-query textarea \{\s+height: var\(--search-input-height\);\s+min-height: var\(--search-input-height\);\s+resize: none;\s+padding: 14px calc\(var\(--speech-button-size\) \+ var\(--speech-button-inset\) \+ 4px\) 14px 16px;/);
   assert.match(css, /\.speech-actions button \{ width: var\(--speech-button-size\); height: var\(--speech-button-size\);/);
@@ -119,9 +120,6 @@ test("both search modes restore full width and original compact spacing", () => 
   assert.match(css, /--ai-toolbar-gap: 16px;/);
   assert.match(css, /--direct-search-gap: calc\(\(var\(--search-input-height\) \+ var\(--ai-toolbar-gap\) - var\(--direct-input-height\) - var\(--criteria-toggle-height\)\) \/ 2\);/);
   assert.match(css, /\.search-mode-toolbar \{[^}]*width: var\(--search-content-width\); margin: var\(--ai-toolbar-gap\) auto 0;/);
-  const directGap = (104 + 16 - 82 - 30) / 2;
-  assert.equal(directGap, 4);
-  assert.equal(82 + 30 + directGap * 2, 104 + 16);
 });
 
 test("departure input fills the slider-width wrapper while preserving button size, padding and border", () => {
@@ -151,12 +149,14 @@ test("Korean brand keeps reload and the agreed slogan without a comma", () => {
   assert.match(app, /aria-label="안전골목길 새로고침" onClick=\{\(\) => window.location.reload\(\)\}/);
   assert.match(app, /<strong>안전골목길<\/strong>/);
   assert.match(app, /className="brand-slogan">골목에 안전을 더하다<\/p>/);
-  assert.match(app, /className="brand-identity">[\s\S]*className="brand-slogan">[^<]+<\/p>\s+<\/div>\s+<WeatherHud/);
+  const header = app.slice(app.indexOf('<header className="sidebar-header"'), app.indexOf('<section id="route-search-panel"'));
+  assert.doesNotMatch(header, /<WeatherHud/);
+  assert.match(app, /className="search-weather"><WeatherHud \{\.\.\.weather\} requested=\{weatherRequested\} \/>/);
   assert.match(css, /\.brand-row \{ align-items: flex-start;/);
 });
 
 test("compact actions and symmetric header preserve equal input and example edge gaps", () => {
-  assert.match(css, /--search-action-height: 40px;/);
+  assert.match(css, /--search-action-height: 32px;/);
   assert.match(css, /height: var\(--search-action-height\);/);
   assert.match(css, /min-height: var\(--search-action-height\);/);
   assert.match(css, /--search-edge-gap: 18px;/);
@@ -165,8 +165,8 @@ test("compact actions and symmetric header preserve equal input and example edge
   assert.match(css, /\.sidebar-header \{ --brand-logo-line-height: 30px; padding: 14px 20px; \}/);
   assert.match(css, /\.brand-chip strong \{ line-height: var\(--brand-logo-line-height\); \}/);
   const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
-  assert.match(chrome, /\.weather-hud-heading \{[^}]*align-items: flex-end;[^}]*height: var\(--brand-logo-line-height\);/);
-  assert.match(chrome, /\.weather-hud-values > span \{ min-height: 18px; line-height: 18px; \}/);
+  assert.match(chrome, /\.weather-hud-heading \{[^}]*display: block;[^}]*width: 100%;[^}]*text-align: center;/);
+  assert.match(chrome, /\.weather-hud-values > span \{ display: inline-flex; align-items: center; min-height: 0; line-height: 18px; \}/);
 });
 
 test("slogan and weather rows have no extra vertical spacing", () => {
@@ -176,6 +176,12 @@ test("slogan and weather rows have no extra vertical spacing", () => {
   assert.match(chrome, /\.weather-hud-values \{[^}]*margin-top: 0;/);
   assert.match(chrome, /\.weather-hud-unavailable \{[^}]*margin-top: 0;/);
   assert.match(styles, /\.weather-hud-values \{[^}]*margin-top: 0;/);
+});
+
+test("weather is separated by spacing without an upper divider", () => {
+  const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
+  assert.doesNotMatch(chrome, /\.search-weather::before/);
+  assert.match(chrome, /\.search-weather \{[^}]*margin: 12px auto 0;[^}]*padding: 10px 12px;[^}]*border: 0;/);
 });
 
 test("sentence input starts empty with a placeholder and uses existing search handlers", () => {

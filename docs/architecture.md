@@ -1,55 +1,70 @@
-# Architecture
+# 아키텍처
 
-## Current MVP
+현재 저장소 코드 기준: 2026-10-12. 실제 서버의 배포 커밋·비밀 설정은 별도로 확인합니다.
+
+## 애플리케이션 경계
 
 ```text
-User browser
-  -> OpenStreetMap tile server (direct browser request)
-  -> frontend (React, CesiumJS, Nginx)
-     -> GET /api/roads
-     -> GET /api/buildings
-     -> GET /api/safety/roads, /api/streetlights
-     -> POST /api/routes/shortest, /api/routes/safe
-     -> FastAPI service/repository
-     -> road_segments, road_safety_segments, streetlights, buildings
+브라우저
+ ├─ OSM 타일 직접 HTTPS 요청
+ └─ Nginx / React / CesiumJS
+       └─ /api/* → FastAPI
+             ├─ repository → PostgreSQL / PostGIS
+             ├─ Ollama → 검색 문장 구조화
+             ├─ Jev / TypeSafe → 선택적 입력 중 해석
+             └─ Nominatim → 지역 제한 장소 fallback / reverse
 
-OpenStreetMap Overpass API
-  -> data_pipeline/raw (원본 JSON)
-  -> pedestrian filter + graph edge generation
-  -> data_pipeline/processed (GeoJSON)
-  -> data_pipeline PostGIS loader
-  -> road_segments(source=osm)
-
-MOLIT GIS building file (or verified official i-Map file)
-  -> data_pipeline/raw/buildings
-  -> Michuhol-gu filter + geometry validation + EPSG:4326 GeoJSON
-  -> data_pipeline/processed/buildings/buildings.geojson
-  -> data_pipeline PostGIS loader
-  -> buildings(source=molit-gis-building or verified source name)
-
-Michuhol-gu streetlight CSV (user-provided official file)
-  -> data_pipeline/raw/streetlights (CP949, EPSG:4326)
-  -> validated Point GeoJSON
-  -> streetlights (EPSG:5179)
-  -> PostGIS-only split/distance/density/sample/rank analysis
-  -> road_safety_segments (derived; original graph topology unchanged)
+외부 원본 → data_pipeline: collectors → raw → preprocess → processed → loaders / analysis → DB
+weather 배치 → KMA/KASI → DB 캐시
 ```
 
-Frontend와 backend는 `public` Docker network를 공유합니다. Backend와 database는 별도의 `private` internal network를 공유하며 frontend는 database network에 참여하지 않습니다.
+Frontend는 DB에 접근하지 않습니다. route는 요청/오류 처리, service는 업무 흐름,
+repository는 공간 쿼리, services/routing은 탐색을 담당합니다.
+모델이 그래프를 계산하거나 임의 SQL을 실행하지 않습니다.
+배치 수집은 backend/app 내부에 넣지 않습니다.
 
-`GET /health`는 실제 PostgreSQL 연결과 `PostGIS_Version()` 실행 결과를 반환합니다. Frontend는 같은 오리진의 `/api/health`를 호출하고 Nginx가 이를 backend의 `/health`로 전달합니다.
+브라우저 /api/health는 Nginx가 backend /health로 연결합니다.
+NDJSON 검색 스트림은 proxy_buffering off로 실제 작업 진행을 전달합니다.
 
-데이터 수집·전처리는 상시 서비스와 분리된 `data_pipeline/`의 일회성 배치로 구현합니다.
+## 실행 서비스
 
-Pipeline은 외부 수집을 위해 `public` network와 DB 적재를 위한 `private` network에 참여합니다. raw/processed 호스트 디렉터리만 bind mount하며 frontend나 backend 내부에 수집 코드를 두지 않습니다.
+| 서비스 | 역할 | 지속 데이터 |
+| --- | --- | --- |
+| frontend | Nginx + React/Cesium 정적 파일 | 빌드 |
+| backend | FastAPI, 요청 내 그래프, CPU Whisper | stt_models; map_tiles 읽기 |
+| database | PostgreSQL 17 / PostGIS 3.5 | postgis_data |
+| weather | 발표시각별 배치, 포트 없음 | DB 날씨 캐시 |
+| pipeline | tools 프로필 일회성 적재·분석 | raw/processed; map_tiles 쓰기 |
 
-Frontend는 안전도 표시에 `GET /api/safety/roads?source=osm`을 사용합니다. 기존 `GET /api/roads?source=osm`과 route 요청은 그대로 유지됩니다.
+Frontend/backend는 public, backend/database는 private internal 네트워크를 공유합니다.
+배치 작업은 외부 수집/DB 적재를 위해 두 네트워크를 사용합니다.
+로컬 루프백 포트: frontend 3000, backend 8000, DB 5432.
 
-Frontend는 별도로 `GET /api/buildings?source=molit-gis-building`을 호출합니다. source는 `VITE_BUILDING_SOURCE`로 바꿀 수 있습니다. OSM 배경지도는 `OpenStreetMapImageryProvider`가 외부 타일 서버를 직접 호출하며 backend에는 타일 프록시가 없습니다.
+VM/GPU 방식은 루트 Compose + deployment/compose.vm.override.yml입니다.
+VM에 앱/DB/weather를 두고 host gateway 11435의 승인된 SSH 터널로 GPU Ollama에 접속합니다.
+VM은 frontend 루프백 8080만 공개하고 backend/DB 포트는 제거합니다.
+단일 GPU 서버 대안은 deployment/compose.yml이며 두 방식을 혼용하지 않습니다.
 
-## 좌표계 원칙
+## 검색과 지도
 
-- DB 내부 저장, 거리 및 buffer 연산: `EPSG:5179`
-- REST/GeoJSON 출력: `EPSG:4326`
+- 문장: query/stream → Ollama structured output → 형식·의미 검사 → 공통 resolver → rank_routes.
+- 직접 설정: 텍스트 위치만 places/resolve → 좌표·선호를 agent/execute → 같은 rank_routes.
+- 지도 선택: 이미 있는 좌표를 직접 전달하고 reverse는 표시명에만 사용합니다.
+- 장소: places 정규화/별칭/부분검색 → 지역 제한 GIS 건물 → 제한된 Nominatim.
+- 입력 미리보기: 띄어쓰기 경계/마지막 단어 idle → Jev 조건 카드. 최종 경로 적용과 별개입니다.
 
-API repository는 `ST_Transform(geom, 4326)` 후 `ST_AsGeoJSON`을 호출합니다. 선택적인 bbox 입력 역시 EPSG:4326으로 받은 뒤 DB 쿼리에서 EPSG:5179로 변환합니다.
+전체 안전도 도로선은 초기 표시하지 않습니다. 시설/건물/계단·육교는 bbox·타일 캐시를 사용합니다.
+높이가 있는 건물만 extrusion을 적용합니다. 경로는 segment ID 순서/geometry로 dedup합니다.
+2D/3D는 사용자 선택을 유지하고 경로 camera fit은 패널이 가리는 공간을 고려합니다.
+
+가로등 밀집도는 pipeline에서 등록 위치로 만든 PNG 타일을 backend가 제공하는 별도 overlay입니다.
+OSM 배경 타일과 다르며 실제 조도나 경로 비용을 바꾸지 않습니다.
+
+## 좌표·보안
+
+DB 거리/버퍼: EPSG:5179(m). API/GeoJSON/bbox: EPSG:4326(longitude/latitude).
+원본 SHP 좌표계는 metadata로 확인해 변환합니다.
+비밀값은 .env, VITE_*에는 넣지 않습니다. 원본·DB·백업·타일·모델은 Git과 별도로 관리합니다.
+
+상세: [라우팅](routing.md), [데이터](data-pipeline.md), [날씨](weather.md),
+[배포](../deployment/README.md), [테스트](testing.md).

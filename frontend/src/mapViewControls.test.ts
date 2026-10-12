@@ -25,8 +25,12 @@ test("weather uses readable condition and emphasized forecast time, not an icon"
 
 test("only map controls change camera mode without a card detail button or selection reset", () => {
   assert.match(app, /aria-label="지도 시점"/);
-  assert.match(app, />탑뷰<\/button>/);
-  assert.match(app, />사이드뷰<\/button>/);
+  assert.match(app, /aria-label="2D 지도"/);
+  assert.match(app, /aria-label="3D 지도"/);
+  assert.match(app, /<rect x="5" y="5" width="14" height="14" rx="1" \/>/);
+  assert.match(app, /m12 2 10 5v10l-10 5-10-5V7Z/);
+  assert.match(app, /<span>2D<\/span>/);
+  assert.match(app, /<span>3D<\/span>/);
   assert.doesNotMatch(app, /className="route-detail-button"/);
   const select = app.slice(app.indexOf("const selectRoute ="), app.indexOf("const handleMapInfoChange ="));
   assert.doesNotMatch(select, /setRouteDetailOpen/);
@@ -34,6 +38,21 @@ test("only map controls change camera mode without a card detail button or selec
   assert.doesNotMatch(begin, /setRouteDetailOpen/);
   assert.match(map, /if \(routeDetailOpen === lastRouteDetailOpenRef.current\) return;/);
   assert.match(map, /signature !== lastRouteSignatureRef.current/);
+});
+
+test("weather rows use one centered wrapper with single-space separators and request-aware wording", () => {
+  assert.match(weather, /requested \? "요청하신" : "현재"/);
+  assert.match(weather, /기준의 예보입니다/);
+  assert.doesNotMatch(weather, /weather-hud-toprow/);
+  assert.match(weather, /weather-condition">\{symbol.label\}<\/span>\{" "\}/);
+  assert.match(weather, /weather-temperature"[^\n]*<\/span>\{" "\}/);
+  assert.match(app, /\[appliedDepartureTime, setAppliedDepartureTime\] = useState<string \| null>\(departureTime\)/);
+  assert.match(app, /\[weatherRequested, setWeatherRequested\] = useState\(false\)/);
+  const finish = app.slice(app.indexOf("function finishSearch"), app.indexOf("function failSearch"));
+  assert.match(finish, /setAppliedDepartureTime\(result.departureTime \?\? currentLocalTime\(\)\);\s+setWeatherRequested\(true\);/);
+  const begin = app.slice(app.indexOf("function beginSearch"), app.indexOf("function finishSearch"));
+  const requests = app.slice(app.indexOf("function failSearch"), app.indexOf("const selectRoute ="));
+  assert.doesNotMatch(begin + requests, /setWeatherRequested|setAppliedDepartureTime/);
 });
 
 test("new search results fit every candidate using the already selected top or side view", () => {

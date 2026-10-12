@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
 
 // Mock the language/route response. Real local map assets are read; no model is called.
 (async () => {
@@ -9,7 +10,7 @@ const { chromium } = require('playwright');
   let finishResponse;
   const held = new Promise(resolve => { finishResponse = resolve; });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const page = await createTestPage(browser);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/agent/intent-preview/status', route => route.fulfill({ json: { enabled: false, configured: true, available: false } }));
@@ -30,7 +31,7 @@ const { chromium } = require('playwright');
         { type: 'result', data: { query, model: 'ui-test-fixture', interpretation, resolved_origin: null, resolved_destination: null, result } }];
       await route.fulfill({ contentType: 'application/x-ndjson', body: events.map(event => JSON.stringify(event)).join('\n') + '\n' });
     });
-    await page.goto(process.env.E2E_BASE_URL || 'http://127.0.0.1:3002/', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('textbox', { name: '문장으로 경로 요청' }).fill('밤 10시에 주안역에서 인천사랑병원까지 밝은 길로 안내해줘.');
     await page.getByRole('button', { name: '길찾기', exact: true }).click();
     await page.getByRole('heading', { name: 'AI가 길을 찾고 있어요', exact: true }).waitFor();
@@ -45,9 +46,15 @@ const { chromium } = require('playwright');
     finishResponse();
     await page.getByText('화면 검증이 완료됐어요.', { exact: true }).waitFor();
     const scrollPane = page.getByRole('region', { name: '경로 검색 처리 내용' });
+    // Verify the user-visible contract, not an exact scrollbar offset: map
+    // updates can change trailing layout space after the completion frame.
     await page.waitForFunction(() => {
       const pane = document.querySelector('.sidebar-scroll');
-      return pane && pane.scrollTop > 0 && pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 1;
+      const latest = pane?.querySelector('.route-progress-message:last-child');
+      if (!pane || !latest || pane.scrollHeight <= pane.clientHeight || pane.scrollTop <= 0) return false;
+      const bounds = pane.getBoundingClientRect();
+      const message = latest.getBoundingClientRect();
+      return message.top >= bounds.top && message.bottom <= bounds.bottom + 1;
     });
     const latest = page.locator('.route-progress-message').last();
     const paneBounds = await scrollPane.boundingBox();
@@ -68,9 +75,9 @@ const { chromium } = require('playwright');
     assert.equal(await page.locator('.route-progress-check').first().evaluate(element => getComputedStyle(element).color), 'rgb(23, 105, 223)');
     assert.equal(await page.getByText('계산값 자세히 보기', { exact: true }).count(), 0);
     assert.equal(await page.getByText('가로등·CCTV는 등록 위치 기반 지표이며 실제 밝기·안전도를 뜻하지 않습니다.', { exact: true }).count(), 0);
-    const output = path.resolve(__dirname, '../../../output/screenshots');
+    const output = process.env.E2E_OUTPUT || path.resolve(__dirname, '../../output/screenshots');
     fs.mkdirSync(output, { recursive: true });
-    await page.screenshot({ path: path.join(output, 'safealley-speaking-lips-and-heatmap-20261007.png') });
+    await page.screenshot({ path: path.join(output, 'thinking-robot-and-heatmap.png') });
     // Once complete, unrelated React updates must not pull the reader back down.
     await scrollPane.evaluate(element => { element.scrollTop = 0; });
     await page.getByRole('textbox', { name: '문장으로 경로 요청' }).fill('다음 질문을 작성합니다.');
