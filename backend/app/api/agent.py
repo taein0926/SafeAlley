@@ -97,6 +97,17 @@ def _json_default(value: object) -> object:
     raise TypeError(f"Cannot serialize {type(value).__name__}")
 
 
+def _resolve_place_for_agent(name: str, target: str) -> dict[str, object]:
+    try:
+        return resolve_place(name)
+    except PlaceAmbiguousError as exc:
+        raise HTTPException(status_code=400, detail=exc.api_detail(target=target)) from exc
+    except PlaceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PlaceRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def _query_events(request: NaturalLanguageQueryRequest, *, stream_progress=False) -> Iterator[dict[str, object]]:
     yield {"type": "stage", "stage": "interpreting"}
 
@@ -119,15 +130,8 @@ def _query_events(request: NaturalLanguageQueryRequest, *, stream_progress=False
                 status_code=422,
                 detail="질문에 출발지와 도착지를 모두 입력해 주세요.",
             )
-        try:
-            resolved_origin = resolve_place(interpretation.origin_name)
-            resolved_destination = resolve_place(interpretation.destination_name)
-        except PlaceAmbiguousError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except PlaceNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PlaceRepositoryError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        resolved_origin = _resolve_place_for_agent(interpretation.origin_name, "origin")
+        resolved_destination = _resolve_place_for_agent(interpretation.destination_name, "destination")
         origin = {
             "latitude": resolved_origin["latitude"],
             "longitude": resolved_origin["longitude"],

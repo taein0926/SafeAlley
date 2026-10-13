@@ -60,6 +60,24 @@ def test_gis_failure_is_not_silently_replaced_by_nominatim(monkeypatch, error, e
         place_service.resolve_place("동일건물")
 
 
+def test_building_selection_context_is_preserved(monkeypatch):
+    context = {
+        "code": "building_selection_required",
+        "place_name": "테스트아파트",
+        "focus": {"west": 126.65, "south": 37.45, "east": 126.66, "north": 37.46},
+    }
+    monkeypatch.setattr(place_service, "find_place", lambda _: None)
+    monkeypatch.setattr(place_service, "get_osm_road_viewbox", lambda: (126.6, 37.4, 126.75, 37.52))
+    def ambiguous(*_):
+        raise BuildingPlaceAmbiguousError("동을 선택해 주세요.", selection_context=context)
+    monkeypatch.setattr(place_service, "find_building_place", ambiguous)
+    with pytest.raises(PlaceAmbiguousError) as raised:
+        place_service.resolve_place("테스트아파트")
+    assert raised.value.api_detail(target="origin") == {
+        "message": "동을 선택해 주세요.", "target": "origin", **context,
+    }
+
+
 def test_blank_name_does_not_search_any_database(monkeypatch):
     monkeypatch.setattr(place_service, "find_place", lambda *_: pytest.fail("empty search"))
     with pytest.raises(PlaceNotFoundError):

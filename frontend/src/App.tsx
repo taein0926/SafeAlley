@@ -16,6 +16,7 @@ import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
 import { createExampleTyper } from "./exampleTyping";
 import { ExamplePicker } from "./components/ExamplePicker";
+import { errorFromApiDetail, PlaceSelectionRequiredError, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
 
 import {
   CesiumRoadMap,
@@ -80,8 +81,8 @@ function formatDistance(value: number): string {
 }
 
 async function responseJson<T>(response: Response): Promise<T> {
-  const data = (await response.json()) as T & { detail?: string };
-  if (!response.ok) throw new Error(data.detail ?? `HTTP ${response.status}`);
+  const data = (await response.json()) as T & { detail?: unknown };
+  if (!response.ok) throw errorFromApiDetail(data.detail, `HTTP ${response.status}`);
   return data;
 }
 
@@ -116,6 +117,7 @@ function App() {
   const [destinationLocation, setDestinationLocation] = useState<DirectLocationInput>(emptyDirectLocation);
   const [buildingSelectionMode, setBuildingSelectionMode] = useState<BuildingSelectionMode>(null);
   const [mapSelectionNotice, setMapSelectionNotice] = useState<MapSelectionNotice>(null);
+  const [mapFocus, setMapFocus] = useState<MapFocusBounds | null>(null);
   const buildingRequestSerial = useRef(0);
   const [buildingSelectionPending, setBuildingSelectionPending] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
@@ -303,6 +305,7 @@ function App() {
       if (target === "origin") setOriginLocation(location);
       else setDestinationLocation(location);
       setBuildingSelectionMode(null);
+      setMapFocus(null);
       setMapInfo(null);
       setMapSelectionNotice({
         kind: "success",
@@ -373,6 +376,7 @@ function App() {
     setSearchResult(null);
     setSelectedRouteType(null);
     setBuildingSelectionMode(null);
+    setMapFocus(null);
     setMapSelectionNotice(null);
     setMapInfo(null);
   }
@@ -390,7 +394,25 @@ function App() {
     setRequestState("idle");
   }
 
-  function failSearch(error: unknown) {
+  function failSearch(error: unknown, interpretation?: RouteQueryResponse["interpretation"] | null) {
+    if (error instanceof PlaceSelectionRequiredError) {
+      const target = error.target ?? "origin";
+      if (interpretation?.origin_name) {
+        setOriginLocation({ displayName: interpretation.origin_name, source: "text" });
+      }
+      if (interpretation?.destination_name) {
+        setDestinationLocation({ displayName: interpretation.destination_name, source: "text" });
+      }
+      if (interpretation?.departure_time) setDepartureTime(interpretation.departure_time.slice(0, 5));
+      setMode("direct");
+      setSearchPanelOpen(true);
+      setBuildingSelectionMode(target);
+      setMapFocus(error.focus);
+      setMapSelectionNotice({
+        kind: "instruction",
+        text: `${target === "origin" ? "출발지" : "도착지"}로 사용할 건물을 지도에서 선택하세요.`,
+      });
+    }
     setRequestState("error");
     setErrorMessage(error instanceof Error ? error.message : "경로 검색에 실패했습니다.");
   }
@@ -404,9 +426,17 @@ function App() {
     }
     beginSearch("direct");
     try {
+      const resolveTarget = async (location: DirectLocationInput, target: PlaceSelectionTarget) => {
+        try {
+          return await resolveDirectLocation(location, resolvePlace);
+        } catch (error) {
+          if (error instanceof PlaceSelectionRequiredError) throw error.forTarget(target);
+          throw error;
+        }
+      };
       const [origin, destination] = await Promise.all([
-        resolveDirectLocation(originLocation, resolvePlace),
-        resolveDirectLocation(destinationLocation, resolvePlace),
+        resolveTarget(originLocation, "origin"),
+        resolveTarget(destinationLocation, "destination"),
       ]);
       const response = await fetch("/api/agent/execute", {
         method: "POST",
@@ -444,10 +474,12 @@ function App() {
     setQuery(text);
     livePreview.pause();
     beginSearch("ai");
+    let interpreted: RouteQueryResponse["interpretation"] | null = null;
     try {
       const data = await queryRouteWithProgress(text.trim(), userId, (event) => {
         if (event.type === "stage") setProgressStage(event.stage);
         if (event.type === "interpreted") {
+          interpreted = event.data;
           setProgressInterpretation(event.data);
         }
         if (event.type === "route_progress") setProgressWork((updates) => mergeWorkUpdate(updates, event.data));
@@ -469,7 +501,7 @@ function App() {
     } catch (error) {
       setProgressStage("failed");
       livePreview.clear();
-      failSearch(error);
+      failSearch(error, interpreted);
     }
   }
 
@@ -518,6 +550,7 @@ function App() {
         onMapInfoChange={handleMapInfoChange}
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
+        focusBounds={mapFocus}
       />
       {showSearchResults && !mapInfo && (
         <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">

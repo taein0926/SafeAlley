@@ -13,6 +13,18 @@ class PlaceNotFoundError(RuntimeError):
 class PlaceAmbiguousError(ValueError):
     """The caller must supply a more specific location before routing."""
 
+    def __init__(self, message: str, *, selection_context: dict[str, object] | None = None):
+        super().__init__(message)
+        self.selection_context = selection_context
+
+    def api_detail(self, *, target: str | None = None) -> str | dict[str, object]:
+        if self.selection_context is None:
+            return str(self)
+        detail = {"message": str(self), **self.selection_context}
+        if target is not None:
+            detail["target"] = target
+        return detail
+
 
 class PlaceRepositoryError(RuntimeError):
     """Raised when the local place index cannot be queried or updated."""

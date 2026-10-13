@@ -48,6 +48,7 @@ import { routeCapPath, routeEndCaps, routeGeometrySignature, routeLineStyle, rou
 import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
 import { FacilityViewportCache, type FacilityFeature } from "../facilityViewport";
 import { MapRenderQuality, setRenderResolution, MOVING_RESOLUTION, REST_RESOLUTION } from "../mapRenderQuality";
+import type { MapFocusBounds } from "../placeSelection";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -81,6 +82,7 @@ type CesiumRoadMapProps = {
   onMapInfoChange: (selection: MapInfoSelection | null) => void;
   nightMode: boolean;
   onResetView: () => void;
+  focusBounds: MapFocusBounds | null;
 };
 
 export type FacilityVisibility = {
@@ -297,6 +299,7 @@ export function CesiumRoadMap({
   onMapInfoChange,
   nightMode,
   onResetView,
+  focusBounds,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -1306,6 +1309,26 @@ export function CesiumRoadMap({
       routeDetailOpen ? -CesiumMath.toRadians(55) : -CesiumMath.PI_OVER_TWO);
     viewer.scene.requestRender();
   }, [routeDetailOpen, routeCandidates, selectedRouteType, draftLocations]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !focusBounds) return;
+    const width = focusBounds.east - focusBounds.west;
+    const height = focusBounds.north - focusBounds.south;
+    const padding = Math.max(width, height, 0.0005) * 0.35 + 0.0002;
+    viewer.camera.cancelFlight();
+    viewer.camera.flyTo({
+      destination: Rectangle.fromDegrees(
+        focusBounds.west - padding,
+        focusBounds.south - padding,
+        focusBounds.east + padding,
+        focusBounds.north + padding,
+      ),
+      orientation: { heading: 0, pitch: -CesiumMath.PI_OVER_TWO, roll: 0 },
+      duration: 0.8,
+    });
+    viewer.scene.requestRender();
+  }, [focusBounds]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

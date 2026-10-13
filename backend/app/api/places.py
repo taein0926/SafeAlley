@@ -21,7 +21,7 @@ def resolve_place_name(
     try:
         return resolve_place(name)
     except PlaceAmbiguousError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exc.api_detail()) from exc
     except PlaceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlaceRepositoryError as exc:
