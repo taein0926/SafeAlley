@@ -108,7 +108,7 @@ def test_local_llm_parses_structured_route_intent(monkeypatch) -> None:
 
     assert str(intent.departure_time) == "22:00:00"
     assert intent.preferences[0].factor == "streetlight_score"
-    assert captured["model"] == "qwen3:4b"
+    assert captured["model"] == "gemma4:26b"
     assert captured["stream"] is False
     assert captured["think"] is False
     assert isinstance(captured["format"], dict)
@@ -909,6 +909,10 @@ def test_latest_explicit_factor_statement_governs_cancellation(query, expected) 
         ("경찰서 가까운 길보다 짧은 길로 가줘", {"distance_m": "minimize"}),
         ("경찰서 가까운 길보다 짧고 인도가 많은 길로 가줘", {"distance_m": "minimize"}),
         ("CCTV가 많은 길이 좋아. 경찰서 가까운 길보다 짧은 길도 원해", {"distance_m": "minimize"}),
+        ("새벽 5시 15분에 주안역에서 더나눔병원까지 빠르게 가줘", {"distance_m": "minimize"}),
+        ("주안역에서 인천사랑병원까지 빨리 안내해줘", {"distance_m": "minimize"}),
+        ("주안역에서 인천사랑병원까지 빠르게 갈 필요는 없어", {}),
+        ("주안역에서 인천사랑병원까지 빨리 가지 않아도 돼", {}),
         ("짧은 길보다는 CCTV가 많은 길로 가줘", {}),
         ("최단거리 말고 계단 없는 길로 가줘", {}),
         ("경찰서 가까운 길로 가줘", {}),

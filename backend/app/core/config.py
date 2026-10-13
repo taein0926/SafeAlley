@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     safety_cctv_weight: float = Field(default=0.40, ge=0, le=1)
     safety_help_point_weight: float = Field(default=0.20, ge=0, le=1)
     ollama_base_url: str = Field(default="http://host.docker.internal:11434")
-    ollama_model: str = Field(default="qwen3:4b", min_length=1)
+    ollama_model: str = Field(default="gemma4:26b", min_length=1)
     ollama_timeout_seconds: float = Field(default=300, gt=0, le=300)
     ollama_keep_alive: str = Field(default="10m", min_length=1)
     ollama_intent_cache_seconds: float = Field(default=300, ge=0, le=3600)

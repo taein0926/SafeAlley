@@ -187,7 +187,7 @@ def test_natural_language_query_uses_local_interpretation(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["model"] == "qwen3:4b"
+    assert payload["model"] == "gemma4:26b"
     assert payload["interpretation"]["departure_time"] == "22:00:00"
     assert payload["result"]["selected_route_type"] == "custom"
 

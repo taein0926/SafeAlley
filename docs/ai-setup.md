@@ -6,11 +6,12 @@ Ollama가 문장을 해석하고 FastAPI가 장소·경로를 처리합니다.
 
 ## Windows 로컬 기본
 
-.env.example: OLLAMA_BASE_URL=http://host.docker.internal:11434, OLLAMA_MODEL=qwen3:4b.
+.env.example: OLLAMA_BASE_URL=http://host.docker.internal:11434, OLLAMA_MODEL=gemma4:26b.
+이 모델을 PC에서 직접 실행하려면 충분한 GPU 자원이 필요합니다. 기존 GPU 서버를 사용하는 로컬 설정은 아래 터널 절차를 따릅니다.
 
 ```powershell
 ollama --version
-ollama pull qwen3:4b
+ollama pull gemma4:26b
 ollama serve # 이미 실행 중이면 생략
 Invoke-RestMethod http://localhost:11434/api/tags
 docker compose up -d --force-recreate backend

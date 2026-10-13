@@ -67,18 +67,18 @@ Backend 시작 시 Alembic migration을 적용하고 현재 저장소 head는 00
 | 기능 | 설정 | 기본/주의 |
 | --- | --- | --- |
 | DB | POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD | 기존 볼륨 계정은 .env 변경만으로 바뀌지 않음 |
-| 문장 해석 | OLLAMA_BASE_URL / OLLAMA_MODEL | 로컬 host.docker.internal:11434 / qwen3:4b, API 키 불필요 |
+| 문장 해석 | OLLAMA_BASE_URL / OLLAMA_MODEL | 로컬 host.docker.internal:11434 / gemma4:26b, API 키 불필요 |
 | 요구사항 미리보기 | JEV_PREVIEW_ENABLED / TYPESAFE_API_KEY | 기본 false, 별도 유료 Jev 기능 |
 | 날씨 | KMA_SERVICE_KEY / KASI_SERVICE_KEY | 서비스별 공공데이터포털 승인 키 |
 | 장소 fallback | NOMINATIM_BASE_URL / NOMINATIM_USER_AGENT | 지역 제한·캐시·요청 간격 적용 |
 | 음성 | STT_MODEL | small, CPU 추론·stt_models 볼륨 캐시 |
 | 지도 | VITE_OSM_TILE_URL / VITE_BUILDING_SOURCE | OSM 타일 / molit-gis-building |
 
-Windows 호스트 Ollama를 사용하는 **기본 로컬 설정**:
+Windows 호스트 Ollama를 사용하는 **기본 로컬 설정**(모델을 실행할 충분한 GPU 자원이 필요합니다):
 
 ```powershell
 ollama --version
-ollama pull qwen3:4b
+ollama pull gemma4:26b
 ollama serve # 이미 실행 중이면 새로 실행하지 않습니다.
 Invoke-RestMethod http://localhost:11434/api/tags
 docker compose up -d --force-recreate backend
