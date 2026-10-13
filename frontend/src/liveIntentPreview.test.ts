@@ -71,10 +71,10 @@ test("live preview shows three wave dots immediately and stops only for the late
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
   const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
-  assert.match(app, /livePreview.completed \? "요구사항 분석 완료" : "요구사항 분석 중"/);
+  assert.match(app, /livePreview.completed \? "요구사항 분석 완료" : previewBusy \? "요구사항 분석 중" : "요구사항 분석"/);
   assert.doesNotMatch(app, /실시간 분석중/);
   assert.match(app, /className="live-preview-dots"[^>]*><i \/><i \/><i \/>/);
-  assert.match(app, /aria-busy=\{!livePreview.completed && !livePreview.blocked\}/);
+  assert.match(app, /aria-busy=\{previewBusy\}/);
   assert.doesNotMatch(css, /live-preview-state/);
   assert.match(css, /animation: live-preview-wave 1s ease-in-out infinite;/);
   assert.match(css, /nth-child\(2\) \{ animation-delay: .15s;/);
@@ -84,7 +84,7 @@ test("live preview shows three wave dots immediately and stops only for the late
   assert.ok(update.indexOf("setUpdating(text.trim() !== analyzedText.current)") < update.indexOf("scheduler.current?.update(text)"));
   assert.match(hook, /analyzedText.current = result.query;[\s\S]*setUpdating\(result.query !== latestText.current.trim\(\)\)/);
   assert.match(hook, /onError:[\s\S]*setUpdating\(false\)/);
-  assert.match(hook, /const pause =[^\n]*setUpdating\(false\)/);
+  assert.match(hook, /const pause =[\s\S]*?setUpdating\(false\)/);
   assert.match(hook, /const clear =[^\n]*analyzedText.current = "";[^\n]*setUpdating\(false\)/);
 });
 
@@ -109,8 +109,8 @@ test("editing or selecting an example replaces results with preview without clea
     assert.doesNotMatch(handler, /setSearchResult\(null\)|setSelectedRouteType\(null\)/);
   }
   assert.match(app, /const showSearchResults = !queryEditing && displayedCandidates.length > 0/);
-  assert.match(app, /const showLivePreview = mode === "ai" && livePreview.active && !showSearchResults && requestState !== "loading"/);
-  assert.match(app, /\{showLivePreview && \(/);
+  assert.doesNotMatch(app, /showLivePreview/);
+  assert.match(app, /const previewBusy = mode === "ai" && queryEditing && livePreview.active/);
   const previewPosition = app.indexOf('className="search-intent-preview"');
   assert.ok(previewPosition > app.indexOf('id="route-search-panel"'));
   assert.ok(previewPosition < app.indexOf('className="search-mode-toolbar"'));
@@ -120,6 +120,19 @@ test("editing or selecting an example replaces results with preview without clea
     const handler = app.slice(app.indexOf(start), app.indexOf("\n  }", app.indexOf(start)));
     assert.match(handler, /setQueryEditing\(false\)/);
   }
+});
+
+test("sentence-mode preview persists across searches but stays hidden in direct settings", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("./useLiveIntentPreview.ts", import.meta.url), "utf8");
+  assert.match(hook, /useState<ConditionCard\[\]>\(\(\) => emptyConditionCards\("not_applied"\)\)/);
+  const search = app.slice(app.indexOf("async function runAiSearch"), app.indexOf("const selectRoute ="));
+  assert.match(search, /livePreview.pause\(\)/);
+  assert.doesNotMatch(search, /livePreview.clear\(\)/);
+  assert.match(app, /<RecommendationIcons factors=\{\[\]\} conditions=\{livePreview.cards\} preview \/>/);
+  assert.match(app, /\{mode === "ai" && \(\s*<section className="search-intent-preview"/);
+  assert.doesNotMatch(app, /!livePreview.blocked && <RecommendationIcons/);
+  assert.match(hook, /setCompleted\(latestAccepted\)/);
 });
 
 test("completed route cards use only saved routing conditions, never live analysis or its status", () => {

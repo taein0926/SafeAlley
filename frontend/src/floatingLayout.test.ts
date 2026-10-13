@@ -56,6 +56,18 @@ test("floating route backgrounds reveal the map with minimal blur without fading
   assert.doesNotMatch(cards, /\bopacity\s*:/);
 });
 
+test("only building details and their buttons have thirty-percent-transparent surfaces", () => {
+  const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
+  assert.match(app, /data-kind=\{mapInfo.kind\}/);
+  const panel = chrome.match(/\.app-shell \.map-info-panel\[data-kind="building"\] \{([^}]+)\}/)?.[1] ?? "";
+  assert.match(panel, /--building-detail-surface: rgba\(255, 255, 255, \.7\);/);
+  assert.match(panel, /--building-detail-accent: rgba\(23, 105, 223, \.7\);/);
+  assert.match(panel, /backdrop-filter: blur\(1px\);/);
+  assert.doesNotMatch(panel, /\bopacity\s*:/);
+  assert.match(chrome, /\[data-kind="building"\] \.panel-close \{ background: var\(--building-detail-surface\); \}/);
+  assert.match(chrome, /\[data-kind="building"\] \.building-location-actions button:last-child \{ color: #fff; background: var\(--building-detail-accent\); \}/);
+});
+
 test("streaming progress scrolls independently below the fixed search controls", () => {
   const search = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
   assert.match(search, /flex-shrink: 0;\s+max-height: calc\(95vh - 120px\);\s+overflow-y: auto;/);

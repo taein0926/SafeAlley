@@ -253,7 +253,7 @@ function App() {
     ? selectDisplayedCandidates(routeCandidates, searchResult.result.selected_route_type)
     : [], [routeCandidates, searchResult]);
   const showSearchResults = !queryEditing && displayedCandidates.length > 0;
-  const showLivePreview = mode === "ai" && livePreview.active && !showSearchResults && requestState !== "loading";
+  const previewBusy = mode === "ai" && queryEditing && livePreview.active && !livePreview.completed && !livePreview.blocked && requestState !== "loading";
   const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
   const systemReady = health.kind === "ready" && roads.kind === "ready";
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
@@ -457,7 +457,6 @@ function App() {
         });
       });
       setProgressStage("done");
-      livePreview.clear();
       finishSearch({
         mode: "ai",
         origin: data.resolved_origin,
@@ -468,7 +467,6 @@ function App() {
       });
     } catch (error) {
       setProgressStage("failed");
-      livePreview.clear();
       failSearch(error);
     }
   }
@@ -664,10 +662,10 @@ function App() {
             </div>
           </form>
         )}
-        {showLivePreview && (
-          <section className="search-intent-preview" aria-label="맞춤경로 입력 조건" aria-busy={!livePreview.completed && !livePreview.blocked}>
-            <div className="search-intent-heading"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : "요구사항 분석 중"}{!livePreview.completed && !livePreview.blocked && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</div>
-            {!livePreview.blocked && <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />}
+        {mode === "ai" && (
+          <section className="search-intent-preview" aria-label="맞춤경로 입력 조건" aria-busy={previewBusy}>
+            <div className="search-intent-heading"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : previewBusy ? "요구사항 분석 중" : "요구사항 분석"}{previewBusy && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</div>
+            <RecommendationIcons factors={[]} conditions={livePreview.cards} preview />
           </section>
         )}
         <div className="search-mode-toolbar">
@@ -721,7 +719,7 @@ function App() {
       </button>
       </div>
       {searchPanelOpen && mapInfo && (
-        <aside className="map-info-panel floating-secondary" aria-label="지도 객체 정보">
+        <aside className="map-info-panel floating-secondary" data-kind={mapInfo.kind} aria-label="지도 객체 정보">
           <header>
             <div>
               <span>{mapInfo.kind === "building" ? "건물 상세 정보" : mapInfo.kind === "route_segment" ? "경로 구간" : mapInfo.kind === "streetlight" ? "가로등 정보" : mapInfo.kind === "cctv" ? "CCTV 정보" : mapInfo.kind === "stairs" ? "계단 정보" : "육교 정보"}</span>

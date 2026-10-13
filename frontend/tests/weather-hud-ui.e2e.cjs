@@ -62,11 +62,15 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
         const hud = element.querySelector('#map-weather').getBoundingClientRect();
         const panel = element.closest('#route-search-panel'), bounds = panel.getBoundingClientRect();
         const toolbar = panel.querySelector('.search-mode-toolbar').getBoundingClientRect();
+        const alert = panel.querySelector('.route-error')?.getBoundingClientRect();
+        const footer = alert ?? hud;
         return { top: hud.top - toolbar.bottom,
-          bottom: bounds.bottom - parseFloat(getComputedStyle(panel).borderBottomWidth) - hud.bottom };
+          errorTop: alert ? alert.top - hud.bottom : null,
+          bottom: bounds.bottom - parseFloat(getComputedStyle(panel).borderBottomWidth) - footer.bottom };
       });
       assert(Math.abs(gaps.top - gaps.bottom) < 1, `Weather edge gaps: ${JSON.stringify(gaps)}`);
       assert(Math.abs(gaps.top - 10) < 1, 'Both weather edge gaps should be 10px');
+      if (gaps.errorTop !== null) assert(Math.abs(gaps.top - gaps.errorTop) < 1, `Weather/error gap: ${JSON.stringify(gaps)}`);
       return gaps;
     }
     const weatherGaps = await assertWeatherGaps();
@@ -118,6 +122,12 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
     releaseSearch();
     await page.getByText('UI test failure', { exact: true }).waitFor();
     assert.equal(await heading.textContent(), completedHeading, 'Failed repeat search keeps the last completed reference');
+    await assertWeatherGaps();
+    const alertPlacement = await page.locator('.route-error').evaluate(element => {
+      const panel = document.querySelector('#route-search-panel');
+      return { insideSearch: panel.contains(element), aboveDivider: element.getBoundingClientRect().bottom < panel.getBoundingClientRect().bottom };
+    });
+    assert(alertPlacement.insideSearch && alertPlacement.aboveDivider, 'Search errors retain their original position above the divider');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await heading.waitFor();
     assert.match((await heading.textContent()).trim(), /^현재 /);
@@ -130,6 +140,7 @@ const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
     releaseSearch();
     await page.getByText('UI test failure', { exact: true }).waitFor();
     assert.equal(await heading.textContent(), aiInitialHeading, 'An interpreted time followed by failure does not apply weather');
+    await assertWeatherGaps();
     fail = false;
     deferSearch();
     await page.getByRole('button', { name: '길찾기', exact: true }).click();

@@ -29,6 +29,32 @@ GPU 호스트의 ollama list/ps, VM/PC 터널의 수신 포트·지문·접속 �
 GPU 공용 Ollama를 임의로 재시작하거나 기존 모델을 제거하지 않습니다.
 비밀번호/개인키는 문서·소스에 기록하지 않습니다.
 
+## 로컬 앱에서 기존 GPU Gemma 사용
+
+2026-10-13 로컬 연결 확인 모델은 `gemma4:26b`입니다. 모델은 PC가 아니라 기존 GPU 서버에서 실행합니다.
+별도 PowerShell 창에서 아래 터널을 열고 창을 유지합니다. SSH 인증은 기존 계정으로 진행하며 비밀번호를 파일에 저장하지 않습니다.
+
+```powershell
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -p 19922 -L 127.0.0.1:11435:127.0.0.1:11434 ltmetric@211.58.157.60
+```
+
+루트 `.env` 설정(커밋하지 않음):
+
+```dotenv
+OLLAMA_BASE_URL=http://host.docker.internal:11435
+OLLAMA_MODEL=gemma4:26b
+```
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:11435/api/tags
+docker compose up -d --no-deps --force-recreate backend
+docker compose exec backend python -c "import os,json,urllib.request; print(os.environ['OLLAMA_MODEL']); print(json.load(urllib.request.urlopen(os.environ['OLLAMA_BASE_URL']+'/api/tags', timeout=10)))"
+```
+
+브라우저 `http://localhost:3000/`의 길찾기 요청은 로컬 FastAPI가 처리하고, 문장 해석만 SSH 터널로 GPU Ollama에 전달합니다.
+DB/경로 탐색은 로컬에 남고 Jev 미리보기 설정은 바뀌지 않습니다. 터널 종료·PC 재시작 후에는 다시 연결해야 하며 자동 시작은 설정하지 않습니다.
+`docker compose restart`만으로는 새 `.env` 값이 반영되지 않으므로 위 재생성 명령을 사용합니다.
+
 ## 직접 API 확인
 
 아래 요청은 실제 추론/경로 계산을 실행합니다. 데이터가 있어야 하며 대기시간이 필요할 수 있습니다.

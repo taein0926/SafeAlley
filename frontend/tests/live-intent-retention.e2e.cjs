@@ -50,7 +50,9 @@ const factors = ['distance', 'streetlight', 'cctv', 'safety', 'stairs', 'crossin
     assert.deepEqual(await cards.locator('.recommendation-badge').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label').split(':')[0])), ['최단 거리', '가로등 우선', 'CCTV 우선', '안전시설', '계단 회피', '건널목 회피', '육교 우선', '시간대 고려']);
     assert.equal(await page.locator('.recommendation-badge-status, .live-preview-hint, .live-preview-notice').count(), 0);
     await input.fill('');
-    assert.equal(await cards.count(), 0);
+    assert.equal(await cards.count(), 1);
+    assert.equal(await cards.locator('[data-state="not_applied"]').count(), 8);
+    assert.equal(await page.locator('.live-preview-dots').count(), 0);
     await input.fill('계단을 ');
     assert.equal(await cards.getByRole('listitem', { name: '계단 회피: 분석 중', exact: true }).count(), 1);
     releaseFourth();

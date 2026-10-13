@@ -5,7 +5,7 @@ import { createPreviewCompletion } from "./previewCompletion";
 
 export function useLiveIntentPreview() {
   const [active, setActive] = useState(false);
-  const [cards, setCards] = useState<ConditionCard[]>(() => emptyConditionCards());
+  const [cards, setCards] = useState<ConditionCard[]>(() => emptyConditionCards("not_applied"));
   const [notice, setNotice] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -48,7 +48,7 @@ export function useLiveIntentPreview() {
           .then((data) => { if (!stopped && !data.available) setNotice(previewUnavailableMessage(data)); })
           .catch(() => {});
       },
-      onEmpty: () => { completionGate.reset(); analyzedText.current = ""; setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); },
+      onEmpty: () => { completionGate.reset(); analyzedText.current = ""; setActive(false); setCards(emptyConditionCards("not_applied")); setBlocked(false); setUpdating(false); setNotice(null); },
     });
     scheduler.current = localScheduler;
     void refreshStatus()
@@ -66,9 +66,10 @@ export function useLiveIntentPreview() {
   }, []);
 
   const update = useCallback((text: string) => {
+    const wasEmpty = !latestText.current.trim();
     completion.current?.edit(text);
     latestText.current = text;
-    if (!text.trim()) { analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); return; }
+    if (!text.trim()) { analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards("not_applied")); setBlocked(false); setUpdating(false); setNotice(null); return; }
     // Show the input panel immediately; keep inference on the existing word/idle schedule.
     setActive(true);
     if (!status.current?.available) {
@@ -82,10 +83,15 @@ export function useLiveIntentPreview() {
     }
     setBlocked(false);
     setNotice(null);
+    if (wasEmpty && !analyzedText.current) setCards(emptyConditionCards());
     setUpdating(text.trim() !== analyzedText.current);
     scheduler.current?.update(text);
   }, []);
-  const pause = useCallback(() => { completion.current?.reset(); latestText.current = ""; scheduler.current?.pause(); setUpdating(false); }, []);
-  const clear = useCallback(() => { completion.current?.reset(); latestText.current = ""; analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards()); setUpdating(false); setNotice(null); }, []);
+  const pause = useCallback(() => {
+    const latestAccepted = !!latestText.current.trim() && analyzedText.current === latestText.current.trim();
+    completion.current?.reset(); latestText.current = ""; scheduler.current?.pause(); setUpdating(false);
+    setCompleted(latestAccepted);
+  }, []);
+  const clear = useCallback(() => { completion.current?.reset(); latestText.current = ""; analyzedText.current = ""; scheduler.current?.pause(); setActive(false); setCards(emptyConditionCards("not_applied")); setBlocked(false); setUpdating(false); setNotice(null); }, []);
   return { active, cards, notice, blocked, updating, completed, update, pause, clear };
 }

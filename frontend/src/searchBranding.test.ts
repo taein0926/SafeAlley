@@ -6,6 +6,13 @@ const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
 const picker = readFileSync(new URL("./components/ExamplePicker.tsx", import.meta.url), "utf8");
 
+test("search errors retain their position and get the same bottom padding as the weather top gap", () => {
+  assert.match(app, /<div className="search-weather">[^\n]*<\/div>\s*\{requestState === "error" && <p className="route-error" role="alert">[^\n]*\s*<\/section>/);
+  const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
+  assert.match(chrome, /#route-search-panel:has\(\.route-error\) \{ padding-bottom: 10px; \}/);
+  assert.match(chrome, /#route-search-panel \.route-error \{ margin-top: 0; \}/);
+});
+
 test("examples animate input without searching; the search button retains the existing route handler", () => {
   assert.match(app, /밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해\. 가로등이 많고 계단 없는 길로 안내해줘\./);
   assert.match(app, /낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘\./);

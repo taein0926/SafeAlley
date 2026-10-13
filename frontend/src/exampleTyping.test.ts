@@ -24,7 +24,7 @@ test("examples append exactly one Unicode character and complete only on the fin
   const states: boolean[] = [];
   const typer = createExampleTyper({
     onText: (text, complete) => texts.push({ text, complete }), onTypingChange: value => states.push(value),
-    characterDelayMs: 1, wordPauseMs: 15,
+    characterDelayMs: 1,
   });
   try {
     typer.start("밤 💡길");
@@ -35,12 +35,28 @@ test("examples append exactly one Unicode character and complete only on the fin
   } finally { typer.dispose(); }
 });
 
+test("spaces use the same default 55ms interval as every other character", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const texts: string[] = [];
+  const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {} });
+  try {
+    typer.start("밤 길");
+    for (const expected of ["밤", "밤 ", "밤 길"]) {
+      const count = texts.length;
+      context.mock.timers.tick(54);
+      assert.equal(texts.length, count);
+      context.mock.timers.tick(1);
+      assert.equal(texts.at(-1), expected);
+    }
+  } finally { typer.dispose(); }
+});
+
 test("cancel prevents late characters overwriting manual input; a replacement starts fresh", async () => {
   const texts: string[] = [];
-  const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {}, characterDelayMs: 1, wordPauseMs: 50 });
+  const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {}, characterDelayMs: 10 });
   try {
     typer.start("밤 CCTV 많은 길");
-    await until(() => texts.at(-1) === "밤 ");
+    await until(() => texts.includes("밤 "));
     typer.cancel();
     const count = texts.length;
     await sleep(60);
@@ -53,12 +69,12 @@ test("cancel prevents late characters overwriting manual input; a replacement st
 
 test("starting another example cancels the previous timer and disposal stops all input", async () => {
   const texts: string[] = [];
-  const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {}, characterDelayMs: 1, wordPauseMs: 50 });
+  const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {}, characterDelayMs: 10 });
   typer.start("밤 CCTV 많은 길");
-  await until(() => texts.at(-1) === "밤 ");
+  await until(() => texts.includes("밤 "));
   const count = texts.length;
   typer.start("낮 안전시설");
-  await until(() => texts.at(-1) === "낮 ");
+  await until(() => texts.includes("낮 "));
   typer.dispose();
   const stopped = texts.length;
   await sleep(60);
@@ -75,7 +91,7 @@ test("typing reaches the preview pipeline at word boundaries and idle after fina
     onPending() {}, onEmpty() {}, onResult() {}, onError(error) { throw error; },
     boundaryDelayMs: 1, idleDelayMs: 30, minimumIntervalMs: 0,
   });
-  const typer = createExampleTyper({ onText: text => scheduler.update(text), onTypingChange() {}, characterDelayMs: 1, wordPauseMs: 15 });
+  const typer = createExampleTyper({ onText: text => scheduler.update(text), onTypingChange() {}, characterDelayMs: 10 });
   try {
     typer.start("밤 CCTV 많은 길");
     await until(() => calls.length === 4);

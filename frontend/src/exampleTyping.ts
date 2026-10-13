@@ -2,7 +2,6 @@ type Options = {
   onText: (text: string, complete: boolean) => void;
   onTypingChange: (typing: boolean) => void;
   characterDelayMs?: number;
-  wordPauseMs?: number;
 };
 
 // This only animates input. The existing preview API interprets the text.
@@ -34,8 +33,7 @@ export function createExampleTyper(options: Options) {
         const complete = index === characters.length;
         options.onText(typed, complete);
         if (complete) { timer = undefined; options.onTypingChange(false); return; }
-        timer = setTimeout(tick, /\s/u.test(characters[index - 1])
-          ? options.wordPauseMs ?? 650 : options.characterDelayMs ?? 55);
+        timer = setTimeout(tick, options.characterDelayMs ?? 55);
       }
       if (characters.length) timer = setTimeout(tick, options.characterDelayMs ?? 55);
       else { options.onText("", true); options.onTypingChange(false); }
