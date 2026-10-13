@@ -94,16 +94,16 @@
 /* Keep the map-side shadow, but stop it spilling back onto the search card. */
 .app-shell .search-panel-handle { clip-path: inset(-40px -40px -40px 0); }
 
-/* Building details: 30% transparent surfaces, without fading their text. */
-.app-shell .map-info-panel[data-kind="building"] {
+/* Building/facility/stairs/bridge details: 30% transparent surfaces, opaque text. */
+.app-shell .map-info-panel:is([data-kind="building"], [data-kind="streetlight"], [data-kind="cctv"], [data-kind="stairs"], [data-kind="bridge"]) {
   --building-detail-surface: rgba(255, 255, 255, .7);
   --building-detail-accent: rgba(23, 105, 223, .7);
   --building-detail-hover: rgba(230, 239, 255, .7);
   background: var(--building-detail-surface);
   backdrop-filter: blur(1px);
 }
-.map-info-panel[data-kind="building"] .panel-close { background: var(--building-detail-surface); }
-.map-info-panel[data-kind="building"] .panel-close:hover { background: var(--building-detail-hover); }
+.map-info-panel:is([data-kind="building"], [data-kind="streetlight"], [data-kind="cctv"], [data-kind="stairs"], [data-kind="bridge"]) .panel-close { background: var(--building-detail-surface); }
+.map-info-panel:is([data-kind="building"], [data-kind="streetlight"], [data-kind="cctv"], [data-kind="stairs"], [data-kind="bridge"]) .panel-close:hover { background: var(--building-detail-hover); }
 .map-info-panel[data-kind="building"] .building-location-actions button { background: var(--building-detail-surface); border-color: var(--building-detail-accent); }
 .map-info-panel[data-kind="building"] .building-location-actions button:last-child { color: #fff; background: var(--building-detail-accent); }
 .map-info-panel[data-kind="building"] .building-location-actions button:hover:not(:disabled) { background: var(--building-detail-hover); }

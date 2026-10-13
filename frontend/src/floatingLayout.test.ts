@@ -56,15 +56,21 @@ test("floating route backgrounds reveal the map with minimal blur without fading
   assert.doesNotMatch(cards, /\bopacity\s*:/);
 });
 
-test("only building details and their buttons have thirty-percent-transparent surfaces", () => {
+test("building, streetlight, CCTV, stairs and bridge details share thirty-percent-transparent surfaces", () => {
   const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
   assert.match(app, /data-kind=\{mapInfo.kind\}/);
-  const panel = chrome.match(/\.app-shell \.map-info-panel\[data-kind="building"\] \{([^}]+)\}/)?.[1] ?? "";
+  const shared = chrome.match(/\.app-shell (\.map-info-panel:is\(([^)]+)\)) \{([^}]+)\}/);
+  assert.ok(shared);
+  assert.deepEqual(shared[2].match(/data-kind="([^"]+)"/g), [
+    'data-kind="building"', 'data-kind="streetlight"', 'data-kind="cctv"', 'data-kind="stairs"', 'data-kind="bridge"',
+  ]);
+  const panel = shared[3];
   assert.match(panel, /--building-detail-surface: rgba\(255, 255, 255, \.7\);/);
   assert.match(panel, /--building-detail-accent: rgba\(23, 105, 223, \.7\);/);
   assert.match(panel, /backdrop-filter: blur\(1px\);/);
   assert.doesNotMatch(panel, /\bopacity\s*:/);
-  assert.match(chrome, /\[data-kind="building"\] \.panel-close \{ background: var\(--building-detail-surface\); \}/);
+  assert.ok(chrome.includes(`${shared[1]} .panel-close { background: var(--building-detail-surface); }`));
+  assert.ok(chrome.includes(`${shared[1]} .panel-close:hover { background: var(--building-detail-hover); }`));
   assert.match(chrome, /\[data-kind="building"\] \.building-location-actions button:last-child \{ color: #fff; background: var\(--building-detail-accent\); \}/);
 });
 
