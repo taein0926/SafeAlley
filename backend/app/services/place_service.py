@@ -33,7 +33,9 @@ def resolve_place(name: str) -> dict[str, object]:
     try:
         building = find_building_place(name, bounds)
     except BuildingPlaceAmbiguousError as exc:
-        raise PlaceAmbiguousError(str(exc)) from exc
+        raise PlaceAmbiguousError(
+            str(exc), selection_context=exc.selection_context,
+        ) from exc
     except BuildingRepositoryError as exc:
         raise PlaceRepositoryError("GIS 건물 검색에 연결할 수 없습니다.") from exc
     if building is not None:

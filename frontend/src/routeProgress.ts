@@ -1,4 +1,5 @@
 import type { RouteQueryResponse, RouteCandidate } from "./types";
+import { errorFromApiDetail } from "./placeSelection.ts";
 
 export type RouteWorkUpdate = { id: string; message: string; state: "working" | "completed" | "unavailable" };
 
@@ -14,7 +15,7 @@ export type RouteProgressEvent =
   | { type: "route_progress"; data: RouteWorkUpdate }
   | { type: "resolved"; origin: RouteQueryResponse["resolved_origin"]; destination: RouteQueryResponse["resolved_destination"] }
   | { type: "result"; data: RouteQueryResponse }
-  | { type: "error"; detail: string };
+  | { type: "error"; detail: unknown };
 
 export async function queryRouteWithProgress(
   query: string,
@@ -40,7 +41,7 @@ export async function queryRouteWithProgress(
   function processLine(line: string) {
     if (!line.trim()) return;
     const event = JSON.parse(line) as RouteProgressEvent;
-    if (event.type === "error") throw new Error(event.detail);
+    if (event.type === "error") throw errorFromApiDetail(event.detail, "경로 검색에 실패했습니다.");
     if (event.type === "result") result = event.data;
     onEvent(event);
   }

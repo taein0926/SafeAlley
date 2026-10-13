@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.api import agent as agent_api
 from app.main import app
 from app.schemas.agent import AgentExecutionResponse, ParsedRouteIntent
+from app.repositories.place_repository import PlaceAmbiguousError
 
 
 def test_stream_and_regular_query_share_the_same_workflow(monkeypatch):
@@ -53,3 +54,23 @@ def test_stream_reports_parser_error_without_claiming_route_completion(monkeypat
         {"type": "stage", "stage": "interpreting"},
         {"type": "error", "detail": "invalid local model output"},
     ]
+
+
+def test_stream_identifies_which_apartment_endpoint_needs_map_selection(monkeypatch):
+    monkeypatch.setattr(agent_api, "parse_route_intent", lambda _: ParsedRouteIntent(
+        origin_name="테스트아파트", destination_name="서화초등학교",
+    ))
+    context = {
+        "code": "building_selection_required",
+        "place_name": "테스트아파트",
+        "focus": {"west": 126.65, "south": 37.45, "east": 126.66, "north": 37.46},
+    }
+    monkeypatch.setattr(agent_api, "resolve_place", lambda _: (_ for _ in ()).throw(
+        PlaceAmbiguousError("동을 선택해 주세요.", selection_context=context)
+    ))
+    response = TestClient(app).post("/api/agent/query/stream", json={"query": "아파트에서 학교까지"})
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events[-1] == {
+        "type": "error",
+        "detail": {"message": "동을 선택해 주세요.", "target": "origin", **context},
+    }
