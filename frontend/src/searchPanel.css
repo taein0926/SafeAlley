@@ -302,3 +302,4 @@
 #route-search-panel .place-candidates li:hover { border-color: var(--search-accent); }
 #route-search-panel .place-candidates button:hover { background: var(--search-active); }
 #route-search-panel .place-candidates button:focus-visible { outline: 2px solid var(--search-accent); outline-offset: -2px; }
+#route-search-panel .place-candidates .place-candidate-letter { display: inline-block; color: var(--place-candidate-accent); margin-right: 8px; }

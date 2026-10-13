@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { candidateFocusBounds, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces } from "./placeSelection.ts";
+import { candidateFocusBounds, silverTownMapCandidates, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces } from "./placeSelection.ts";
 
 test("structured apartment ambiguity becomes a map-selection error", () => {
   const error = errorFromApiDetail({
@@ -38,6 +38,17 @@ test("apartment selection focuses the map and activates the requested endpoint",
 
 const university = (address: string) => ({
   name: "인천대학교", address, category: "building", source: "molit-gis-building", latitude: 37.47, longitude: 126.66,
+});
+
+test("only Silver Town destination candidates receive stable display letters", () => {
+  const places = Array.from({ length: 7 }, (_, index) => ({ ...university(String(index)), name: "실버타운" }));
+  const error = new PlaceCandidatesRequiredError("choose", places, "destination", "실버타운");
+  const markers = silverTownMapCandidates(error);
+  assert.deepEqual(markers.map(marker => marker.label), ["A", "B", "C", "D", "E", "F", "G"]);
+  assert.equal(markers[3].place, places[3], "Keep exact DB coordinates and names");
+  assert.deepEqual(silverTownMapCandidates(error.forTarget("origin")), []);
+  assert.deepEqual(silverTownMapCandidates(new PlaceCandidatesRequiredError("choose", places, "destination", "인천대")), []);
+  assert.deepEqual(silverTownMapCandidates(null), []);
 });
 
 test("candidate preview frames the exact coordinate without selecting a place", () => {

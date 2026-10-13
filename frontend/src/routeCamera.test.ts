@@ -7,6 +7,25 @@ test("route camera is oblique and keeps short routes at a usable distance", () =
   assert.ok(routeCameraFrame([], 1668, 970, .65, 416).range >= 280);
 });
 
+test("nearby place candidates fit the oblique view outside the search panel", () => {
+  const width = 1440, height = 960, inset = 380, padding = 128, fov = .8;
+  const points = [
+    { x: -22, y: 26, z: 0 }, { x: -36, y: 32, z: 0 },
+    { x: -12, y: -13, z: 0 }, { x: 1, y: -19, z: 0 },
+    { x: 16, y: 9, z: 0 }, { x: 4, y: 15, z: 0 },
+    { x: -9, y: 20, z: 0 },
+  ];
+  const frame = routeCameraFrame(points, width, height, fov, inset, 0, padding, ROUTE_CAMERA_PITCH);
+  assert.equal(frame.pitch, -55 * Math.PI / 180);
+  for (const point of points) {
+    const depth = frame.range + point.y * Math.cos(-frame.pitch);
+    const x = (1 + (point.x - frame.rightOffset) / (depth * Math.tan(fov / 2) * width / height)) * width / 2;
+    const y = (1 - (point.y * Math.sin(-frame.pitch) - frame.upOffset) / (depth * Math.tan(fov / 2))) * height / 2;
+    assert.ok(x >= inset + padding && x <= width - padding);
+    assert.ok(y >= padding && y <= height - padding);
+  }
+});
+
 test("actual route fits tightly outside the result panel for every heading", () => {
   for (const [width, height, inset] of [[1668, 970, 416], [900, 768, 416], [1280, 800, 0]]) {
     for (const heading of [0, Math.PI / 2, Math.PI, 4]) {

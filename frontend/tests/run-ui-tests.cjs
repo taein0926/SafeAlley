@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const tests = [
   'welcome-intro', 'compact-intent-ui', 'live-intent-retention', 'search-picker-ui',
-  'weather-hud-ui', 'robot-progress', 'route-progress-ui', 'route-transparency-ui', 'floating-routes', 'place-candidates',
+  'weather-hud-ui', 'robot-progress', 'route-progress-ui', 'route-transparency-ui', 'floating-routes', 'place-candidates', 'silver-town-candidates',
 ];
 let failures = 0;
 for (const name of tests) {

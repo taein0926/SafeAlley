@@ -45,10 +45,10 @@ import { routeMarkerImage, routeMarkerLocations, routeAccessConnectors, selected
 import { CROSSING_GUIDE_IMAGE, selectedRouteGuidePoints } from "../routeGuidePoints";
 import { INITIAL_MAP_VIEW, zoomTargetHeight } from "../mapNavigation";
 import { routeCapPath, routeEndCaps, routeGeometrySignature, routeLineStyle, routePickPriority } from "../routePresentation";
-import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset } from "../routeCamera";
+import { routeCameraFrame, routeCameraHeading, routeCameraTargetOffset, ROUTE_CAMERA_PITCH } from "../routeCamera";
 import { FacilityViewportCache, type FacilityFeature } from "../facilityViewport";
 import { MapRenderQuality, setRenderResolution, MOVING_RESOLUTION, REST_RESOLUTION } from "../mapRenderQuality";
-import type { MapFocusBounds } from "../placeSelection";
+import { type MapFocusBounds, type MapPlaceCandidate } from "../placeSelection";
 
 export type BuildingMapStatus = {
   kind: "loading" | "ready" | "zoom-in" | "error";
@@ -84,6 +84,8 @@ type CesiumRoadMapProps = {
   onResetView: () => void;
   focusBounds: MapFocusBounds | null;
   previewPlace: ResolvedPlace | null;
+  placeCandidates: MapPlaceCandidate[];
+  onPlaceCandidateSelect: (place: ResolvedPlace) => void;
 };
 
 export type FacilityVisibility = {
@@ -302,6 +304,8 @@ export function CesiumRoadMap({
   onResetView,
   focusBounds,
   previewPlace,
+  placeCandidates,
+  onPlaceCandidateSelect,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -1334,6 +1338,16 @@ export function CesiumRoadMap({
 
   useEffect(() => {
     const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !placeCandidates.length) return;
+    viewer.camera.cancelFlight();
+    // Show all candidate buildings in the existing oblique 3D view, while
+    // retaining the shared fit/padding for their selectable pins.
+    flyToRouteFrame(viewer, placeCandidates.map(({ place }) => [place.longitude, place.latitude]), 0, ROUTE_CAMERA_PITCH);
+    viewer.scene.requestRender();
+  }, [placeCandidates]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
     const layer = routePinsRef.current;
     if (!viewer || viewer.isDestroyed() || !layer) return;
     const points = routeMarkerLocations(routeCandidates, selectedRouteType, draftLocations);
@@ -1356,6 +1370,10 @@ export function CesiumRoadMap({
     pins.push({ element: previewElement,
       position: previewPlace ? Cartesian3.fromDegrees(previewPlace.longitude, previewPlace.latitude) : null,
       screen: new Cartesian2(), offsetX: previewElement.offsetWidth / 2, offsetY: previewElement.offsetHeight - 6 });
+    const candidatePins = placeCandidates.map(({ place }, index) => ({
+      element: layer.querySelector<HTMLElement>(`[data-map-candidate="${index}"]`)!,
+      position: Cartesian3.fromDegrees(place.longitude, place.latitude), screen: new Cartesian2(),
+    }));
     const direction = new Cartesian3();
     const normal = new Cartesian3();
     const connectors = routeAccessConnectors(routeCandidates, selectedRouteType, draftLocations).map(link => ({
@@ -1422,6 +1440,18 @@ export function CesiumRoadMap({
           if (pin.element.style.transform !== transform) pin.element.style.transform = transform;
         }
       }
+      const candidateScreens = candidatePins.map(pin => projectGround(pin.position, pin.screen));
+      const canvas = viewer.canvas.getBoundingClientRect();
+      candidatePins.forEach((pin, index) => {
+        const point = candidateScreens[index];
+        const visible = point && point.x >= 0 && point.x <= canvas.width && point.y >= 0 && point.y <= canvas.height;
+        pin.element.style.visibility = visible ? "visible" : "hidden";
+        if (!visible || !point) return;
+        // SVG tip (15, 40) stays exactly on the projected DB coordinate.
+        const x = Math.round((point.x - 15) * ratio) / ratio;
+        const y = Math.round((point.y - 40) * ratio) / ratio;
+        pin.element.style.transform = `translate(${x}px, ${y}px)`;
+      });
     };
     const remove = viewer.scene.postRender.addEventListener(update);
     update();
@@ -1431,8 +1461,9 @@ export function CesiumRoadMap({
       for (const pin of pins) pin.element.style.visibility = "hidden";
       for (const cap of caps) cap.element.style.visibility = "hidden";
       for (const link of connectors) link.element.style.visibility = "hidden";
+      for (const pin of candidatePins) pin.element.style.visibility = "hidden";
     };
-  }, [draftLocations, routeCandidates, selectedRouteType, previewPlace]);
+  }, [draftLocations, routeCandidates, selectedRouteType, previewPlace, placeCandidates]);
 
   function navigateMap(action: "home" | "in" | "out") {
     const viewer = viewerRef.current;
@@ -1474,8 +1505,8 @@ export function CesiumRoadMap({
         </div>
       )}
     </div>
-    <div ref={routePinsRef} className="route-pins" aria-hidden="true">
-      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+    <div ref={routePinsRef} className="route-pins" aria-hidden={placeCandidates.length ? undefined : true}>
+      <svg width="100%" height="100%" aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
         {(["origin", "destination"] as const).map(kind => <line key={kind} data-access-link={kind}
           stroke={nightMode ? "#c3cad3" : "#919aa6"} strokeWidth="5" strokeDasharray="0 10" strokeLinecap="round"
           style={{ visibility: "hidden" }} />)}
@@ -1494,6 +1525,17 @@ export function CesiumRoadMap({
         <div className="place-preview-caption"><strong>{previewPlace?.name}</strong><span>{previewPlace ? previewPlace.address ?? "주소 정보 없음" : ""}</span></div>
         <span className="place-preview-dot" />
       </div>
+      {placeCandidates.map(({ label, place }, index) => (
+        <button key={label} type="button" className="place-candidate-pin" data-map-candidate={index}
+          aria-label={`${label} ${place.name} ${place.address ?? ""} 도착지로 선택`}
+          title={`${label} · ${place.name} · ${place.address ?? "주소 정보 없음"}`}
+          onClick={() => onPlaceCandidateSelect(place)}>
+          <svg viewBox="0 0 30 42" aria-hidden="true">
+            <path d="M15 40C13 33 2 23 2 15a13 13 0 0 1 26 0c0 8-11 18-13 25Z" />
+            <text x="15" y="20" textAnchor="middle">{label}</text>
+          </svg>
+        </button>
+      ))}
     </div>
     <nav className="map-navigation" aria-label="지도 확대 및 위치 이동">
       <button className="map-home" type="button" aria-label="현재 위치로 이동 · 정부인천지방합동청사" title="정부인천지방합동청사 초기 화면으로 이동" onClick={() => navigateMap("home")}>

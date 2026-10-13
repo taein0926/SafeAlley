@@ -16,7 +16,7 @@ import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
 import { createExampleTyper } from "./exampleTyping";
 import { ExamplePicker } from "./components/ExamplePicker";
-import { candidateFocusBounds, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces, type SelectedPlaces, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
+import { candidateFocusBounds, silverTownMapCandidates, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces, type SelectedPlaces, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
 
 import {
   CesiumRoadMap,
@@ -125,6 +125,7 @@ function App() {
     aiQuery: string | null;
   } | null>(null);
   const [previewPlace, setPreviewPlace] = useState<ResolvedPlace | null>(null);
+  const mapPlaceCandidates = useMemo(() => silverTownMapCandidates(candidateSelection?.error ?? null), [candidateSelection]);
   useEffect(() => { setPreviewPlace(null); }, [candidateSelection]);
   const buildingRequestSerial = useRef(0);
   const [buildingSelectionPending, setBuildingSelectionPending] = useState(false);
@@ -410,6 +411,10 @@ function App() {
     selected: SelectedPlaces = {}, aiQuery: string | null = null) {
     if (error instanceof PlaceCandidatesRequiredError) {
       setCandidateSelection({ error, interpretation: interpretation ?? null, selected, aiQuery });
+      if (silverTownMapCandidates(error).length) {
+        setMapFocus(null);
+        setMapInfo(null);
+      }
       setSearchPanelOpen(true);
       setRequestState("idle");
       setProgressStage("resolving");
@@ -593,6 +598,8 @@ function App() {
         onResetView={() => setRouteDetailOpen(false)}
         focusBounds={mapFocus}
         previewPlace={previewPlace}
+        placeCandidates={mapPlaceCandidates}
+        onPlaceCandidateSelect={choosePlaceCandidate}
       />
       {showSearchResults && !mapInfo && (
         <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
@@ -746,11 +753,11 @@ function App() {
             <ul>{candidateSelection.error.candidates.map((place, index) => (
               <li key={`${place.source}:${place.latitude}:${place.longitude}:${index}`}>
                 <button type="button" className="place-candidate-select" onClick={() => choosePlaceCandidate(place)} disabled={requestState === "loading"}>
-                  <strong>{place.name}</strong><span>{place.address ?? "주소 정보 없음"}</span>
+                  <strong>{mapPlaceCandidates[index] && <b className="place-candidate-letter">{mapPlaceCandidates[index].label}</b>}{place.name}</strong><span>{place.address ?? "주소 정보 없음"}</span>
                 </button>
-                <button type="button" className="place-candidate-preview" aria-label={`${place.name} ${place.address ?? ""} 위치 보기`} onClick={() => { setPreviewPlace(place); setMapFocus(candidateFocusBounds(place)); }} disabled={requestState === "loading"}>
+                {!mapPlaceCandidates.length && <button type="button" className="place-candidate-preview" aria-label={`${place.name} ${place.address ?? ""} 위치 보기`} onClick={() => { setPreviewPlace(place); setMapFocus(candidateFocusBounds(place)); }} disabled={requestState === "loading"}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 6 6" /></svg>
-                </button>
+                </button>}
               </li>
             ))}</ul>
           </section>

@@ -10,6 +10,15 @@ export type MapFocusBounds = {
 export type PlaceSelectionTarget = "origin" | "destination";
 export type SelectedPlaces = Partial<Record<PlaceSelectionTarget, ResolvedPlace>>;
 
+export type MapPlaceCandidate = { label: string; place: ResolvedPlace };
+
+// Display-only labels: do not rename DB places or change their routing coordinates.
+export function silverTownMapCandidates(error: PlaceCandidatesRequiredError | null): MapPlaceCandidate[] {
+  if (!error || error.target !== "destination"
+    || error.placeName?.replace(/\s/g, "") !== "실버타운") return [];
+  return error.candidates.map((place, index) => ({ label: String.fromCharCode(65 + index), place }));
+}
+
 export function candidateFocusBounds(place: ResolvedPlace): MapFocusBounds {
   // Show the surrounding streets, not only the candidate building.
   // Previewing must not change the selected route endpoints.
