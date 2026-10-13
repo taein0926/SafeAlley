@@ -37,12 +37,12 @@ def test_gis_query_is_bounded_parameterized_and_returns_wgs84(monkeypatch):
     calls = fake_database(monkeypatch, [row])
     assert repository.find_building_place(" 테 스트건물 ", BOUNDS) == row
     sql, params = calls[0]
-    assert params == (*BOUNDS, *(["테스트건물"] * 5), *BOUNDS)
+    assert params == (*BOUNDS, *(["테스트건물"] * 4), False, "테스트건물", *BOUNDS)
     assert "ST_Centroid" in sql and "ST_Covers" in sql
     assert "ST_Collect" in sql and "GROUP BY n" in sql
     assert "WHEN a <> ''" in sql
     assert "main_use" in sql and "__residential_building__" in sql
-    assert "min(match_rank)" in sql and "LIMIT 2" in sql
+    assert "min(match_rank)" in sql and "LIMIT 20" in sql
     assert "ST_Transform(ST_Centroid(geom), 4326)" in sql
     assert "FROM buildings" in sql and "INSERT" not in sql
 
@@ -56,8 +56,27 @@ def test_gis_query_treats_wildcards_as_literal_text(monkeypatch):
 
 def test_gis_never_arbitrarily_selects_distinct_facility_groups(monkeypatch):
     fake_database(monkeypatch, [{"name": "동일건물"}, {"name": "동일건물"}])
-    with pytest.raises(repository.BuildingPlaceAmbiguousError, match="전체 주소"):
+    with pytest.raises(repository.BuildingPlaceAmbiguousError, match="선택"):
         repository.find_building_place("동일건물", BOUNDS)
+
+
+def test_gis_name_search_excludes_address_only_matches(monkeypatch):
+    calls = fake_database(monkeypatch, [])
+    assert repository.find_building_place("인천대", BOUNDS) is None
+    sql, params = calls[0]
+    assert "OR (%s AND strpos(a, %s) > 0)" in sql
+    assert params[8] is False
+
+
+def test_gis_distinct_addresses_return_selectable_candidates(monkeypatch):
+    fake_database(monkeypatch, [
+        dict(name="인천대학교", address="도화동 995", source="molit-gis-building", category="building", latitude=37.47, longitude=126.66),
+        dict(name="인천대학교", address="도화동 112-19", source="molit-gis-building", category="building", latitude=37.48, longitude=126.67),
+    ])
+    with pytest.raises(repository.BuildingPlaceAmbiguousError) as raised:
+        repository.find_building_place("인천대", BOUNDS)
+    assert raised.value.selection_context["code"] == "place_selection_required"
+    assert len(raised.value.selection_context["candidates"]) == 2
 
 
 def test_gis_keeps_apartment_blocks_separate_and_requests_map_selection(monkeypatch):

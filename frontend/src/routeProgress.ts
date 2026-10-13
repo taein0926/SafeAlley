@@ -1,5 +1,6 @@
 import type { RouteQueryResponse, RouteCandidate } from "./types";
 import { errorFromApiDetail } from "./placeSelection.ts";
+import type { SelectedPlaces } from "./placeSelection.ts";
 
 export type RouteWorkUpdate = { id: string; message: string; state: "working" | "completed" | "unavailable" };
 
@@ -21,15 +22,21 @@ export async function queryRouteWithProgress(
   query: string,
   userId: string,
   onEvent: (event: RouteProgressEvent) => void,
+  places?: SelectedPlaces,
 ): Promise<RouteQueryResponse> {
   const response = await fetch("/api/agent/query/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
-    body: JSON.stringify({ query, source: "osm", user_id: userId }),
+    body: JSON.stringify({ query, source: "osm", user_id: userId,
+      ...(places?.origin && places.destination ? {
+        origin: { latitude: places.origin.latitude, longitude: places.origin.longitude },
+        destination: { latitude: places.destination.latitude, longitude: places.destination.longitude },
+      } : {}),
+    }),
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { detail?: string };
-    throw new Error(payload.detail ?? `HTTP ${response.status}`);
+    const payload = await response.json().catch(() => ({})) as { detail?: unknown };
+    throw errorFromApiDetail(payload.detail, `HTTP ${response.status}`);
   }
   if (!response.body) throw new Error("진행 상태를 받을 수 없습니다.");
 

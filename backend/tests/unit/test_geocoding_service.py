@@ -1,4 +1,7 @@
+import pytest
+
 from app.services import geocoding_service
+from app.repositories.place_repository import PlaceAmbiguousError
 
 
 BOUNDS = (126.6, 37.4, 126.75, 37.52)
@@ -61,3 +64,35 @@ def test_reverse_geocoder_reuses_shared_nominatim_request(monkeypatch) -> None:
     assert captured[0][1]["zoom"] == 18
     assert result["name"] == "인천대로"
     assert result["source_id"] == "way-456"
+
+
+def test_geocoder_rejects_address_only_name_match(monkeypatch) -> None:
+    monkeypatch.setattr(geocoding_service, "_request_results", lambda *_: [{
+        "lat": "37.45", "lon": "126.65", "osm_id": 123,
+        "name": "인하대학교", "namedetails": {"name:ko": "인하대학교"},
+        "display_name": "인하대학교, 인천대로, 미추홀구",
+    }])
+    assert geocoding_service.geocode_place("인천대", BOUNDS) is None
+    assert geocoding_service.geocode_place("인천대로 100", BOUNDS) is not None
+
+
+def test_geocoder_checks_other_results_and_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(geocoding_service, "_request_results", lambda *_: [
+        {"lat": "37.45", "lon": "126.65", "osm_id": 1, "name": "인하대학교",
+         "display_name": "인하대학교, 인천대로"},
+        {"lat": "37.47", "lon": "126.67", "osm_id": 2, "name": "인천대학교",
+         "namedetails": {"short_name": "인천대"}},
+    ])
+    assert geocoding_service.geocode_place("인천대", BOUNDS)["name"] == "인천대학교"
+
+
+def test_geocoder_does_not_choose_first_ambiguous_campus(monkeypatch) -> None:
+    monkeypatch.setattr(geocoding_service, "_request_results", lambda *_: [
+        {"lat": "37.45", "lon": "126.65", "osm_id": 1, "name": "인천대학교",
+         "display_name": "인천대학교, 도화동 112-19"},
+        {"lat": "37.47", "lon": "126.67", "osm_id": 2, "name": "인천대학교",
+         "display_name": "인천대학교, 도화동 995"},
+    ])
+    with pytest.raises(PlaceAmbiguousError) as error:
+        geocoding_service.geocode_place("인천대", BOUNDS)
+    assert len(error.value.selection_context["candidates"]) == 2

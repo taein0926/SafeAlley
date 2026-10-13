@@ -15,10 +15,12 @@ test("search errors retain their position and get the same bottom padding as the
 
 test("examples animate input without searching; the search button retains the existing route handler", () => {
   assert.match(app, /밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해\. 가로등이 많고 계단 없는 길로 안내해줘\./);
-  assert.match(app, /낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘\./);
+  assert.match(app, /밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘\. 계단도 피해서 안내해\./);
   assert.match(app, /낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘\./);
   const examplesArray = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)?.[1];
   assert.equal(examplesArray?.match(/"[^"\n]+"/g)?.length, 4);
+  const examples = examplesArray?.match(/"[^"\n]+"/g)?.map(value => JSON.parse(value));
+  assert.equal(examples?.[1], "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.");
   assert.match(app, /await runAiSearch\(query\)/);
   assert.match(app, /onSelect=\{typeExample\}/);
   assert.match(picker, /setOpen\(false\); onSelect\(example\)/);
@@ -33,7 +35,7 @@ test("examples animate input without searching; the search button retains the ex
   assert.match(sharedSearch, /queryRouteWithProgress\(text.trim\(\), userId/);
   assert.equal(app.match(/await queryRouteWithProgress\(/g)?.length, 1);
   assert.match(picker, /aria-label="예시 경로 검색"/);
-  assert.match(app, /\{displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">/);
+  assert.match(app, /\{displayedCandidates.length === 0 && requestState !== "loading" && !candidateSelection && <div className="search-empty">/);
 });
 
 test("example selector opens the same four element-only labels above the button in two columns", () => {
@@ -41,7 +43,7 @@ test("example selector opens the same four element-only labels above the button 
   assert.equal(app.match(/<ExamplePicker/g)?.length, 1);
   assert.match(picker, /open && <div/);
   assert.match(picker, /className="search-example-label">\{LABELS\[index\]\}/);
-  assert.match(picker, /"가로등 · 계단", "CCTV", "가로등 · 건널목", "CCTV · 건널목"/);
+  assert.match(picker, /"가로등 · 계단", "가로등 · CCTV · 계단", "가로등 · 건널목", "CCTV · 건널목"/);
   assert.doesNotMatch(picker, /많음|회피/);
   assert.doesNotMatch(picker, /<span>\{example\}<\/span>/);
   assert.match(picker, /disabled=\{disabled\}/);

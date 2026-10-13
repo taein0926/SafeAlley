@@ -32,7 +32,7 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { RouteCandidate, RouteType } from "../types";
+import type { ResolvedPlace, RouteCandidate, RouteType } from "../types";
 import { estimatedWalkingMinutes, type BuildingMapSelection } from "../routeSearch";
 export type { BuildingMapSelection } from "../routeSearch";
 import { roadBboxQuery, type RoadViewport } from "../roadViewport";
@@ -83,6 +83,7 @@ type CesiumRoadMapProps = {
   nightMode: boolean;
   onResetView: () => void;
   focusBounds: MapFocusBounds | null;
+  previewPlace: ResolvedPlace | null;
 };
 
 export type FacilityVisibility = {
@@ -300,6 +301,7 @@ export function CesiumRoadMap({
   nightMode,
   onResetView,
   focusBounds,
+  previewPlace,
 }: CesiumRoadMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -1350,6 +1352,10 @@ export function CesiumRoadMap({
     pins.push({ element: labelElement,
       position: labelPoint ? Cartesian3.fromDegrees(labelPoint.longitude, labelPoint.latitude) : null,
       screen: new Cartesian2(), offsetX: labelElement.offsetWidth / 2, offsetY: labelElement.offsetHeight + 9 });
+    const previewElement = layer.querySelector<HTMLElement>(".place-preview-marker")!;
+    pins.push({ element: previewElement,
+      position: previewPlace ? Cartesian3.fromDegrees(previewPlace.longitude, previewPlace.latitude) : null,
+      screen: new Cartesian2(), offsetX: previewElement.offsetWidth / 2, offsetY: previewElement.offsetHeight - 6 });
     const direction = new Cartesian3();
     const normal = new Cartesian3();
     const connectors = routeAccessConnectors(routeCandidates, selectedRouteType, draftLocations).map(link => ({
@@ -1426,7 +1432,7 @@ export function CesiumRoadMap({
       for (const cap of caps) cap.element.style.visibility = "hidden";
       for (const link of connectors) link.element.style.visibility = "hidden";
     };
-  }, [draftLocations, routeCandidates, selectedRouteType]);
+  }, [draftLocations, routeCandidates, selectedRouteType, previewPlace]);
 
   function navigateMap(action: "home" | "in" | "out") {
     const viewer = viewerRef.current;
@@ -1484,6 +1490,10 @@ export function CesiumRoadMap({
       <div className="route-map-sign" style={{ "--route-sign-outline": routeLineStyle(selectedRouteType ?? "custom", selectedRouteType, nightMode).casingColor } as CSSProperties}><span>{selectedRouteType === "shortest" ? "최단경로" : "맞춤경로"}</span><strong>{signMinutes === null ? "시간 미제공" : `${signMinutes}분`}</strong></div>
       <img data-pin="origin" src={routeMarkerImage("origin")} width="40" height="50" alt="" draggable={false} />
       <img data-pin="destination" src={routeMarkerImage("destination")} width="40" height="50" alt="" draggable={false} />
+      <div className="place-preview-marker">
+        <div className="place-preview-caption"><strong>{previewPlace?.name}</strong><span>{previewPlace ? previewPlace.address ?? "주소 정보 없음" : ""}</span></div>
+        <span className="place-preview-dot" />
+      </div>
     </div>
     <nav className="map-navigation" aria-label="지도 확대 및 위치 이동">
       <button className="map-home" type="button" aria-label="현재 위치로 이동 · 정부인천지방합동청사" title="정부인천지방합동청사 초기 화면으로 이동" onClick={() => navigateMap("home")}>

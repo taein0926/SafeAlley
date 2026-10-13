@@ -289,3 +289,16 @@
 .route-progress-message--pending > :last-child { color: #b8c9d9; }
 .app-shell[data-theme="day"] .route-progress-message--pending > :last-child { color: #556879; }
 @media (prefers-reduced-motion: reduce) { .route-progress-thought-dot, .route-progress-robot-head, .route-progress-robot-eyes, .route-progress-robot-antenna { animation: none; opacity: .8; } }
+
+#route-search-panel .place-candidates { margin-top: 14px; font-size: 12px; }
+#route-search-panel .place-candidates > p { margin: 6px 0; color: var(--search-muted); }
+#route-search-panel .place-candidates ul { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow-y: auto; display: grid; gap: 6px; }
+#route-search-panel .place-candidates li { display: flex; gap: 0; border: 1px solid var(--search-line); border-radius: 8px; background: var(--search-field); }
+#route-search-panel .place-candidates button { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; text-align: left; border: 0; background: transparent; color: var(--search-text); cursor: pointer; }
+#route-search-panel .place-candidates .place-candidate-select { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#route-search-panel .place-candidates .place-candidate-select { border-radius: 7px 0 0 7px; }
+#route-search-panel .place-candidates .place-candidate-preview { width: 44px; flex: 0 0 44px; min-height: 44px; align-items: center; justify-content: center; padding: 0; border-left: 1px solid var(--search-line); border-radius: 0 7px 7px 0; }
+#route-search-panel .place-candidates button span { color: var(--search-muted); font-size: 11px; overflow-wrap: anywhere; }
+#route-search-panel .place-candidates li:hover { border-color: var(--search-accent); }
+#route-search-panel .place-candidates button:hover { background: var(--search-active); }
+#route-search-panel .place-candidates button:focus-visible { outline: 2px solid var(--search-accent); outline-offset: -2px; }

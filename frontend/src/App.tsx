@@ -16,7 +16,7 @@ import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
 import { createExampleTyper } from "./exampleTyping";
 import { ExamplePicker } from "./components/ExamplePicker";
-import { errorFromApiDetail, PlaceSelectionRequiredError, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
+import { candidateFocusBounds, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces, type SelectedPlaces, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
 
 import {
   CesiumRoadMap,
@@ -60,7 +60,7 @@ type HealthState =
 type SearchMode = "direct" | "ai";
 const SEARCH_EXAMPLES = [
   "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
-  "낮 2시에 경원초등학교에서 신기프라자까지 CCTV가 많은 길로 안내해줘.",
+  "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.",
   "밤 11시에 인천 비즈니스 고등학교에서 인천청인학교까지 가로등이 많고 횡단보도 적게 건너는 길로 가고 싶어",
   "낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘.",
 ] as const;
@@ -118,6 +118,14 @@ function App() {
   const [buildingSelectionMode, setBuildingSelectionMode] = useState<BuildingSelectionMode>(null);
   const [mapSelectionNotice, setMapSelectionNotice] = useState<MapSelectionNotice>(null);
   const [mapFocus, setMapFocus] = useState<MapFocusBounds | null>(null);
+  const [candidateSelection, setCandidateSelection] = useState<{
+    error: PlaceCandidatesRequiredError;
+    interpretation: RouteQueryResponse["interpretation"] | null;
+    selected: SelectedPlaces;
+    aiQuery: string | null;
+  } | null>(null);
+  const [previewPlace, setPreviewPlace] = useState<ResolvedPlace | null>(null);
+  useEffect(() => { setPreviewPlace(null); }, [candidateSelection]);
   const buildingRequestSerial = useRef(0);
   const [buildingSelectionPending, setBuildingSelectionPending] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
@@ -161,6 +169,7 @@ function App() {
     setSearchPanelOpen(true);
     setMapInfo(null);
     setErrorMessage("");
+    setCandidateSelection(null);
     setRequestState("idle");
     setActiveSearchMode(null);
     setQueryEditing(true);
@@ -174,6 +183,7 @@ function App() {
     setActiveSearchMode(null);
     setRequestState("idle");
     setErrorMessage("");
+    setCandidateSelection(null);
     setMapInfo(null);
     setQuery(text);
     livePreview.update(text);
@@ -359,6 +369,7 @@ function App() {
     else setDestinationLocation(textLocation);
     if (buildingSelectionMode === target) setBuildingSelectionMode(null);
     setMapSelectionNotice(null);
+    setCandidateSelection(null);
   }
 
   function beginSearch(searchMode: SearchMode) {
@@ -373,6 +384,7 @@ function App() {
     setProgressWork([]);
     setProgressPlaces({ origin: null, destination: null });
     setErrorMessage("");
+    setCandidateSelection(null);
     setSearchResult(null);
     setSelectedRouteType(null);
     setBuildingSelectionMode(null);
@@ -394,7 +406,16 @@ function App() {
     setRequestState("idle");
   }
 
-  function failSearch(error: unknown, interpretation?: RouteQueryResponse["interpretation"] | null) {
+  function failSearch(error: unknown, interpretation?: RouteQueryResponse["interpretation"] | null,
+    selected: SelectedPlaces = {}, aiQuery: string | null = null) {
+    if (error instanceof PlaceCandidatesRequiredError) {
+      setCandidateSelection({ error, interpretation: interpretation ?? null, selected, aiQuery });
+      setSearchPanelOpen(true);
+      setRequestState("idle");
+      setProgressStage("resolving");
+      setErrorMessage("");
+      return;
+    }
     if (error instanceof PlaceSelectionRequiredError) {
       const target = error.target ?? "origin";
       if (interpretation?.origin_name) {
@@ -430,7 +451,7 @@ function App() {
         try {
           return await resolveDirectLocation(location, resolvePlace);
         } catch (error) {
-          if (error instanceof PlaceSelectionRequiredError) throw error.forTarget(target);
+          if (error instanceof PlaceSelectionRequiredError || error instanceof PlaceCandidatesRequiredError) throw error.forTarget(target);
           throw error;
         }
       };
@@ -467,15 +488,18 @@ function App() {
     await runAiSearch(query);
   }
 
-  async function runAiSearch(text: string) {
+  async function runAiSearch(text: string, selected: SelectedPlaces = {},
+    interpretationHint: RouteQueryResponse["interpretation"] | null = null) {
     if (requestState === "loading" || !text.trim()) return;
     exampleTyper.current?.cancel();
     setMode("ai");
     setQuery(text);
     livePreview.pause();
     beginSearch("ai");
-    let interpreted: RouteQueryResponse["interpretation"] | null = null;
+    let interpreted = interpretationHint;
     try {
+      const places = interpretationHint && Object.keys(selected).length > 0
+        ? await resolveSelectedPlaces(interpretationHint, selected, resolvePlace) : undefined;
       const data = await queryRouteWithProgress(text.trim(), userId, (event) => {
         if (event.type === "stage") setProgressStage(event.stage);
         if (event.type === "interpreted") {
@@ -487,20 +511,39 @@ function App() {
           origin: event.origin?.name ?? null,
           destination: event.destination?.name ?? null,
         });
-      });
+      }, places);
       setProgressStage("done");
       finishSearch({
         mode: "ai",
-        origin: data.resolved_origin,
-        destination: data.resolved_destination,
+        origin: data.resolved_origin ?? places?.origin ?? null,
+        destination: data.resolved_destination ?? places?.destination ?? null,
         model: data.model,
         departureTime: data.interpretation.departure_time,
         result: data.result,
       });
     } catch (error) {
       setProgressStage("failed");
-      failSearch(error, interpreted);
+      failSearch(error, interpreted, selected, text);
     }
+  }
+
+  function choosePlaceCandidate(place: ResolvedPlace) {
+    if (!candidateSelection || requestState === "loading") return;
+    const { error, interpretation, selected, aiQuery } = candidateSelection;
+    const target = error.target ?? "origin";
+    if (aiQuery && interpretation) {
+      void runAiSearch(aiQuery, { ...selected, [target]: place }, interpretation);
+      return;
+    }
+    const location: DirectLocationInput = {
+      displayName: place.name, source: "map", latitude: place.latitude,
+      longitude: place.longitude, address: place.address, category: place.category ?? undefined,
+    };
+    if (target === "origin") setOriginLocation(location);
+    else setDestinationLocation(location);
+    setCandidateSelection(null);
+    setErrorMessage("");
+    setRequestState("idle");
   }
 
   const selectRoute = useCallback(async (routeType: RouteType) => {
@@ -549,6 +592,7 @@ function App() {
         nightMode={nightMode}
         onResetView={() => setRouteDetailOpen(false)}
         focusBounds={mapFocus}
+        previewPlace={previewPlace}
       />
       {showSearchResults && !mapInfo && (
         <aside id="route-results" className="result-panel result-panel--floating" aria-label="경로 검색 결과">
@@ -695,6 +739,22 @@ function App() {
             </div>
           </form>
         )}
+        {candidateSelection && (
+          <section className="place-candidates" aria-label="장소 후보">
+            <strong>{candidateSelection.error.target === "destination" ? "도착지" : "출발지"}를 선택하세요</strong>
+            <p>{candidateSelection.error.placeName} 검색 결과입니다. 이름과 주소를 확인해 주세요.</p>
+            <ul>{candidateSelection.error.candidates.map((place, index) => (
+              <li key={`${place.source}:${place.latitude}:${place.longitude}:${index}`}>
+                <button type="button" className="place-candidate-select" onClick={() => choosePlaceCandidate(place)} disabled={requestState === "loading"}>
+                  <strong>{place.name}</strong><span>{place.address ?? "주소 정보 없음"}</span>
+                </button>
+                <button type="button" className="place-candidate-preview" aria-label={`${place.name} ${place.address ?? ""} 위치 보기`} onClick={() => { setPreviewPlace(place); setMapFocus(candidateFocusBounds(place)); }} disabled={requestState === "loading"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 6 6" /></svg>
+                </button>
+              </li>
+            ))}</ul>
+          </section>
+        )}
         {mode === "ai" && (
           <section className="search-intent-preview" aria-label="맞춤경로 입력 조건" aria-busy={previewBusy}>
             <div className="search-intent-heading"><strong title="입력 중 요청 인식이며 실제 경로 반영은 검색 후 확정됩니다">{livePreview.blocked ? "요구사항 분석 불가" : livePreview.completed ? "요구사항 분석 완료" : previewBusy ? "요구사항 분석 중" : "요구사항 분석"}{previewBusy && <span className="live-preview-dots" role="status" aria-label="조건 분석 진행 중"><i /><i /><i /></span>}</strong>{livePreview.blocked && <span className="live-preview-error" role="status" title={livePreview.notice ?? undefined}>분석 사용 불가</span>}</div>
@@ -707,6 +767,7 @@ function App() {
             setBuildingSelectionPending(false);
             setBuildingSelectionMode(null);
             setMapSelectionNotice(null);
+            setCandidateSelection(null);
             exampleTyper.current?.cancel();
             livePreview.clear();
             setMode(mode === "ai" ? "direct" : "ai");
@@ -734,7 +795,7 @@ function App() {
         />
       )}
 
-      {displayedCandidates.length === 0 && requestState !== "loading" && <div className="search-empty">
+      {displayedCandidates.length === 0 && requestState !== "loading" && !candidateSelection && <div className="search-empty">
         <span aria-hidden="true">↗</span><strong>나에게 맞는 길을 찾아보세요</strong><p>장소를 입력하거나 지도에서 건물을 선택해<br />출발지와 도착지를 지정할 수 있어요.</p>
       </div>}
       </div>

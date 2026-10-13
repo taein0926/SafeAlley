@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-const LABELS = ["가로등 · 계단", "CCTV", "가로등 · 건널목", "CCTV · 건널목"] as const;
+const LABELS = ["가로등 · 계단", "가로등 · CCTV · 계단", "가로등 · 건널목", "CCTV · 건널목"] as const;
 
 export function ExamplePicker({ examples, disabled, onSelect }: {
   examples: readonly string[];

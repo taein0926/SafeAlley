@@ -34,6 +34,24 @@ def _normalized(value: str) -> str:
     return re.sub(r"\s+", "", value).lower()
 
 
+def is_address_query(value: str) -> bool:
+    """Allow address-only matches for an explicit street or lot address."""
+    return bool(re.search(
+        r"(?:대로|로|길|동|읍|면|리)\s*\d+(?:-\d+)?|(?:대로|로|길)\s*$",
+        value.strip(),
+    ))
+
+
+def candidate_selection_context(name: str, rows: list[dict]) -> dict[str, object]:
+    fields = ("name", "category", "address", "source", "latitude", "longitude")
+    candidates = [
+        {key: row.get(key) for key in fields}
+        for row in rows
+        if row.get("latitude") is not None and row.get("longitude") is not None
+    ]
+    return {"code": "place_selection_required", "place_name": name, "candidates": candidates}
+
+
 def find_place(name: str) -> dict[str, object] | None:
     """Find the best local name, alias, or address match."""
 
@@ -68,9 +86,9 @@ def find_place(name: str) -> dict[str, object] | None:
                 SELECT 1 FROM unnest(aliases) AS alias
                 WHERE lower(regexp_replace(alias, '\\s+', '', 'g')) LIKE %s
             )
-            OR lower(regexp_replace(COALESCE(address, ''), '\\s+', '', 'g')) LIKE %s
+            OR (%s AND lower(regexp_replace(COALESCE(address, ''), '\\s+', '', 'g')) LIKE %s)
         ORDER BY match_rank, length(name), name, id
-        LIMIT 10
+        LIMIT 20
     """
     partial = f"%{normalized}%"
     parameters = (
@@ -82,6 +100,7 @@ def find_place(name: str) -> dict[str, object] | None:
         normalized,
         partial,
         partial,
+        is_address_query(name),
         partial,
     )
     try:
@@ -106,7 +125,8 @@ def find_place(name: str) -> dict[str, object] | None:
             return {key: value for key, value in exact_stations[0].items() if key != "match_rank"}
     if len(tied) > 1:
         raise PlaceAmbiguousError(
-            f"'{name}'에 해당하는 장소가 여러 곳입니다. 장소명이나 주소를 더 구체적으로 입력해 주세요."
+            f"'{name}'에 해당하는 장소가 여러 곳입니다. 이름과 주소를 확인하고 선택해 주세요.",
+            selection_context=candidate_selection_context(name, tied),
         )
     return {key: value for key, value in rows[0].items() if key != "match_rank"}
 

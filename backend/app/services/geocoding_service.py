@@ -5,6 +5,11 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.repositories.place_repository import (
+    PlaceAmbiguousError,
+    candidate_selection_context,
+    is_address_query,
+)
 
 
 class GeocodingServiceError(RuntimeError):
@@ -120,21 +125,42 @@ def geocode_place(
     name: str,
     bounds: tuple[float, float, float, float],
 ) -> dict[str, object] | None:
-    """Resolve one user-triggered query inside the loaded Michuhol road extent."""
+    """Require a named match and let the user choose ambiguous bounded results."""
 
     results = _request_results(name, bounds)
     if not results:
         return None
 
-    place = _place_from_result(results[0], name.strip())
-    latitude = float(place["latitude"])
-    longitude = float(place["longitude"])
-
+    normalized = "".join(name.split()).lower()
+    places = []
+    identities = set()
     min_lon, min_lat, max_lon, max_lat = bounds
-    if not (min_lon <= longitude <= max_lon and min_lat <= latitude <= max_lat):
-        return None
-
-    return place
+    for result in results:
+        if not is_address_query(name):
+            namedetails = result.get("namedetails")
+            names = [result.get("name")]
+            if isinstance(namedetails, dict):
+                names.extend(namedetails.values())
+            # display_name includes the address: it must never establish a
+            # building-name match (e.g. 인천대 matching 인천대로).
+            if not any(isinstance(value, str) and normalized in "".join(value.split()).lower()
+                       for value in names):
+                continue
+        place = _place_from_result(result, name.strip())
+        latitude = float(place["latitude"])
+        longitude = float(place["longitude"])
+        if not (min_lon <= longitude <= max_lon and min_lat <= latitude <= max_lat):
+            continue
+        identity = (place["source_id"], latitude, longitude)
+        if identity not in identities:
+            identities.add(identity)
+            places.append(place)
+    if len(places) > 1:
+        raise PlaceAmbiguousError(
+            f"'{name}' 외부 검색 결과가 여러 곳입니다. 이름과 주소를 확인하고 선택해 주세요.",
+            selection_context=candidate_selection_context(name, places),
+        )
+    return places[0] if places else None
 
 
 def reverse_geocode_place(latitude: float, longitude: float) -> dict[str, object]:

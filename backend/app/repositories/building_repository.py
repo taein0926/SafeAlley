@@ -4,6 +4,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.db.connection import connect_database
+from app.repositories.place_repository import candidate_selection_context, is_address_query
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,7 @@ def find_building_place(
             SELECT *, CASE WHEN n = %s THEN 0 WHEN a = %s THEN 1
                            WHEN strpos(n, %s) > 0 THEN 2 ELSE 3 END AS match_rank
             FROM normalized
-            WHERE (strpos(n, %s) > 0 OR strpos(a, %s) > 0)
+            WHERE (strpos(n, %s) > 0 OR (%s AND strpos(a, %s) > 0))
                 AND ST_Covers(
                     ST_MakeEnvelope(%s, %s, %s, %s, 4326),
                     ST_Transform(ST_PointOnSurface(geom), 4326)
@@ -91,12 +92,12 @@ def find_building_place(
             ST_X(ST_Transform(ST_Centroid(geom), 4326)) AS longitude
         FROM facilities CROSS JOIN summary
         ORDER BY name, address NULLS LAST
-        LIMIT 2
+        LIMIT 20
     """
     try:
         with connect_database() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
-                cursor.execute(query, (*bounds, *([normalized] * 5), *bounds))
+                cursor.execute(query, (*bounds, *([normalized] * 4), is_address_query(name), normalized, *bounds))
                 rows = cursor.fetchall()
     except psycopg.Error as exc:
         raise BuildingRepositoryError("GIS building name search is unavailable") from exc
@@ -122,10 +123,12 @@ def find_building_place(
                     },
                 )
             raise BuildingPlaceAmbiguousError(
-                f"'{name}'에 해당하는 공동주택이 여러 주소에 있습니다. 전체 주소를 입력해 주세요."
+                f"'{name}'에 해당하는 공동주택이 여러 주소에 있습니다. 이름과 주소를 확인하고 선택해 주세요.",
+                selection_context=candidate_selection_context(name, rows),
             )
         raise BuildingPlaceAmbiguousError(
-            f"'{name}'에 해당하는 주소가 서로 다른 GIS 시설이 여러 곳입니다. 건물의 전체 주소로 검색해주세요."
+            f"'{name}'에 해당하는 GIS 시설이 여러 곳입니다. 이름과 주소를 확인하고 선택해 주세요.",
+            selection_context=candidate_selection_context(name, rows),
         )
     if not rows:
         return None
