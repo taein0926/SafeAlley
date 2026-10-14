@@ -34,9 +34,9 @@ def get_weather(departure_time: time | None, *, now: datetime | None = None) -> 
     status = "unavailable"
     if forecast:
         reference_time = forecast["issued_at"]
-        age = now - reference_time if reference_time else timedelta(days=1)
-        # Never show old forecasts as today's current guidance.
-        status = "available" if timedelta(0) <= age <= timedelta(hours=6) else "stale"
+        # The repository selects today's requested forecast hour. Publication
+        # age alone must not hide that hour's forecast; reject invalid future issues.
+        status = "available" if reference_time is not None and reference_time <= now else "unavailable"
     if solar and solar["solar_date"] == now.date() and solar["sunrise"] < solar["sunset"]:
         night = departure < solar["sunrise"] or departure >= solar["sunset"]
     else:

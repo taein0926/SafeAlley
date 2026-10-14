@@ -92,20 +92,19 @@ test("live preview shows three wave dots immediately and stops only for the late
   assert.match(hook, /const clear =[^\n]*analyzedText.current = "";[^\n]*setUpdating\(false\)/);
 });
 
-test("example typing and manual input share preview while route search and mode switches cancel typing", () => {
+test("instant example selection and manual input share preview while search pauses it and mode switches clear it", () => {
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
   assert.match(app, /setQuery\(text\);\s+livePreview.pause\(\);\s+beginSearch\("ai"\)/);
-  assert.match(app, /onSelect=\{typeExample\}/);
+  assert.match(app, /onSelect=\{selectExample\}/);
   assert.match(app, /livePreview.clear\(\);\s+setMode\(mode === "ai" \? "direct" : "ai"\)/);
-  assert.match(app, /setQuery\(text\); livePreview.update\(text\)/);
+  assert.match(app, /setQuery\(text\);\s+livePreview.update\(text\)/);
   assert.match(app, /onChange=\{\(event\) => editQuery\(event.target.value/);
   assert.doesNotMatch(app, /onBlur=.*livePreview.update/);
-  assert.match(app, /async function runAiSearch[\s\S]*?exampleTyper.current\?\.cancel\(\)/);
 });
 
 test("editing or selecting an example replaces results with preview without clearing map routes", () => {
   const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
-  const example = app.slice(app.indexOf("function typeExample"), app.indexOf("function editQuery"));
+  const example = app.slice(app.indexOf("function selectExample"), app.indexOf("function editQuery"));
   const edit = app.slice(app.indexOf("function editQuery"), app.indexOf("const processScrollRef"));
   for (const handler of [example, edit]) {
     assert.match(handler, /setQueryEditing\(true\)/);

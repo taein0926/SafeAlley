@@ -18,7 +18,7 @@ test("route guidance consistently names the custom route without legacy recommen
 
 test("AI input submits through its form on Enter but preserves Shift+Enter and IME composition", () => {
   assert.match(app, /event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229/);
-  assert.match(app, /event.preventDefault\(\);\s*exampleTyper.current\?\.cancel\(\);\s*if \(!event.repeat\) event.currentTarget.form\?\.requestSubmit\(\)/);
+  assert.match(app, /event.preventDefault\(\);\s*if \(!event.repeat\) event.currentTarget.form\?\.requestSubmit\(\)/);
 });
 
 test("search errors retain their position and get the same bottom padding as the weather top gap", () => {
@@ -28,7 +28,7 @@ test("search errors retain their position and get the same bottom padding as the
   assert.match(chrome, /#route-search-panel \.route-error \{ margin-top: 0; \}/);
 });
 
-test("examples animate input without searching; the search button retains the existing route handler", () => {
+test("examples fill the whole input immediately without searching; the search button retains the existing route handler", () => {
   assert.match(app, /밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해\. 가로등이 많고 계단 없는 길로 안내해줘\./);
   assert.match(app, /밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘\. 계단도 피해서 안내해\./);
   assert.match(app, /낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘\./);
@@ -38,11 +38,13 @@ test("examples animate input without searching; the search button retains the ex
   assert.equal(examples?.[1], "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.");
   assert.equal(examples?.[2], "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 최단 거리로 안내해. 가로등, CCTV 많고 경찰서 주변인 길로 안내해. 계단 피하고 건널목 대신 육교로 갈래.");
   assert.match(app, /await runAiSearch\(query\)/);
-  assert.match(app, /onSelect=\{typeExample\}/);
+  assert.match(app, /onSelect=\{selectExample\}/);
   assert.match(picker, /setOpen\(false\); onSelect\(example\)/);
-  const example = app.slice(app.indexOf("function typeExample"), app.indexOf("function editQuery"));
+  const example = app.slice(app.indexOf("function selectExample"), app.indexOf("function editQuery"));
   assert.match(example, /livePreview.clear\(\)/);
-  assert.match(example, /exampleTyper.current\?\.start\(text\)/);
+  assert.match(example, /setQuery\(text\);\s*livePreview.update\(text\)/);
+  assert.match(example, /queryInputRef.current\?\.focus\(\)/);
+  assert.doesNotMatch(app, /exampleTyp|ExampleTyp|data-example-typing|function typeExample/);
   assert.doesNotMatch(example, /runAiSearch|queryRouteWithProgress|beginSearch/);
   const sharedSearch = app.slice(app.indexOf("async function runAiSearch"), app.indexOf("const selectRoute ="));
   assert.match(sharedSearch, /requestState === "loading" \|\| !text.trim\(\)/);

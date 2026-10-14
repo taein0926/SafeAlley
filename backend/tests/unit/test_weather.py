@@ -40,11 +40,24 @@ def test_missing_data_does_not_invent_weather(monkeypatch):
     assert result.is_night
 
 
-@pytest.mark.parametrize("offset", [-7, 1])
-def test_stale_or_future_issue_is_not_displayed(monkeypatch, offset):
-    monkeypatch.setattr(weather_service, "read_weather", lambda *_: (forecast(issued_at=NOW + timedelta(hours=offset)), solar()))
+@pytest.mark.parametrize("hours_ago", [0, 6, 7, 24, 72])
+def test_requested_hour_forecast_is_displayed_regardless_of_publication_age(monkeypatch, hours_ago):
+    row = forecast(issued_at=NOW - timedelta(hours=hours_ago))
+    calls = []
+    monkeypatch.setattr(weather_service, "read_weather", lambda *args: (calls.append(args) or row, solar()))
+    result = weather_service.get_weather(None, now=NOW)
+    assert calls == [(NOW.replace(minute=0), NOW.date())]
+    assert result.forecast_status == "available"
+    assert result.forecast.forecast_at == NOW.replace(minute=0)
+    assert result.forecast.issued_at == row["issued_at"]
+    assert result.forecast.temperature_c == 28
+
+
+@pytest.mark.parametrize("issued_at", [NOW + timedelta(hours=1), None])
+def test_invalid_future_or_missing_issue_is_not_displayed(monkeypatch, issued_at):
+    monkeypatch.setattr(weather_service, "read_weather", lambda *_: (forecast(issued_at=issued_at), solar()))
     result = weather_service.get_weather(time(14), now=NOW)
-    assert result.forecast_status == "stale" and result.forecast is None
+    assert result.forecast_status == "unavailable" and result.forecast is None
     assert result.solar is not None
 
 
@@ -84,10 +97,19 @@ def test_api_uses_only_official_provider_types(monkeypatch):
     assert result.theme_source == "official_solar" and result.is_night
 
 
-def test_recollecting_old_forecast_does_not_refresh_its_issue_age(monkeypatch):
+def test_recollected_forecast_keeps_original_issue_time_and_remains_visible(monkeypatch):
     monkeypatch.setattr(weather_service, "read_weather", lambda *_: (
         forecast(issued_at=NOW - timedelta(hours=7), collected_at=NOW), solar(),
     ))
     result = weather_service.get_weather(time(14), now=NOW)
-    assert result.forecast_status == "stale" and result.forecast is None
+    assert result.forecast_status == "available"
+    assert result.forecast.issued_at == NOW - timedelta(hours=7)
     assert result.solar.provider == "kasi" and not result.is_night
+
+
+def test_requested_hour_is_not_replaced_by_another_hour_when_missing(monkeypatch):
+    calls = []
+    monkeypatch.setattr(weather_service, "read_weather", lambda *args: (calls.append(args) or None, solar()))
+    result = weather_service.get_weather(time(22, 30), now=NOW)
+    assert calls == [(NOW.replace(hour=22, minute=0), NOW.date())]
+    assert result.forecast_status == "unavailable" and result.forecast is None

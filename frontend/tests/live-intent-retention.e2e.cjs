@@ -47,7 +47,7 @@ const factors = ['distance', 'streetlight', 'cctv', 'safety', 'stairs', 'crossin
     await input.fill('밤 10시에 계단은 피하지 않아도 돼. CCTV가 많은 길 ');
     assert.equal(await cards.getByRole('listitem', { name: '계단 회피: 적용', exact: true }).count(), 1);
     await cards.getByRole('listitem', { name: '계단 회피: 미적용', exact: true }).waitFor();
-    assert.deepEqual(await cards.locator('.recommendation-badge').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label').split(':')[0])), ['최단 거리', '가로등 우선', 'CCTV 우선', '도움시설 접근성', '계단 회피', '건널목 회피', '육교 우선', '시간대 고려']);
+    assert.deepEqual(await cards.locator('.recommendation-badge').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label').split(':')[0])), ['최단 거리', '가로등 우선', 'CCTV 우선', '안전시설', '계단 회피', '건널목 회피', '육교 우선', '시간대 고려']);
     assert.equal(await page.locator('.recommendation-badge-status, .live-preview-hint, .live-preview-notice').count(), 0);
     await input.fill('');
     assert.equal(await cards.count(), 1);

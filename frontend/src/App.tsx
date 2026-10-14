@@ -14,7 +14,6 @@ import { createRouteSelectionSaver } from "./routeSelection";
 import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
 import type { RouteWorkUpdate } from "./routeProgress";
 import { useLiveIntentPreview } from "./useLiveIntentPreview";
-import { createExampleTyper } from "./exampleTyping";
 import { ExamplePicker } from "./components/ExamplePicker";
 import { candidateFocusBounds, silverTownMapCandidates, errorFromApiDetail, PlaceCandidatesRequiredError, PlaceSelectionRequiredError, resolveSelectedPlaces, type SelectedPlaces, type MapFocusBounds, type PlaceSelectionTarget } from "./placeSelection";
 
@@ -146,22 +145,13 @@ function App() {
   const [progressInterpretation, setProgressInterpretation] = useState<RouteQueryResponse["interpretation"] | null>(null);
   const [progressWork, setProgressWork] = useState<RouteWorkUpdate[]>([]);
   const livePreview = useLiveIntentPreview();
-  const [exampleTyping, setExampleTyping] = useState(false);
   const queryInputRef = useRef<HTMLTextAreaElement>(null);
-  const exampleTyper = useRef<ReturnType<typeof createExampleTyper> | null>(null);
   useEffect(() => {
-    const typer = createExampleTyper({
-      onText: (text) => { setQuery(text); livePreview.update(text); },
-      onTypingChange: setExampleTyping,
-    });
-    exampleTyper.current = typer;
-    return () => { typer.dispose(); exampleTyper.current = null; };
-  }, [livePreview.update]);
-  useEffect(() => { if (exampleTyping) queryInputRef.current?.focus(); }, [exampleTyping]);
+    if (mode === "ai" && queryEditing) queryInputRef.current?.focus();
+  }, [mode, queryEditing]);
 
-  function typeExample(text: string) {
+  function selectExample(text: string) {
     if (requestState === "loading") return;
-    exampleTyper.current?.cancel();
     livePreview.clear();
     ++buildingRequestSerial.current;
     setBuildingSelectionPending(false);
@@ -175,12 +165,12 @@ function App() {
     setRequestState("idle");
     setActiveSearchMode(null);
     setQueryEditing(true);
-    exampleTyper.current?.start(text);
+    setQuery(text);
+    livePreview.update(text);
     queryInputRef.current?.focus();
   }
 
   function editQuery(text: string) {
-    exampleTyper.current?.cancel();
     setQueryEditing(true);
     setActiveSearchMode(null);
     setRequestState("idle");
@@ -307,7 +297,6 @@ function App() {
   ) => {
     if (target === null || requestState === "loading") return;
     const serial = ++buildingRequestSerial.current;
-    exampleTyper.current?.cancel();
     livePreview.clear();
     setMode("direct");
     setSearchPanelOpen(true);
@@ -495,7 +484,6 @@ function App() {
   async function runAiSearch(text: string, selected: SelectedPlaces = {},
     interpretationHint: RouteQueryResponse["interpretation"] | null = null) {
     if (requestState === "loading" || !text.trim()) return;
-    exampleTyper.current?.cancel();
     setMode("ai");
     setQuery(text);
     livePreview.pause();
@@ -735,16 +723,12 @@ function App() {
         ) : (
           <form id="route-search-form" className="route-form" onSubmit={searchWithAi}>
             <div className="ai-query">
-              <SpeechInput value={query} onText={editQuery} disabled={requestState === "loading" || !searchPanelOpen || exampleTyping}>
-                <textarea ref={queryInputRef} id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query} data-example-typing={exampleTyping || undefined}
+              <SpeechInput value={query} onText={editQuery} disabled={requestState === "loading" || !searchPanelOpen}>
+                <textarea ref={queryInputRef} id="ai-route-query" aria-label="문장으로 경로 요청" placeholder="어디로, 어떤 길로 가고 싶나요?" value={query}
                   onChange={(event) => editQuery(event.target.value)}
-                  onBeforeInput={() => exampleTyper.current?.cancel()}
-                  onPointerDown={() => exampleTyper.current?.cancel()}
                   onKeyDown={(event) => {
-                    if (event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key.length === 1) exampleTyper.current?.cancel();
                     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                       event.preventDefault();
-                      exampleTyper.current?.cancel();
                       if (!event.repeat) event.currentTarget.form?.requestSubmit();
                     }
                   }}
@@ -782,7 +766,6 @@ function App() {
             setBuildingSelectionMode(null);
             setMapSelectionNotice(null);
             setCandidateSelection(null);
-            exampleTyper.current?.cancel();
             livePreview.clear();
             setMode(mode === "ai" ? "direct" : "ai");
           }}>
@@ -790,7 +773,7 @@ function App() {
               {mode === "ai" ? <><path d="M3 5h4m4 0h10M3 12h10m4 0h4M3 19h4m4 0h10" /><circle cx="9" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="9" cy="19" r="2" /></> : <path d="M20 4H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3v3l5-3h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM7 9h10M7 13h6" />}
             </svg>
           </button>
-          <ExamplePicker examples={SEARCH_EXAMPLES} disabled={requestState === "loading" || !searchPanelOpen} onSelect={typeExample} />
+          <ExamplePicker examples={SEARCH_EXAMPLES} disabled={requestState === "loading" || !searchPanelOpen} onSelect={selectExample} />
           <button className="search-button" type="submit" form="route-search-form" disabled={requestState === "loading"}>{requestState === "loading" ? "검색 중..." : "길찾기"}</button>
         </div>
         <div className="search-weather"><WeatherHud {...weather} requested={weatherRequested} /></div>
@@ -816,7 +799,6 @@ function App() {
       </div>
       </div>
       <button className="search-panel-handle" type="button" aria-label={searchPanelOpen ? "검색·결과·상세 패널 접기" : "검색·결과·상세 패널 열기"} aria-controls="map-sidebar-content" aria-expanded={searchPanelOpen} onClick={() => {
-        exampleTyper.current?.cancel();
         setSearchPanelOpen((open) => !open);
         ++buildingRequestSerial.current;
         setBuildingSelectionPending(false);

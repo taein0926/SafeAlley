@@ -75,14 +75,32 @@ const examples = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)[1
     await page.getByRole('button', { name: '2D 지도', exact: true }).click();
     assert.equal(await grid.count(), 0);
 
+    // Record actual React value writes: a completed value alone could hide animation.
+    await input.evaluate(element => {
+      window.exampleInputValues = [];
+      const descriptor = Object.getOwnPropertyDescriptor(element, 'value')
+        || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+      Object.defineProperty(element, 'value', { ...descriptor,
+        set(value) {
+          if (this.id === 'ai-route-query') window.exampleInputValues.push(value);
+          descriptor.set.call(this, value);
+        },
+      });
+    });
     for (let index = 0; index < examples.length; index++) {
       await picker.click();
+      await page.evaluate(() => { window.exampleInputValues = []; });
       await grid.getByRole('button').nth(index).click();
       assert.equal(await grid.count(), 0);
-      await page.waitForFunction(expected => document.querySelector('#ai-route-query').value === expected, examples[index], { timeout: 30000 });
       assert.equal(await input.inputValue(), examples[index]);
+      assert.deepEqual(await page.evaluate(() => window.exampleInputValues), [examples[index]], 'Example must arrive in one complete write');
+      assert.equal(await input.evaluate(element => document.activeElement === element), true);
+      assert.equal(await input.isEditable(), true);
       assert.equal(routeWrites, 0, 'Selecting an example must not submit a route');
     }
+    await input.fill('바로 수정한 문장');
+    await page.waitForTimeout(100);
+    assert.equal(await input.inputValue(), '바로 수정한 문장', 'No timer may overwrite manual edits');
     await input.fill('');
     const view3d = page.getByRole('button', { name: '3D 지도', exact: true });
     const view2d = page.getByRole('button', { name: '2D 지도', exact: true });
@@ -95,7 +113,11 @@ const examples = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)[1
     await picker.click();
     assert.equal(await grid.getByRole('button').count(), 4);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: '문장 입력', exact: true }).click();
+    await picker.click();
+    await grid.getByRole('button').nth(2).click();
+    assert.equal(await input.inputValue(), examples[2]);
+    assert.equal(await input.evaluate(element => document.activeElement === element), true, 'Example selected in direct mode focuses the new AI input');
+    assert.equal(routeWrites, 0);
     await picker.click();
     await page.getByRole('button', { name: '검색·결과·상세 패널 접기', exact: true }).click();
     await page.getByRole('button', { name: '검색·결과·상세 패널 열기', exact: true }).click();
