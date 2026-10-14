@@ -3,6 +3,10 @@ import { CONDITION_ORDER, type ConditionCard } from "./conditionCards.ts";
 export type PreviewResponse = { query: string; model: string; conditions: ConditionCard[]; cached?: boolean };
 export type PreviewStatus = { enabled: boolean; configured: boolean; available: boolean };
 
+const previewSessionId = typeof globalThis.crypto?.randomUUID === "function"
+  ? globalThis.crypto.randomUUID()
+  : `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
 export function previewUnavailableMessage(status: PreviewStatus | null): string {
   return status?.enabled === false
     ? "실시간 조건 분석이 꺼져 있습니다. 새 입력은 분석되지 않습니다. 경로 검색은 계속 사용할 수 있어요."
@@ -11,7 +15,9 @@ export function previewUnavailableMessage(status: PreviewStatus | null): string 
 
 export async function requestIntentPreview(query: string): Promise<PreviewResponse> {
   const response = await fetch("/api/agent/intent-preview", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Intent-Preview-Session": previewSessionId },
+    body: JSON.stringify({ query }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || "실시간 조건 분석을 완료하지 못했습니다.");

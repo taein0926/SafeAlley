@@ -30,6 +30,7 @@ test("condition cards always use the requested four-plus-four order with bridge 
   assert.deepEqual(conditionCards([], emptyConditionCards().reverse()).map(card => card.factor), order);
   assert.equal(CONDITION_LABELS.crossing, "건널목 회피");
   assert.equal(CONDITION_LABELS.bridge, "육교 우선");
+  assert.equal(CONDITION_LABELS.safety, "도움시설 접근성");
   const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 });
@@ -290,6 +291,8 @@ test("preview API contract sends only the query and rejects invalid card states"
   const original = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
     assert.deepEqual(JSON.parse(String(init?.body)), { query: "계단 피하기" });
+    const headers = new Headers(init?.headers);
+    assert.match(headers.get("X-Intent-Preview-Session") ?? "", /^[A-Za-z0-9._:-]{8,100}$/);
     return new Response(JSON.stringify(result("계단 피하기")));
   };
   try {
