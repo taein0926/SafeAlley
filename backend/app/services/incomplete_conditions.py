@@ -80,15 +80,15 @@ _POSITIVE_CUES = {
     "distance": re.compile(r"최단|짧|빠르|빠르게|빨리|신속|가까운|지름길"),
     "safety": re.compile(r"가까|가깝|근처|주변|인근|옆|경유|지나|접근|많|우선|고려|안전|안심|위험하지|도움|보호"),
     "streetlight": re.compile(r"많|밝|환한|환하|환했|잘\s*(?:된|갖춰)|충분|우선|가까|어두.{0,8}(?:피하|싫)|최대"),
-    "cctv": re.compile(r"많|우선|가까|접근|최대"),
-    "stairs": re.compile(r"피하|없이|없는|적|최소|줄|회피|싫|말고"),
-    "crossing": re.compile(r"피하|없이|없는|적|최소|줄|회피|싫|말고"),
-    "bridge": re.compile(r"이용|거쳐|통해|우선|육교(?:으)?로|피하|없이|없는|적|최소|회피|싫|말고"),
+    "cctv": re.compile(r"많|마는\s*(?:길|경로)|우선|가까|접근|최대"),
+    "stairs": re.compile(r"피하|피할|없이|없는|안\s*가|안가|적|최소|줄|회피|싫|말고|빼고"),
+    "crossing": re.compile(r"피하|피할|없이|없는|적|최소|줄|회피|싫|말고|빼고"),
+    "bridge": re.compile(r"이용|거쳐|통해|우선|육교(?:으)?로|피하|피할|없이|없는|적|최소|회피|싫|말고|빼고"),
 }
 _INVERSE_CUES = {
     "safety": re.compile(r"적(?:고|은|게)|없(?:고|는|이|는\s*길)|멀(?:고|리|게)|피하"),
     "streetlight": re.compile(r"적(?:고|은|게)|없(?:고|는|이)|어두(?:운|워)"),
-    "cctv": re.compile(r"적(?:고|은|게)|없(?:고|는|이)|멀(?:고|리|게)|피하"),
+    "cctv": re.compile(r"적(?:고|은|게)|없(?:고|는|이)|피하"),
     "stairs": re.compile(r"많(?:고|은|게)"),
     "crossing": re.compile(r"많(?:고|은|게)|(?:횡단보도|건널목)(?:으)?로"),
 }
@@ -99,7 +99,7 @@ _KOREAN_HOURS = {
 }
 _KOREAN_HOUR_PATTERN = "|".join(sorted(_KOREAN_HOURS, key=len, reverse=True))
 _EXPLICIT_CLOCK = re.compile(
-    r"(?:(?:오전|오후|밤|새벽|아침|저녁)\s*)?"
+    r"(?:(?:오전|오후|밤|낮|새벽|아침|저녁)\s*)?"
     r"(?:\d{1,2}|" + _KOREAN_HOUR_PATTERN + r")\s*(?:시|:\s*\d{2})|자정|정오"
 )
 
@@ -110,6 +110,12 @@ def _is_cancelled(factor: str, phrase: str, after: str) -> bool:
     # well-lit route.  Handle this before the generic "...싫어" cancellation.
     if factor == "streetlight" and re.search(r"어두.{0,10}싫", phrase):
         return False
+    # For obstacle cards, "계단/건널목/육교 빼고" means route avoidance,
+    # not cancellation of the corresponding condition.
+    if factor in {"stairs", "crossing", "bridge"} and re.match(
+        r"\s*(?:은|는|이|가|을|를|도)?\s*빼고", after
+    ):
+        return False
     # "A보다(는) B가 좋다" explicitly deprioritizes A.  Restrict this to
     # preference cards: for obstacle cards, a comparison alone does not say
     # whether the user wants to avoid either obstacle.
@@ -119,6 +125,8 @@ def _is_cancelled(factor: str, phrase: str, after: str) -> bool:
         if re.search(r"싫", after):
             return True
     if _CANCEL_CUE.search(after):
+        return True
+    if re.match(r"\s*(?:은|는|이|가|도)?\s*(?:괜찮|상관\s*없)", after):
         return True
     if re.search(
         r"안\s*(?:피하|피해|피할|줄이|줄일|줄여|우선하|우선할|고려하|고려할|이용하|이용할)"
@@ -139,6 +147,34 @@ def _clock_hour(phrase: str) -> int | None:
         return int(numeric.group(1))
     korean = re.search(r"(" + _KOREAN_HOUR_PATTERN + r")\s*시", phrase)
     return _KOREAN_HOURS[korean.group(1)] if korean else None
+
+
+def _shared_correction_choice(query: str, factor: str) -> str | None:
+    """Resolve an explicit final '둘 다' correction for two named cards."""
+    correction = re.search(
+        r"(?:아니\s*[,，]?\s*|그냥\s*)?둘\s*다\s*"
+        r"(?P<tail>.{0,24})$",
+        query,
+    )
+    if correction is None:
+        return None
+    mentioned = {
+        name for name, pattern in _PREVIEW_MENTIONS.items()
+        if pattern.search(query[:correction.start()])
+    }
+    if factor not in mentioned or len(mentioned) < 2:
+        return None
+    tail = correction.group("tail")
+    if factor in {"distance", "safety", "streetlight", "cctv"} and re.search(
+        r"많|밝|환|가까|안전|우선|좋", tail
+    ):
+        return "apply"
+    if factor in {"stairs", "crossing", "bridge"}:
+        if re.search(r"없이|없는|피하|회피", tail):
+            return "avoid"
+        if re.search(r"적|덜|최소|줄", tail):
+            return "minimize"
+    return None
 
 
 def _preview_scope(query: str, factor: str) -> tuple[str, str, re.Match[str]] | None:
@@ -168,6 +204,9 @@ def preview_factor_evidence(query: str, factor: str) -> tuple[PreviewEvidence, s
     """
     if factor not in _PREVIEW_MENTIONS:
         return "absent", None
+    shared_choice = _shared_correction_choice(query, factor)
+    if shared_choice is not None:
+        return "positive", shared_choice
     scope = _preview_scope(query, factor)
     if scope is None:
         return "absent", None
@@ -195,15 +234,17 @@ def preview_factor_evidence(query: str, factor: str) -> tuple[PreviewEvidence, s
             return "positive", "night" if period.group(1) in {"밤", "새벽"} else "day"
         if not _EXPLICIT_CLOCK.search(phrase):
             return "incomplete", "pending"
-        hour = _clock_hour(phrase)
-        if re.search(r"밤|새벽|저녁|야간|자정", phrase):
+        clocks = list(_EXPLICIT_CLOCK.finditer(query))
+        clock_phrase = clocks[-1].group() if clocks else phrase
+        hour = _clock_hour(clock_phrase)
+        if re.search(r"밤|새벽|저녁|야간|자정", clock_phrase):
             night = True
-        elif re.search(r"낮|아침|정오", phrase):
+        elif re.search(r"낮|아침|정오", clock_phrase):
             night = False
         else:
-            if hour is not None and "오후" in phrase and hour < 12:
+            if hour is not None and "오후" in clock_phrase and hour < 12:
                 hour += 12
-            elif hour is not None and "오전" in phrase and hour == 12:
+            elif hour is not None and "오전" in clock_phrase and hour == 12:
                 hour = 0
             night = hour is not None and (hour >= 19 or hour < 6)
         return "positive", "night" if night else "day"
@@ -218,7 +259,7 @@ def preview_factor_evidence(query: str, factor: str) -> tuple[PreviewEvidence, s
     if not positive:
         return "mentioned", None
     if factor in {"stairs", "crossing", "bridge"}:
-        direction = "avoid" if re.search(r"없이|없는|피하|회피|싫|말고", phrase) else "minimize"
+        direction = "avoid" if re.search(r"없이|없는|안\s*가|안가|피하|피할|회피|싫|말고|빼고", phrase) else "minimize"
         if factor == "bridge" and re.search(r"이용|거쳐|통해|우선|육교(?:으)?로", phrase) and not re.search(r"피하|회피|없이|없는|적|최소", phrase):
             direction = "apply"
         return "positive", direction

@@ -126,6 +126,23 @@ def test_additional_natural_language_variants(query, factor, evidence, choice):
     assert preview_factor_evidence(query, factor) == (evidence, choice)
 
 
+@pytest.mark.parametrize("query,factor,evidence,choice", [
+    ("가로등많은길로가줘", "streetlight", "positive", "apply"),
+    ("계단안가는길로가줘", "stairs", "positive", "avoid"),
+    ("씨씨티비 마는 길로 가줘", "cctv", "positive", "apply"),
+    ("건널목 쫌 적게 가줘", "crossing", "positive", "minimize"),
+    ("밤에안전한길루 안내해줘", "time", "positive", "night"),
+    ("밤에안전한길루 안내해줘", "safety", "positive", "apply"),
+    ("계단은 피하고 아니, 계단은 괜찮고 육교만 피할게", "stairs", "negative", "skip"),
+    ("계단은 피하고 아니, 계단은 괜찮고 육교만 피할게", "bridge", "positive", "avoid"),
+    ("가로등보다 CCTV가 좋아. 그냥 둘 다 많은 길로 가줘", "streetlight", "positive", "apply"),
+    ("가로등보다 CCTV가 좋아. 그냥 둘 다 많은 길로 가줘", "cctv", "positive", "apply"),
+    ("밤 10시가 아니라 오전 10시에 출발해", "time", "positive", "day"),
+])
+def test_typo_spacing_colloquial_and_late_corrections(query, factor, evidence, choice):
+    assert preview_factor_evidence(query, factor) == (evidence, choice)
+
+
 def test_qwen_invented_crossing_direction_is_removed_without_losing_cctv(monkeypatch):
     llm.clear_intent_cache()
     content = {"departure_time": "14:00:00", "preferences": [

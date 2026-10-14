@@ -71,5 +71,16 @@
   {"id":"time-dawn-with-action","category":"time","query":"새벽 출발로 해줘","factor":"time","evidence":"positive","choice":"night"},
   {"id":"bridge-route-particle","category":"bridge","query":"육교로 가줘","factor":"bridge","evidence":"positive","choice":"apply"},
   {"id":"streetlight-bright-adverb","category":"synonym","query":"밝게 다닐 수 있는 길","factor":"streetlight","evidence":"positive","choice":"apply"},
-  {"id":"streetlight-bright-conjugated","category":"synonym","query":"길이 밝고 환했으면 좋겠어","factor":"streetlight","evidence":"positive","choice":"apply"}
+  {"id":"streetlight-bright-conjugated","category":"synonym","query":"길이 밝고 환했으면 좋겠어","factor":"streetlight","evidence":"positive","choice":"apply"},
+  {"id":"spacing-streetlight","category":"spacing","query":"가로등많은길로가줘","factor":"streetlight","evidence":"positive","choice":"apply"},
+  {"id":"colloquial-no-stairs","category":"colloquial","query":"계단안가는길로가줘","factor":"stairs","evidence":"positive","choice":"avoid"},
+  {"id":"typo-cctv-many","category":"typo","query":"씨씨티비 마는 길로 가줘","factor":"cctv","evidence":"positive","choice":"apply"},
+  {"id":"colloquial-crossing-fewer","category":"colloquial","query":"건널목 쫌 적게 가줘","factor":"crossing","evidence":"positive","choice":"minimize"},
+  {"id":"spacing-night","category":"spacing","query":"밤에안전한길루 안내해줘","factor":"time","evidence":"positive","choice":"night"},
+  {"id":"spacing-safety","category":"spacing","query":"밤에안전한길루 안내해줘","factor":"safety","evidence":"positive","choice":"apply"},
+  {"id":"correction-stairs-allowed","category":"correction","query":"계단은 피하고 아니, 계단은 괜찮고 육교만 피할게","factor":"stairs","evidence":"negative","choice":"skip"},
+  {"id":"correction-bridge-only","category":"correction","query":"계단은 피하고 아니, 계단은 괜찮고 육교만 피할게","factor":"bridge","evidence":"positive","choice":"avoid"},
+  {"id":"correction-both-streetlight","category":"correction","query":"가로등보다 CCTV가 좋아. 그냥 둘 다 많은 길로 가줘","factor":"streetlight","evidence":"positive","choice":"apply"},
+  {"id":"correction-both-cctv","category":"correction","query":"가로등보다 CCTV가 좋아. 그냥 둘 다 많은 길로 가줘","factor":"cctv","evidence":"positive","choice":"apply"},
+  {"id":"correction-time-last-wins","category":"correction","query":"밤 10시가 아니라 오전 10시에 출발해","factor":"time","evidence":"positive","choice":"day"}
 ]
