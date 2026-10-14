@@ -1081,3 +1081,70 @@ def test_one_sided_motion_destination_keeps_literal_place(model_destination) -> 
 
     assert intent.origin_name is None
     assert intent.destination_name == "인천사랑병원"
+
+
+@pytest.mark.parametrize("query,model_preferences,expected", [
+    (
+        "가로등많은길로가줘",
+        [],
+        {"streetlight_score": "maximize"},
+    ),
+    (
+        "계단안가는길로가줘",
+        [{"factor": "cctv_score", "direction": "maximize"}],
+        {"cctv_score": "maximize", "stairs_distance_m": "avoid"},
+    ),
+    (
+        "씨씨티비 마는 길로 가줘",
+        [],
+        {"cctv_score": "maximize"},
+    ),
+    (
+        "건널목 쫌 적게 가줘",
+        [],
+        {"crosswalk_count": "minimize"},
+    ),
+    (
+        "계단은 피하고 아니, 계단은 괜찮고 육교만 피할게",
+        [{"factor": "stairs_distance_m", "direction": "avoid"}],
+        {},
+    ),
+    (
+        "가로등보다 CCTV가 좋아. 그냥 둘 다 많은 길로 가줘",
+        [{"factor": "cctv_score", "direction": "maximize"}],
+        {"streetlight_score": "maximize", "cctv_score": "maximize"},
+    ),
+])
+def test_final_intent_reconciles_with_clear_live_preview_evidence(
+    monkeypatch, query, model_preferences, expected
+) -> None:
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "preferences": model_preferences,
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert {item.factor: item.direction for item in intent.preferences} == expected
+
+
+def test_last_explicit_clock_matches_preview_and_final_intent(monkeypatch) -> None:
+    query = "밤 10시가 아니라 오전 10시에 출발해"
+    monkeypatch.setattr(
+        local_llm_service,
+        "_request_ollama",
+        lambda _: {"message": {"content": json.dumps({
+            "departure_time": "22:00:00",
+            "preferences": [],
+        }, ensure_ascii=False)}},
+    )
+
+    intent = local_llm_service.parse_route_intent(query)
+
+    assert str(intent.departure_time) == "10:00:00"
+    assert local_llm_service.preview_factor_evidence(query, "time") == (
+        "positive", "day"
+    )

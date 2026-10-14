@@ -14,6 +14,7 @@ from app.schemas.agent import ParsedRouteIntent, RoutePreference
 from app.services.incomplete_conditions import (
     has_explicit_safety_facility_request,
     incomplete_condition_factors,
+    preview_factor_evidence,
 )
 
 
@@ -41,6 +42,8 @@ A보다 B를 원하면 A를 넣지 않는다. A도 중요하고 B도 중요하�
 단순히 안내해 달라는 요청도 distance_m 조건이 아니다. 기본 경로 정책은 백엔드가 정한다.
 문장 끝의 '건널목을', '계단을', '가로등이'처럼 명사와 조사만 적힌 조건은 방향을 추측하지 말고 생략한다.
 뒤에 적게/없이/많게 같은 요청 방향이 이어진 완성 조건은 보존한다.
+붙여쓰기·가벼운 구어체·명확한 흔한 오타가 있어도 의미를 보존한다.
+문장 뒤에서 '아니', '그냥', '둘 다'로 조건을 수정하면 마지막 수정만 적용한다.
 단어의 등장 횟수나 부정어만으로 조건을 추측하지 않는다.
 factor: 최단/짧은 길/빠른 길/가까운 길/거리=distance_m,
 안전=safety_score, 안전시설·도움시설이 가깝거나 접근하기 좋은 길=safety_score/maximize,
@@ -160,6 +163,9 @@ NONREQUEST_TAIL = re.compile(
     r"|많든\s*적든.{0,8}(?:괜찮|상관\s*없)"
     r"|중요하지\s*않|필요(?:가|는)?\s*없|상관\s*없|피하(?:지|진)\s*(?:않|말)"
     r"|신경\s*안\s*써도|따지지\s*않|고려하지\s*않|말고|빼고|무시하고"
+    r"|^\s*(?:은|는|이|가|을|를|도)?\s*(?:괜찮|싫(?:어|다|고))"
+    r"|안\s*(?:피하|피해|피할|줄이|줄일|줄여|우선하|우선할|고려하|고려할)"
+    r".{0,8}(?:래|게|겠다|거야)"
 )
 CORRECTION_CUE = re.compile(
     r"아니(?:\s*[,，]\s*|\s+)|정정할게\s*[,，]?\s*"
@@ -606,6 +612,31 @@ def _discard_unmentioned_distance(query: str, intent: ParsedRouteIntent) -> None
         _drop_preference(intent, "distance_m")
 
 
+def _reconcile_live_preview_preferences(query: str, intent: ParsedRouteIntent) -> None:
+    """Use the shared high-precision evidence for preview/final consistency.
+
+    This only reconciles the six cards backed by final routing metrics.  It
+    does not turn an incomplete mention into a request or claim that the
+    preview-only bridge card is independently optimized by routing.
+    """
+    mapping = {
+        "distance": ("distance_m", "minimize"),
+        "safety": ("safety_score", "maximize"),
+        "streetlight": ("streetlight_score", "maximize"),
+        "cctv": ("cctv_score", "maximize"),
+        "stairs": ("stairs_distance_m", None),
+        "crossing": ("crosswalk_count", None),
+    }
+    for card, (metric, default_direction) in mapping.items():
+        evidence, choice = preview_factor_evidence(query, card)
+        if evidence == "positive":
+            if card == "safety" and not has_explicit_safety_facility_request(query):
+                continue
+            direction = choice if choice in {"avoid", "minimize"} else default_direction
+            if direction is not None:
+                _set_preference(intent, metric, direction)
+
+
 def _request_ollama(payload: dict[str, object]) -> dict[str, object]:
     settings = get_settings()
     url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
@@ -696,6 +727,7 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _preserve_mentioned_places(query, intent)
             _prune_explicit_nonrequests(query, intent)
             _prune_comparison_antecedents(query, intent)
+            _reconcile_live_preview_preferences(query, intent)
             _apply_explicit_correction(query, intent)
             _discard_unmentioned_distance(query, intent)
             unfinished = incomplete_condition_factors(query)
