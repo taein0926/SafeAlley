@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.schemas.intent_preview import IntentPreviewRequest, IntentPreviewResponse, IntentPreviewStatus
 from app.services.jev_preview_service import PreviewLimited, PreviewUnavailable, analyze_preview, preview_status
@@ -12,9 +12,18 @@ def status():
 
 
 @router.post("", response_model=IntentPreviewResponse)
-def preview(request: IntentPreviewRequest):
+def preview(
+    request: IntentPreviewRequest,
+    preview_session: str | None = Header(
+        default=None,
+        alias="X-Intent-Preview-Session",
+        min_length=8,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
+):
     try:
-        return analyze_preview(request.query)
+        return analyze_preview(request.query, session_id=preview_session)
     except PreviewLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except PreviewUnavailable as exc:

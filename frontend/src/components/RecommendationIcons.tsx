@@ -3,7 +3,7 @@ import { CARD_STATE_LABELS, CONDITION_LABELS, conditionCards, type ConditionCard
 import { ConditionIcon } from "./ConditionIcon";
 
 const PREVIEW_LABELS: Record<CardFactor, string> = {
-  distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "안전시설",
+  distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "도움시설",
   stairs: "계단", crossing: "건널목", bridge: "육교", time: "시간대",
 };
 

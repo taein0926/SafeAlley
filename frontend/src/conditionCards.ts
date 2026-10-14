@@ -12,7 +12,7 @@ export type ConditionCard = {
   judgment?: "apply" | "skip" | "pending" | "avoid" | "minimize" | "day" | "night" | null;
 };
 export const CONDITION_LABELS: Record<CardFactor, string> = {
-  distance: "최단 거리", safety: "안전시설", streetlight: "가로등 우선", cctv: "CCTV 우선",
+  distance: "최단 거리", safety: "도움시설 접근성", streetlight: "가로등 우선", cctv: "CCTV 우선",
   stairs: "계단 회피", crossing: "건널목 회피", bridge: "육교 우선", time: "시간대 고려",
 };
 export const CARD_STATE_LABELS: Record<CardState, string> = { analyzing: "분석 중", applied: "적용", not_applied: "미적용" };
