@@ -189,7 +189,7 @@ function routeDescription(
   if (!selected) {
     return result.recommendation_status === "field_review_required"
       ? "경로 후보는 찾았지만 현장 확인이 필요한 구간이 있어 자동 추천을 보류했어요."
-      : "경로 후보는 찾았지만 이번에는 추천 길을 확정하지 못했어요.";
+      : "경로 후보는 찾았지만 이번에는 맞춤 경로를 확정하지 못했어요.";
   }
   const compared = result.candidates.find((candidate) => candidate.route_type === result.compared_route_type);
   const selectedDistance = metric(selected, "distance_m");
@@ -197,8 +197,8 @@ function routeDescription(
   const parts: string[] = [];
   if (selectedDistance !== null) {
     parts.push(comparedDistance !== null
-      ? `추천 길은 약 ${Math.round(selectedDistance)}m, 비교 길은 약 ${Math.round(comparedDistance)}m예요.`
-      : `추천 길은 약 ${Math.round(selectedDistance)}m예요.`);
+      ? `맞춤 경로는 약 ${Math.round(selectedDistance)}m, 비교 길은 약 ${Math.round(comparedDistance)}m예요.`
+      : `맞춤 경로는 약 ${Math.round(selectedDistance)}m예요.`);
   }
   const requested = new Set(interpretation?.preferences.map((item) => item.factor) ?? []);
   const excluded = new Set(result.unsupported_preferences.map((item) => item.factor));
@@ -207,8 +207,8 @@ function routeDescription(
     const other = metric(compared, "stairs_distance_m");
     if (chosen !== null && other !== null) {
       parts.push(chosen === 0 && other > 0
-        ? `기록된 계단 구간은 추천 길에 없고, 비교 길에는 약 ${Math.round(other)}m 있어요.`
-        : `기록된 계단 구간은 추천 길 약 ${Math.round(chosen)}m, 비교 길 약 ${Math.round(other)}m예요.`);
+        ? `기록된 계단 구간은 맞춤 경로에 없고, 비교 길에는 약 ${Math.round(other)}m 있어요.`
+        : `기록된 계단 구간은 맞춤 경로 약 ${Math.round(chosen)}m, 비교 길 약 ${Math.round(other)}m예요.`);
     }
   }
   for (const [factor, label] of [
@@ -219,17 +219,17 @@ function routeDescription(
     const chosen = metric(selected, factor);
     const other = metric(compared, factor);
     if (chosen === null || other === null) continue;
-    const comparison = chosen === other ? "두 길이 같아요" : chosen > other ? "추천 길이 더 높아요" : "비교 길이 더 높아요";
-    parts.push(`${label} 위치 지표는 추천 길 ${chosen.toFixed(1)}, 비교 길 ${other.toFixed(1)}로 ${comparison}.`);
+    const comparison = chosen === other ? "두 길이 같아요" : chosen > other ? "맞춤 경로가 더 높아요" : "비교 길이 더 높아요";
+    parts.push(`${label} 위치 지표는 맞춤 경로 ${chosen.toFixed(1)}, 비교 길 ${other.toFixed(1)}로 ${comparison}.`);
   }
   if (compared && requested.has("crosswalk_count") && !excluded.has("crosswalk_count")) {
     const chosen = metric(selected, "crosswalk_count");
     const other = metric(compared, "crosswalk_count");
     if (chosen !== null && other !== null) {
-      parts.push(`등록된 횡단보도는 추천 길 ${Math.round(chosen)}개, 비교 길 ${Math.round(other)}개예요.`);
+      parts.push(`등록된 횡단보도는 맞춤 경로 ${Math.round(chosen)}개, 비교 길 ${Math.round(other)}개예요.`);
     }
   }
-  return parts.join(" ") || "요청 조건에 맞는 추천 길을 찾았어요. 아래에서 경로를 확인해 주세요.";
+  return parts.join(" ") || "요청 조건에 맞는 맞춤 경로를 찾았어요. 아래에서 경로를 확인해 주세요.";
 }
 
 export function progressMessages(

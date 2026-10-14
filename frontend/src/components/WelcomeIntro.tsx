@@ -27,14 +27,19 @@ export function WelcomeIntro() {
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
-    if (open && !element.open) element.showModal();
+    if (open && !element.open) {
+      element.showModal();
+      element.focus({preventScroll: true});
+    }
     else if (!open && element.open) element.close();
   }, [open]);
-  return <dialog ref={dialog} className="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description"
+  return <dialog ref={dialog} className="welcome-dialog" tabIndex={-1} aria-labelledby="welcome-title" aria-describedby="welcome-description"
       onCancel={(event) => { event.preventDefault(); dismiss(); }} onClose={dismiss} onClick={dismissFromBackdrop}>
       <header className="welcome-header">
         <img className="welcome-company" src="/branding/ltmetric.png" alt="엘티메트릭" width="180" height="60"/>
-        <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss} autoFocus>×</button>
+        <button className="welcome-close" type="button" aria-label="서비스 소개 닫기" onClick={dismiss}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m4 4 16 16M20 4 4 20"/></svg>
+        </button>
       </header>
       <h1 className="welcome-title" id="welcome-title">안전 골목길</h1>
       <p className="welcome-subtitle"><span>골목에 <strong>안전</strong>을 더하다</span></p>

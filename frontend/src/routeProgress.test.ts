@@ -158,7 +158,7 @@ test("progress narration appears only after actual stage events and compares rea
   const done = progressMessages("done", interpretation, "정부인천지방합동청사", "두리하나어린이집", result);
   assert.equal(done.length, 3);
   assert.match(done[2].text, /842m.*746m/);
-  assert.match(done[2].text, /추천 길에 없고.*18m/);
+  assert.match(done[2].text, /맞춤 경로에 없고.*18m/);
   assert.match(done[2].text, /78\.1.*50\.3/);
   assert.equal(done[2].pending, false);
 });
@@ -189,5 +189,5 @@ test("withheld result never invents a recommended route comparison", () => {
   } as RouteQueryResponse["result"];
   const messages = progressMessages("done", interpretation, "주안역", "병원", result);
   assert.match(messages[2].text, /자동 추천을 보류/);
-  assert.doesNotMatch(messages[2].text, /추천 길은 약/);
+  assert.doesNotMatch(messages[2].text, /맞춤 경로는 약/);
 });

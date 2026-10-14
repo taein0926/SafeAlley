@@ -28,3 +28,14 @@ test("intro is wired to the app without any reopening control or model request",
     assert.ok(readFileSync(new URL(`../public/branding/${asset}`, import.meta.url)).length > 0);
   }
 });
+
+test("intro initially focuses the dialog and centers a font-independent close icon", () => {
+  const intro = readFileSync(new URL("./components/WelcomeIntro.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("./welcomeIntro.css", import.meta.url), "utf8");
+  assert.match(intro, /element\.showModal\(\);\s*element\.focus\(\{preventScroll: true\}\)/);
+  assert.match(intro, /className="welcome-dialog" tabIndex=\{-1\}/);
+  assert.doesNotMatch(intro, /autoFocus|>×<\/button>/);
+  assert.match(css, /\.welcome-close \{ display: grid; place-items: center;/);
+  assert.match(css, /\.welcome-close svg \{ display: block; width: 24px; height: 24px;/);
+  assert.match(css, /\.welcome-close:focus-visible \{ outline: 3px solid/);
+});

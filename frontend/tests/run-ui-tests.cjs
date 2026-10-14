@@ -2,8 +2,8 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const tests = [
-  'welcome-intro', 'compact-intent-ui', 'live-intent-retention', 'search-picker-ui', 'direct-input-route-stability',
-  'weather-hud-ui', 'robot-progress', 'route-progress-ui', 'route-transparency-ui', 'floating-routes', 'place-candidates', 'silver-town-candidates',
+  'welcome-intro', 'compact-intent-ui', 'live-intent-retention', 'search-picker-ui', 'ai-enter-search', 'direct-input-route-stability',
+  'weather-hud-ui', 'robot-progress', 'route-progress-ui', 'route-transparency-ui', 'floating-routes', 'route-fallback-selection', 'place-candidates', 'silver-town-candidates',
 ];
 let failures = 0;
 for (const name of tests) {

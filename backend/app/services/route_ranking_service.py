@@ -347,15 +347,15 @@ def _criterion_summary(
         if factor in PROXY_FACTORS:
             return "비교할 수 있는 다른 유효 경로가 없어 선택 경로의 시설 조건만 확인했습니다."
         return (
-            f"추천 경로 {_criterion_value_text(factor, selected_value)} · "
+            f"맞춤 경로 {_criterion_value_text(factor, selected_value)} · "
             "비교할 수 있는 다른 유효 경로가 없습니다."
         )
     if factor in PROXY_FACTORS:
         basis = PROXY_EVIDENCE_LABELS[factor]
         relation = {
-            "better": f"추천 경로가 {comparison_label}보다 유리합니다.",
-            "similar": f"추천 경로와 {comparison_label}의 조건이 비슷합니다.",
-            "worse": f"{comparison_label}이 추천 경로보다 유리합니다.",
+            "better": f"맞춤 경로가 {comparison_label}보다 유리합니다.",
+            "similar": f"맞춤 경로와 {comparison_label}의 조건이 비슷합니다.",
+            "worse": f"{comparison_label}이 맞춤 경로보다 유리합니다.",
         }[outcome]
         return f"{basis}을 종합하면 {relation}"
     relation = {
@@ -364,7 +364,7 @@ def _criterion_summary(
         "worse": "요청 조건에는 불리",
     }[outcome]
     return (
-        f"추천 {_criterion_value_text(factor, selected_value)} · "
+        f"맞춤 경로 {_criterion_value_text(factor, selected_value)} · "
         f"{comparison_label} {_criterion_value_text(factor, comparison_value)} · {relation}"
     )
 
@@ -396,7 +396,7 @@ def _recommendation_criteria(
                     preference.factor, preference.factor.replace("_", " ")
                 ),
                 "outcome": "unavailable",
-                "summary": "추천 경로가 확정되지 않아 조건별 비교를 표시하지 않습니다.",
+                "summary": "맞춤 경로가 확정되지 않아 조건별 비교를 표시하지 않습니다.",
                 "confidence": confidence,
                 "confidence_reason": confidence_reason,
             })
@@ -529,30 +529,30 @@ def _metric_evidence_note(
     if factor == "distance_m":
         if abs(chosen_value - other_value) < 10:
             return (
-                f"거리: 추천 경로 {chosen_value:.1f}m, "
+                f"거리: 맞춤 경로 {chosen_value:.1f}m, "
                 f"{comparison_label} {other_value:.1f}m."
             )
         return (
-            f"거리: 추천 경로 {_distance_text(chosen_value)}, "
+            f"거리: 맞춤 경로 {_distance_text(chosen_value)}, "
             f"{comparison_label} {_distance_text(other_value)}."
         )
     if factor == "stairs_distance_m":
-        return f"지도상 계단 구간: 추천 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
+        return f"지도상 계단 구간: 맞춤 경로 {chosen_value:.0f}m, {comparison_label} {other_value:.0f}m."
     if factor == "crosswalk_count":
-        return f"OSM 건널목 기록: 추천 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
+        return f"OSM 건널목 기록: 맞춤 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
     if factor == "sidewalk_coverage_percent":
-        return f"확인된 보행공간 비율: 추천 경로 {chosen_value:.0f}%, {comparison_label} {other_value:.0f}%."
+        return f"확인된 보행공간 비율: 맞춤 경로 {chosen_value:.0f}%, {comparison_label} {other_value:.0f}%."
     if factor == "max_slope_percent":
         return (
             "지도에 기록된 최대 경사: "
-            f"추천 경로 {chosen_value:.1f}%, {comparison_label} {other_value:.1f}%."
+            f"맞춤 경로 {chosen_value:.1f}%, {comparison_label} {other_value:.1f}%."
         )
     if factor in PROXY_FACTORS:
         label = PROXY_EVIDENCE_LABELS[factor]
         if chosen_value == other_value:
             return f"{label}: 두 경로의 조건이 같습니다."
         relation = (
-            "추천 경로가 더 유리합니다"
+            "맞춤 경로가 더 유리합니다"
             if chosen_value > other_value else f"{comparison_label}이 더 유리합니다"
         )
         return f"{label}: {relation}."

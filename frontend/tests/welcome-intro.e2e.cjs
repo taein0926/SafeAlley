@@ -14,6 +14,20 @@ const { baseUrl } = require('./ui-fixtures.cjs');
     const intro = page.getByRole('dialog', { name: '안전 골목길', exact: true });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await intro.waitFor();
+    assert.equal(await intro.evaluate(element => document.activeElement === element), true);
+    assert.equal(await intro.evaluate(element => getComputedStyle(element).outlineStyle), 'none');
+    const close = page.getByRole('button', { name: '서비스 소개 닫기', exact: true });
+    assert.equal(await close.evaluate(element => getComputedStyle(element).outlineStyle), 'none');
+    const center = await close.evaluate(element => {
+      const button = element.getBoundingClientRect();
+      const icon = element.querySelector('svg').getBoundingClientRect();
+      return { x: Math.abs(button.x + button.width / 2 - icon.x - icon.width / 2),
+        y: Math.abs(button.y + button.height / 2 - icon.y - icon.height / 2) };
+    });
+    assert(center.x < 0.5 && center.y < 0.5, JSON.stringify(center));
+    await page.keyboard.press('Tab');
+    assert.equal(await close.evaluate(element => document.activeElement === element), true);
+    assert.equal(await close.evaluate(element => getComputedStyle(element).outlineStyle), 'solid');
     // OSM and fire-service logos are decorative (alt="") next to their labels.
     const logos = intro.locator('img');
     assert.equal(await logos.count(), 8);

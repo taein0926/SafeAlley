@@ -3,14 +3,14 @@ import { CARD_STATE_LABELS, CONDITION_LABELS, conditionCards, type ConditionCard
 import { ConditionIcon } from "./ConditionIcon";
 
 const PREVIEW_LABELS: Record<CardFactor, string> = {
-  distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "도움시설",
+  distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "안전시설",
   stairs: "계단", crossing: "건널목", bridge: "육교", time: "시간대",
 };
 
 export function RecommendationIcons({ factors, conditions, preview = false }: {
   factors: RecommendationFactor[]; conditions?: ConditionCard[]; preview?: boolean;
 }) {
-  return <span className="recommendation-icons" role="list" aria-label={preview ? "실시간 분석" : "추천 조건 적용 여부"}>
+  return <span className="recommendation-icons" role="list" aria-label={preview ? "실시간 분석" : "맞춤 경로 조건 적용 여부"}>
     {conditionCards(factors, conditions).map(({ factor, state, period, application_scope, data_quality, reason }) => {
       const applied = state === "applied";
       const status = CARD_STATE_LABELS[state];
@@ -23,7 +23,7 @@ export function RecommendationIcons({ factors, conditions, preview = false }: {
           : application_scope === "route_generation" && data_quality === "partial" ? "등록된 건널목을 줄이는 비용을 경로 탐색에 반영했습니다. 전체 건널목 수 비교는 자료 부족으로 보류합니다"
           : factor === "bridge" ? "육교 선호는 현재 경로 비용에 독립적으로 반영되지 않습니다"
           : factor === "time" && applied ? `${period === "night" ? "야간" : "주간"} 시간대 정책을 사용했습니다`
-          : applied ? "이번 추천의 평가 조건에 반영되었습니다" : "이번 추천의 평가 조건에 반영되지 않았습니다"}>
+          : applied ? "맞춤 경로의 평가 조건에 반영되었습니다" : "맞춤 경로의 평가 조건에 반영되지 않았습니다"}>
         {preview && applied && <svg className="condition-recognized-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="m3 8 3 3 7-7" />
         </svg>}

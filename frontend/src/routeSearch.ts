@@ -57,14 +57,14 @@ export type RouteSearchResult = {
 
 export type DisplayedRouteCandidate = {
   candidate: RouteCandidate;
-  label: "추천 경로" | "최단경로" | "맞춤경로";
+  label: "최단경로" | "맞춤경로";
 };
 
 export function criterionOutcomeLabel(
   outcome: "better" | "similar" | "worse" | "not_compared" | "unavailable",
 ): string {
   return {
-    better: "추천 경로 우세",
+    better: "맞춤 경로 우세",
     similar: "차이 거의 없음",
     worse: "비교 경로 우세",
     not_compared: "비교 경로 없음",
@@ -171,6 +171,16 @@ export function buildDirectRouteToolCall(
       preferences,
     },
   };
+}
+
+// Visual selection is independent of a confirmed recommendation. An unmet
+// avoidance request can still show the shortest fallback as the active route.
+export function initialSelectedRouteType(
+  result: Pick<AgentExecutionResponse, "recommendation_status" | "selected_route_type" | "candidates">,
+): RouteType | null {
+  const type = result.recommendation_status === "ready" ? result.selected_route_type
+    : result.recommendation_status === "no_supported_preferences" ? "shortest" : null;
+  return result.candidates.some(candidate => candidate.route_type === type) ? type : null;
 }
 
 export function selectDisplayedCandidates(

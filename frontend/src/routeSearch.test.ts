@@ -9,6 +9,7 @@ import {
   currentLocalTime,
   estimatedWalkingMinutes,
   formatCrosswalkCount,
+  initialSelectedRouteType,
   isValidDepartureTime,
   resolveBuildingLocation,
   resolveDirectLocation,
@@ -93,7 +94,7 @@ test("0-100 slider values map to the backend stairs range", () => {
 });
 
 test("recommendation evidence labels are plain Korean", () => {
-  assert.equal(criterionOutcomeLabel("better"), "추천 경로 우세");
+  assert.equal(criterionOutcomeLabel("better"), "맞춤 경로 우세");
   assert.equal(criterionOutcomeLabel("similar"), "차이 거의 없음");
   assert.equal(criterionOutcomeLabel("worse"), "비교 경로 우세");
   assert.equal(criterionOutcomeLabel("not_compared"), "비교 경로 없음");
@@ -241,6 +242,30 @@ test("editing a text location uses the place resolver", async () => {
     },
   );
   assert.equal(requestedName, "주안역");
+});
+
+test("unmet avoidance selects the shortest fallback without confirming a recommendation", () => {
+  const result = { recommendation_status: "no_supported_preferences" as const,
+    selected_route_type: null, candidates: [candidate("shortest")] };
+  assert.equal(initialSelectedRouteType(result), "shortest");
+  assert.equal(result.selected_route_type, null);
+  assert.equal(result.recommendation_status, "no_supported_preferences");
+});
+
+test("fallback selection needs an existing shortest route and does not confirm field-review candidates", () => {
+  assert.equal(initialSelectedRouteType({ recommendation_status: "no_supported_preferences",
+    selected_route_type: null, candidates: [candidate("custom")] }), null);
+  assert.equal(initialSelectedRouteType({ recommendation_status: "no_supported_preferences",
+    selected_route_type: null, candidates: [] }), null);
+  assert.equal(initialSelectedRouteType({ recommendation_status: "field_review_required",
+    selected_route_type: null, candidates: [candidate("shortest"), candidate("custom")] }), null);
+});
+
+test("confirmed recommendations retain the selected route", () => {
+  for (const type of ["shortest", "custom"] as const) {
+    assert.equal(initialSelectedRouteType({ recommendation_status: "ready",
+      selected_route_type: type, candidates: [candidate("shortest"), candidate("custom")] }), type);
+  }
 });
 
 test("a shortest recommendation is compared with the custom route", () => {

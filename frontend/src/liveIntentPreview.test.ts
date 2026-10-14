@@ -30,7 +30,10 @@ test("condition cards always use the requested four-plus-four order with bridge 
   assert.deepEqual(conditionCards([], emptyConditionCards().reverse()).map(card => card.factor), order);
   assert.equal(CONDITION_LABELS.crossing, "건널목 회피");
   assert.equal(CONDITION_LABELS.bridge, "육교 우선");
-  assert.equal(CONDITION_LABELS.safety, "도움시설 접근성");
+  assert.equal(CONDITION_LABELS.safety, "안전시설");
+  const badges = readFileSync(new URL("./components/RecommendationIcons.tsx", import.meta.url), "utf8");
+  assert.match(badges, /safety: "안전시설"/);
+  assert.doesNotMatch(badges, /도움시설/);
   const css = readFileSync(new URL("./routeCards.css", import.meta.url), "utf8");
   assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 });

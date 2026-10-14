@@ -12,9 +12,11 @@
   box-shadow: 0 24px 80px #071a2b38;
 }
 .welcome-dialog::backdrop { background: rgb(7 26 43 / 42%); }
+.welcome-dialog:focus { outline: none; }
 .welcome-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .welcome-company { display: block; width: 180px; height: 60px; object-fit: contain; }
-.welcome-close { width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; font-size: 34px; cursor: pointer; border-radius: 8px; }
+.welcome-close { display: grid; place-items: center; width: 44px; height: 44px; flex: none; padding: 0; border: none; background: transparent; color: #6a7e98; cursor: pointer; border-radius: 8px; }
+.welcome-close svg { display: block; width: 24px; height: 24px; }
 .welcome-close:hover { background: #edf4fb; }
 .welcome-close:focus-visible { outline: 3px solid #1769df; outline-offset: 4px; }
 .welcome-title { margin: 34px 0 22px; text-align: center; font-size: clamp(42px, 6vw, 80px); font-weight: 800; letter-spacing: -.065em; line-height: 1.15; }

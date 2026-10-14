@@ -6,6 +6,21 @@ const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./searchPanel.css", import.meta.url), "utf8");
 const picker = readFileSync(new URL("./components/ExamplePicker.tsx", import.meta.url), "utf8");
 
+test("route guidance consistently names the custom route without legacy recommendation labels", () => {
+  for (const source of [app, ...["routeSearch.ts", "routeProgress.ts", "components/RecommendationIcons.tsx"].map(
+    file => readFileSync(new URL(file, import.meta.url), "utf8"),
+  )]) {
+    assert.doesNotMatch(source, /추천\s*경로|추천 길|이번 추천/);
+  }
+  assert.match(app, /아래 경로는 최단 경로이며 맞춤 경로가 아닙니다\./);
+  assert.match(app, /아래 경로는 비교용 후보이며 맞춤 경로가 아닙니다\./);
+});
+
+test("AI input submits through its form on Enter but preserves Shift+Enter and IME composition", () => {
+  assert.match(app, /event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229/);
+  assert.match(app, /event.preventDefault\(\);\s*exampleTyper.current\?\.cancel\(\);\s*if \(!event.repeat\) event.currentTarget.form\?\.requestSubmit\(\)/);
+});
+
 test("search errors retain their position and get the same bottom padding as the weather top gap", () => {
   assert.match(app, /<div className="search-weather">[^\n]*<\/div>\s*\{requestState === "error" && <p className="route-error" role="alert">[^\n]*\s*<\/section>/);
   const chrome = readFileSync(new URL("./mapChrome.css", import.meta.url), "utf8");
@@ -21,7 +36,7 @@ test("examples animate input without searching; the search button retains the ex
   assert.equal(examplesArray?.match(/"[^"\n]+"/g)?.length, 4);
   const examples = examplesArray?.match(/"[^"\n]+"/g)?.map(value => JSON.parse(value));
   assert.equal(examples?.[1], "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.");
-  assert.equal(examples?.[2], "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 갈건데 최단 거리를 우선하면서 안전한 길을 원해. 가로등과 CCTV가 많고 경찰서랑 가까운 길로 안내해줘. 계단과 건널목은 적게 지나고 육교를 우선 이용하고 싶어.");
+  assert.equal(examples?.[2], "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 최단 거리로 안내해. 가로등, CCTV 많고 경찰서 주변인 길로 안내해. 계단 피하고 건널목 대신 육교로 갈래.");
   assert.match(app, /await runAiSearch\(query\)/);
   assert.match(app, /onSelect=\{typeExample\}/);
   assert.match(picker, /setOpen\(false\); onSelect\(example\)/);

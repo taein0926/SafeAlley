@@ -245,7 +245,7 @@ def test_ranking_combines_registered_metrics(monkeypatch) -> None:
     assert criteria["streetlight_score"]["confidence"] == "medium"
     assert criteria["distance_m"]["outcome"] == "worse"
     assert criteria["distance_m"]["confidence"] == "high"
-    assert any("추천 경로 130m, 최단 경로 100m" in note
+    assert any("맞춤 경로 130m, 최단 경로 100m" in note
                for note in result["recommendation_notes"])
     assert any("실제 치안" in note for note in result["recommendation_notes"])
 
@@ -469,7 +469,7 @@ def test_cctv_and_stairs_explanation_mentions_step_free_tie() -> None:
     notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )[1]
-    assert any("계단 구간: 추천 경로 0m, 최단 경로 0m" in note for note in notes)
+    assert any("계단 구간: 맞춤 경로 0m, 최단 경로 0m" in note for note in notes)
     assert any("현장에 계단이 없음을 보장하지 않습니다" in note for note in notes)
 
 
@@ -529,6 +529,30 @@ def test_secondary_explanation_covers_accessibility_metrics(
     assert expected in detail
 
 
+@pytest.mark.parametrize("factor,direction,chosen,other", [
+    ("distance_m", "minimize", 100, 130),
+    ("stairs_distance_m", "minimize", 0, 20),
+    ("crosswalk_count", "minimize", 1, 3),
+    ("sidewalk_coverage_percent", "maximize", 90, 70),
+    ("max_slope_percent", "minimize", 1, 4),
+    ("cctv_score", "maximize", 72, 58),
+])
+def test_route_evidence_uses_custom_route_terminology(factor, direction, chosen, other):
+    preference = RoutePreference(factor=factor, direction=direction)
+    summary = route_ranking_service._criterion_summary(
+        preference, chosen, other, "최단 경로", "better",
+    )
+    single_summary = route_ranking_service._criterion_summary(
+        preference, chosen, None, None, "not_compared",
+    )
+    note = route_ranking_service._metric_evidence_note(
+        preference, {"metrics": {factor: chosen}}, {"metrics": {factor: other}}, "최단 경로",
+    )
+    assert "맞춤 경로" in summary
+    assert note is not None and "맞춤 경로" in note
+    assert all("추천 경로" not in text for text in (summary, single_summary, note))
+
+
 def test_proxy_evidence_explains_inputs_without_exposing_abstract_score() -> None:
     selected = {"metrics": {"cctv_score": 72}}
     comparison = {"metrics": {"cctv_score": 58}}
@@ -539,7 +563,7 @@ def test_proxy_evidence_explains_inputs_without_exposing_abstract_score() -> Non
         comparison,
     )
 
-    assert note == "CCTV와의 거리·주변 밀도·분포 공백: 추천 경로가 더 유리합니다."
+    assert note == "CCTV와의 거리·주변 밀도·분포 공백: 맞춤 경로가 더 유리합니다."
     assert "점수" not in note
     assert "지표" not in note
 

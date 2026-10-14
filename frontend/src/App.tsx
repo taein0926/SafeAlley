@@ -32,6 +32,7 @@ import {
   currentLocalTime,
   estimatedWalkingMinutes,
   formatCrosswalkCount,
+  initialSelectedRouteType,
   isValidDepartureTime,
   resolveBuildingLocation,
   resolveDirectLocation,
@@ -61,7 +62,7 @@ type SearchMode = "direct" | "ai";
 const SEARCH_EXAMPLES = [
   "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
   "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.",
-  "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 갈건데 최단 거리를 우선하면서 안전한 길을 원해. 가로등과 CCTV가 많고 경찰서랑 가까운 길로 안내해줘. 계단과 건널목은 적게 지나고 육교를 우선 이용하고 싶어.",
+  "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 최단 거리로 안내해. 가로등, CCTV 많고 경찰서 주변인 길로 안내해. 계단 피하고 건널목 대신 육교로 갈래.",
   "낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘.",
 ] as const;
 type RequestState = "idle" | "loading" | "error";
@@ -401,11 +402,7 @@ function App() {
     setWeatherRequested(true);
     setSearchResult(result);
     setQueryEditing(false);
-    setSelectedRouteType(
-      result.result.recommendation_status === "ready"
-        ? result.result.selected_route_type
-        : null,
-    );
+    setSelectedRouteType(initialSelectedRouteType(result.result));
     setRequestState("idle");
   }
 
@@ -608,7 +605,10 @@ function App() {
           <div id="route-candidate-cards" className="floating-results-body">
           {searchResult && searchResult.result.recommendation_status !== "ready" && (
             <p className="route-review-warning" role="status">
-              {searchResult?.result.recommendation_reason ?? "경로 추천을 확정하지 못했습니다."} 아래 경로는 비교용 후보이며 추천 경로가 아닙니다.
+              {searchResult.result.recommendation_reason ?? "맞춤 경로를 확정하지 못했습니다."}{" "}
+              {searchResult.result.recommendation_status === "no_supported_preferences" && initialSelectedRouteType(searchResult.result) === "shortest"
+                ? "아래 경로는 최단 경로이며 맞춤 경로가 아닙니다."
+                : "아래 경로는 비교용 후보이며 맞춤 경로가 아닙니다."}
             </p>
           )}
           <div className="route-cards">
@@ -742,6 +742,11 @@ function App() {
                   onPointerDown={() => exampleTyper.current?.cancel()}
                   onKeyDown={(event) => {
                     if (event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key.length === 1) exampleTyper.current?.cancel();
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                      event.preventDefault();
+                      exampleTyper.current?.cancel();
+                      if (!event.repeat) event.currentTarget.form?.requestSubmit();
+                    }
                   }}
                   disabled={requestState === "loading"} rows={3} required />
               </SpeechInput>
