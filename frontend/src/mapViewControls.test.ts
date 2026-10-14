@@ -69,3 +69,12 @@ test("side view includes all candidate paths and supports the map before search"
   assert.match(map, /const frameCoordinates = \[\.\.\.routeCandidates.flatMap/);
   assert.match(map, /viewer.camera.pickEllipsoid/);
 });
+
+test("displayed route markers depend on completed search locations, not edited inputs", () => {
+  assert.match(app, /const displayedOrigin = searchResult \? searchResult.origin : originLocation;/);
+  assert.match(app, /const displayedDestination = searchResult \? searchResult.destination : destinationLocation;/);
+  const markers = app.slice(app.indexOf("const draftLocations ="), app.indexOf("const handleBuildingSelect ="));
+  assert.match(markers, /\[displayedDestination, displayedOrigin, searchResult\]/);
+  assert.doesNotMatch(markers, /\[destinationLocation, originLocation, searchResult\]/);
+  assert.match(markers, /location\?\.source === "map"/);
+});

@@ -35,7 +35,7 @@ test("examples append exactly one Unicode character and complete only on the fin
   } finally { typer.dispose(); }
 });
 
-test("spaces use the same default 55ms interval as every other character", (context) => {
+test("spaces use the same default 25ms interval as every other character", (context) => {
   context.mock.timers.enable({ apis: ["setTimeout"] });
   const texts: string[] = [];
   const typer = createExampleTyper({ onText: text => texts.push(text), onTypingChange() {} });
@@ -43,7 +43,7 @@ test("spaces use the same default 55ms interval as every other character", (cont
     typer.start("밤 길");
     for (const expected of ["밤", "밤 ", "밤 길"]) {
       const count = texts.length;
-      context.mock.timers.tick(54);
+      context.mock.timers.tick(24);
       assert.equal(texts.length, count);
       context.mock.timers.tick(1);
       assert.equal(texts.at(-1), expected);

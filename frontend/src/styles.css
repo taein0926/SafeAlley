@@ -51,7 +51,7 @@ textarea { font: inherit; }
 }
 
 .map-stage { position: absolute; inset: 0; }
-.route-pins { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 20; }
+.route-pins { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 8; }
 .route-pins img { position: absolute; top: 0; left: 0; width: 40px; height: 50px; max-width: none; visibility: hidden; pointer-events: none; user-select: none; }
 .route-map-sign { --route-sign-fill: #3576dc; position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 5px; width: max-content; padding: 5px; border: 2px solid var(--route-sign-outline, #0054bb); border-radius: 5px; background: var(--route-sign-fill); color: #fff; box-shadow: 0 2px 5px #0005; font-size: 13px; line-height: 18px; white-space: nowrap; visibility: hidden; pointer-events: none; user-select: none; }
 .route-map-sign::before, .route-map-sign::after { content: ""; position: absolute; left: 50%; width: 0; height: 0; transform: translateX(-50%); border-left: 8px solid transparent; border-right: 8px solid transparent; }

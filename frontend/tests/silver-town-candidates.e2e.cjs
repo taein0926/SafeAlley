@@ -53,6 +53,21 @@ const { baseUrl, createTestPage, rankingResult } = require('./ui-fixtures.cjs');
         && boxes.every((box, index) => boxes.slice(index + 1).every(other => box.right <= other.x || other.right <= box.x || box.bottom <= other.y || other.bottom <= box.y));
     }, { timeout: 30000 });
     assert.equal(requests.length, 1, 'Wait for explicit candidate choice');
+    const pinOcclusion = await page.locator('.route-pins').evaluate(layer => {
+      const sidebar = document.querySelector('.sidebar-primary');
+      const box = sidebar.getBoundingClientRect();
+      // Same real pin styling, positioned behind the search panel to test stacking.
+      const probe = layer.querySelector('.place-candidate-pin').cloneNode(true);
+      probe.removeAttribute('data-map-candidate');
+      probe.style.transform = `translate(${box.x + 80}px, ${box.y + 40}px)`;
+      probe.style.visibility = 'visible';
+      layer.appendChild(probe);
+      const hit = document.elementFromPoint(box.x + 95, box.y + 56);
+      const occluded = !probe.contains(hit) && sidebar.contains(hit);
+      probe.remove();
+      return occluded;
+    });
+    assert(pinOcclusion, 'Search panel visually covers pins and receives pointer input');
     await page.waitForTimeout(8000); // Let imagery/building requests settle after the camera flight.
     assert.equal(await page.locator('.place-candidate-caption, .place-candidate-dot, .place-candidate-link').count(), 0, 'No map cards, circle dots or connecting lines');
     assert.deepEqual(await page.locator('.place-candidate-pin text').allTextContents(), ['A','B','C','D','E','F','G']);

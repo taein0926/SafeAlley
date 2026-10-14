@@ -22,10 +22,27 @@ const examples = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)[1
     await page.route('**/api/agent/intent-preview/status', route => route.fulfill({ json: { enabled: false, configured: false, available: false } }));
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const sidebar = page.locator('.sidebar-primary');
-    const picker = page.getByRole('button', { name: '예시 선택' });
+    const picker = page.getByRole('button', { name: '예시', exact: true });
     const grid = page.getByRole('group', { name: '예시 경로 검색' });
     const input = page.getByRole('textbox', { name: '문장으로 경로 요청' });
     await sidebar.waitFor();
+    const actionWidths = await page.locator('.search-mode-toolbar').evaluate(toolbar => {
+      const measure = element => ({
+        example: element.querySelector('.example-picker-trigger').getBoundingClientRect().width,
+        search: element.querySelector('.search-button').getBoundingClientRect().width,
+      });
+      const current = measure(toolbar);
+      const old = toolbar.cloneNode(true);
+      old.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;width:${toolbar.getBoundingClientRect().width}px`;
+      toolbar.parentElement.appendChild(old);
+      old.querySelector('.example-picker-trigger').firstChild.textContent = '예시 선택 ';
+      const previous = measure(old);
+      old.remove();
+      return { current, previous };
+    });
+    assert(actionWidths.previous.example - actionWidths.current.example >= 20);
+    assert(Math.abs((actionWidths.current.search - actionWidths.previous.search)
+      - (actionWidths.previous.example - actionWidths.current.example)) < 1, JSON.stringify(actionWidths));
     assert.equal((await sidebar.boundingBox()).width, 328);
     assert.equal(await grid.count(), 0);
     assert.equal(await page.locator('.sidebar-header #map-weather').count(), 0);
@@ -38,6 +55,7 @@ const examples = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)[1
     assert.equal(await picker.getAttribute('aria-expanded'), 'true');
     const buttons = grid.getByRole('button');
     assert.equal(await buttons.count(), 4);
+    assert.equal(await buttons.nth(2).textContent(), '종합 조건');
     const labelsFit = await buttons.evaluateAll(elements => elements.every(element => element.scrollWidth <= element.clientWidth));
     assert(labelsFit, 'Example labels fit the narrowed two-column popup');
     const boxes = await Promise.all([0, 1, 2, 3].map(index => buttons.nth(index).boundingBox()));

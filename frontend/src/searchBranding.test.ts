@@ -21,6 +21,7 @@ test("examples animate input without searching; the search button retains the ex
   assert.equal(examplesArray?.match(/"[^"\n]+"/g)?.length, 4);
   const examples = examplesArray?.match(/"[^"\n]+"/g)?.map(value => JSON.parse(value));
   assert.equal(examples?.[1], "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.");
+  assert.equal(examples?.[2], "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 갈건데 최단 거리를 우선하면서 안전한 길을 원해. 가로등과 CCTV가 많고 경찰서랑 가까운 길로 안내해줘. 계단과 건널목은 적게 지나고 육교를 우선 이용하고 싶어.");
   assert.match(app, /await runAiSearch\(query\)/);
   assert.match(app, /onSelect=\{typeExample\}/);
   assert.match(picker, /setOpen\(false\); onSelect\(example\)/);
@@ -43,7 +44,8 @@ test("example selector opens the same four element-only labels above the button 
   assert.equal(app.match(/<ExamplePicker/g)?.length, 1);
   assert.match(picker, /open && <div/);
   assert.match(picker, /className="search-example-label">\{LABELS\[index\]\}/);
-  assert.match(picker, /"가로등 · 계단", "가로등 · CCTV · 계단", "가로등 · 건널목", "CCTV · 건널목"/);
+  assert.match(picker, /"가로등 · 계단", "가로등 · CCTV · 계단", "종합 조건", "CCTV · 건널목"/);
+  assert.doesNotMatch(picker, /예시 선택/);
   assert.doesNotMatch(picker, /많음|회피/);
   assert.doesNotMatch(picker, /<span>\{example\}<\/span>/);
   assert.match(picker, /disabled=\{disabled\}/);
@@ -148,8 +150,8 @@ test("departure input fills the slider-width wrapper while preserving button siz
 test("preference labels describe priority and crosswalk avoidance without changing weight mapping", () => {
   assert.match(app, /label="경로 우선순위" value=\{safetyWeight\} onChange=\{setSafetyWeight\} levelLabels=\{\["거리", "균형", "안전"\]\}/);
   assert.match(app, /label="계단 회피" value=\{stairsWeight\} onChange=\{setStairsWeight\}/);
-  assert.match(app, /label="횡단보도 회피" value=\{crossingWeight\} onChange=\{setCrossingWeight\}/);
-  assert.doesNotMatch(app, /label="안전 관련 시설"|label="건널목 회피"/);
+  assert.match(app, /label="건널목 회피" value=\{crossingWeight\} onChange=\{setCrossingWeight\}/);
+  assert.doesNotMatch(app, /label="안전 관련 시설"|label="횡단보도 회피"/);
 });
 
 test("Korean brand keeps reload and the agreed slogan without a comma", () => {

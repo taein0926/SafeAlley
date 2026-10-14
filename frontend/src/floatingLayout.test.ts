@@ -19,6 +19,12 @@ test("search panel uses 95vh and is vertically centered while building details k
   assert.doesNotMatch(css, /--dock-width|inset: 0 0 0 var\(--sidebar-width\)/);
 });
 
+test("map pins stay below the search panel without hiding the surrounding map", () => {
+  const pinZ = Number(css.match(/\.route-pins \{[^}]*z-index: (\d+)/)?.[1]);
+  const panelZ = Number(css.match(/\.search-panel-shell \{[^}]*z-index: (\d+)/)?.[1]);
+  assert.ok(pinZ < panelZ);
+});
+
 test("collapse handle attaches to the floating card and stays reachable when closed", () => {
   assert.match(css, /\.search-panel-handle \{[^}]*left: 100%;[^}]*width: 28px;[^}]*height: 64px;/);
   assert.match(css, /\.search-panel-shell--collapsed \{ transform: translate\(calc\(-100% - var\(--panel-edge\)\), -50%\); \}/);

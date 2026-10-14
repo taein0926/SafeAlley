@@ -33,9 +33,9 @@ export function createExampleTyper(options: Options) {
         const complete = index === characters.length;
         options.onText(typed, complete);
         if (complete) { timer = undefined; options.onTypingChange(false); return; }
-        timer = setTimeout(tick, options.characterDelayMs ?? 55);
+        timer = setTimeout(tick, options.characterDelayMs ?? 25);
       }
-      if (characters.length) timer = setTimeout(tick, options.characterDelayMs ?? 55);
+      if (characters.length) timer = setTimeout(tick, options.characterDelayMs ?? 25);
       else { options.onText("", true); options.onTypingChange(false); }
     },
     cancel,

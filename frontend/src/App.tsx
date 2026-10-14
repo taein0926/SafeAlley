@@ -61,7 +61,7 @@ type SearchMode = "direct" | "ai";
 const SEARCH_EXAMPLES = [
   "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
   "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.",
-  "밤 11시에 인천 비즈니스 고등학교에서 인천청인학교까지 가로등이 많고 횡단보도 적게 건너는 길로 가고 싶어",
+  "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 갈건데 최단 거리를 우선하면서 안전한 길을 원해. 가로등과 CCTV가 많고 경찰서랑 가까운 길로 안내해줘. 계단과 건널목은 적게 지나고 육교를 우선 이용하고 싶어.",
   "낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘.",
 ] as const;
 type RequestState = "idle" | "loading" | "error";
@@ -269,6 +269,8 @@ function App() {
   const previewBusy = mode === "ai" && queryEditing && livePreview.active && !livePreview.completed && !livePreview.blocked && requestState !== "loading";
   const mapCandidates = useMemo(() => displayedCandidates.map(({ candidate }) => candidate), [displayedCandidates]);
   const systemReady = health.kind === "ready" && roads.kind === "ready";
+  const displayedOrigin = searchResult ? searchResult.origin : originLocation;
+  const displayedDestination = searchResult ? searchResult.destination : destinationLocation;
   const draftLocations = useMemo<DraftMapLocation[]>(() => {
     // Keep pins at the coordinates used for THIS search, including AI/text results.
     // Editing the next query must not move pins belonging to the displayed route.
@@ -280,11 +282,11 @@ function App() {
     }
     const locations: DraftMapLocation[] = [];
     for (const [kind, location] of [
-      ["origin", originLocation],
-      ["destination", destinationLocation],
+      ["origin", displayedOrigin],
+      ["destination", displayedDestination],
     ] as const) {
       if (
-        location.source === "map" &&
+        location?.source === "map" &&
         typeof location.latitude === "number" &&
         typeof location.longitude === "number"
       ) {
@@ -296,7 +298,7 @@ function App() {
       }
     }
     return locations;
-  }, [destinationLocation, originLocation, searchResult]);
+  }, [displayedDestination, displayedOrigin, searchResult]);
 
   const handleBuildingSelect = useCallback(async (
     selection: BuildingMapSelection,
@@ -726,7 +728,7 @@ function App() {
                   </div>
                 <PreferenceSlider label="경로 우선순위" value={safetyWeight} onChange={setSafetyWeight} levelLabels={["거리", "균형", "안전"]} />
                 <PreferenceSlider label="계단 회피" value={stairsWeight} onChange={setStairsWeight} />
-                <PreferenceSlider label="횡단보도 회피" value={crossingWeight} onChange={setCrossingWeight} />
+                <PreferenceSlider label="건널목 회피" value={crossingWeight} onChange={setCrossingWeight} />
               </div>
             )}
           </form>
