@@ -9,11 +9,14 @@ import httpx
 
 from app.core.config import get_settings
 from app.schemas.intent_preview import CARD_ORDER, ConditionCard, IntentPreviewResponse, IntentPreviewStatus
-from app.services.incomplete_conditions import incomplete_condition_factors
+from app.services.incomplete_conditions import (
+    incomplete_condition_factors,
+    preview_factor_evidence,
+)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 _lock = Lock()
-_last_call = 0.0
+_last_calls: OrderedDict[str, float] = OrderedDict()
 _cache: OrderedDict = OrderedDict()
 COMMON = (
     "사용자가 작성 중인 한국어 보행 요청의 전체 문장을 읽고, 이 항목만 판단한다. "
@@ -24,14 +27,20 @@ COMMON = (
     "항목별 근거를 독립적으로 판단하며 다른 항목이나 일반적인 보행 목적을 추론해 적용하지 않는다. "
 )
 QUESTIONS = {
-    "distance": "출발지에서 목적지까지 최단거리·짧은 길을 명시적으로 우선하는가? 단순히 길을 안내해 달라는 요청이나 다른 시설·회피 조건만 있으면 skip이다. 보통 사람은 짧은 길을 원할 것이라는 상식으로 추론하지 않는다. 조금 멀어져도 괜찮다는 허용도 skip이다.",
-    "safety": "사용자가 안전한 길 또는 안전시설 종합을 명시적으로 우선했는가? 가로등·CCTV·계단만 요청한 것을 종합 안전 요청으로 확대하지 않는다.",
-    "streetlight": "가로등이 많거나 밝은 길을 우선하는가? 어두운 길 회피도 포함한다.",
-    "cctv": "CCTV가 많거나 CCTV와 가까운 길을 우선하는가? 단순 목적지 이름은 제외한다.",
-    "stairs": "계단을 아예 피하려는가, 적게 지나려는가? 계단이 있어도 괜찮거나 피하지 않아도 된다는 말은 skip이다.",
-    "crossing": "건널목·횡단보도를 아예 피하려는가, 적게 지나려는가? 건너도 괜찮다는 말은 skip이다.",
-    "bridge": "육교를 이용하고 싶은가, 아예 피하고 싶은가, 적게 지나고 싶은가? 육교가 있어도 괜찮다는 허용이나 계단 회피만으로 육교 조건을 추론하지 않는다. 육교가 포함된 목적지 이름은 제외한다.",
-    "time": "출발 시각·시간대를 명시했는가? 밤·오전·오후와 시각을 함께 읽는다. 시각이 없으면 skip이다.",
+    "distance": "출발지에서 목적지까지 최단거리·짧은 길·빠른 길·지름길을 명시적으로 우선하는가? 경찰서나 병원 같은 시설이 가까운 길은 경로 자체가 짧다는 뜻이 아니므로 skip이다. '최단거리는 싫어', '최단거리 대신 밝은 길', '최단거리보단 안전한 길'처럼 거리를 거부·대체·후순위로 둔 요청도 skip이다. 단순히 길을 안내해 달라는 요청이나 다른 시설·회피 조건만 있으면 skip이다. 보통 사람은 짧은 길을 원할 것이라는 상식으로 추론하지 않는다. 조금 멀어져도 괜찮거나 최단거리가 아니어도 된다는 허용도 skip이다.",
+    "safety": (
+        "사용자가 안전한 길, 안전시설·도움시설이 가까운 길, 또는 경찰서·지구대·파출소·"
+        "소방서·119안전센터·응급실·응급의료기관 같은 경찰·소방·응급의료 "
+        "도움시설 접근성이 좋은 길을 원하는가? 안전시설이 가깝다·많다·접근하기 좋다는 "
+        "요청뿐 아니라 시설 인근·옆을 지나거나 경유하려는 요청도 apply다. "
+        "가로등·CCTV·계단만 요청한 것을 종합 안전 요청으로 확대하지 않는다."
+    ),
+    "streetlight": "가로등·조명이 많거나 밝은 길·환한 길을 우선하는가? '밝게 다닐 길', '길이 밝고 환했으면' 같은 활용형, 조명이 잘 된 길과 어두운 길 회피도 포함한다. '어두운 길이 싫어'는 apply지만, 밝은 길을 원하지 않거나 조명을 고려하지 않아도 된다는 말은 skip이다.",
+    "cctv": "CCTV·씨씨티비·감시카메라·방범카메라가 많거나 가까운 길을 우선하는가? 단순 목적지 이름은 제외한다. CCTV 우선을 안 하겠다는 철회는 skip이다.",
+    "stairs": "계단·층계를 아예 피하려는가, 적게 지나려는가? '계단 말고 평지'는 avoid다. 계단이 있어도 괜찮거나 피하고 싶지 않거나 피할 생각이 없거나 회피를 안 하겠다는 말은 skip이다.",
+    "crossing": "건널목·횡단보도를 아예 피하려는가, 적게 지나려는가? 건널목·횡단보도로 안내해 달라는 이용 요청은 회피가 아니므로 skip이다. 건너도 괜찮거나 줄일 생각이 없거나 회피를 안 하겠다는 말도 skip이다.",
+    "bridge": "육교·고가보도·보행육교를 이용하고 싶은가, 아예 피하고 싶은가, 적게 지나고 싶은가? '육교로 가줘'는 apply이고, '육교가 싫어'와 '육교 말고 횡단보도'는 avoid다. 육교가 있어도 괜찮거나 싫지 않거나 육교 없는 길이 싫다는 허용·철회, 계단 회피만으로 육교 조건을 추론하지 않는다. 육교가 포함된 목적지 이름은 제외한다.",
+    "time": "출발 시각·시간대를 명시했는가? 숫자 시각, '오후 두 시' 같은 한글 시각, '오후에·밤에·새벽에'뿐 아니라 '오늘 밤 출발', '새벽 출발'처럼 이동 동작이 붙은 완성된 시간대를 읽는다. 저녁·야간도 읽는다. 밤처럼 작성 중인 단어만 있으면 pending이고, '밤이 아니야'처럼 철회했거나 시간 표현이 없으면 skip이다.",
 }
 
 
@@ -44,9 +53,8 @@ class PreviewLimited(PreviewUnavailable):
 
 
 def reset_preview_state() -> None:
-    global _last_call
     with _lock:
-        _last_call = 0
+        _last_calls.clear()
         _cache.clear()
 
 
@@ -96,7 +104,33 @@ def parse_decisions(payload: dict, response: dict, minimum_confidence: float) ->
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
             raise PreviewUnavailable("Jev 신뢰도 형식을 확인할 수 없습니다.")
         choice = answer["choice"]
-        state = "analyzing" if choice == "pending" else "not_applied" if choice == "skip" or confidence < minimum_confidence else "applied"
+        evidence, source_choice = preview_factor_evidence(payload.get("state", ""), factor)
+        if evidence in {"absent", "negative"}:
+            state = "not_applied"
+            if evidence == "negative":
+                choice = "skip"
+        elif evidence == "incomplete":
+            state = "analyzing"
+            choice = "pending"
+        elif evidence == "positive":
+            if choice == "skip" or (choice != "pending" and source_choice and choice != source_choice):
+                # The source asks for the condition but Jev rejects it.  Keep
+                # a rejection or a conflicting direction visible as unresolved
+                # rather than lying in either direction.
+                state = "analyzing"
+            else:
+                # The fixed card was named and its direction is complete.
+                # Jev's positive choice is accepted regardless of a volatile
+                # confidence score; trailing '-고' is not incomplete.
+                state = "applied"
+                if choice == "pending" and source_choice:
+                    choice = source_choice
+        elif choice == "skip":
+            state = "not_applied"
+        elif choice == "pending" or confidence < minimum_confidence:
+            state = "analyzing"
+        else:
+            state = "applied"
         if metric_for_card.get(factor) in unfinished:
             state, choice = "analyzing", "pending"
         direction = None
@@ -110,22 +144,26 @@ def parse_decisions(payload: dict, response: dict, minimum_confidence: float) ->
     return cards
 
 
-def analyze_preview(query: str) -> IntentPreviewResponse:
-    global _last_call
+def analyze_preview(query: str, session_id: str | None = None) -> IntentPreviewResponse:
     settings = get_settings()
     if not settings.jev_preview_enabled or not settings.typesafe_api_key:
         raise PreviewUnavailable("실시간 조건 분석이 아직 연결되지 않았습니다.")
     query = query.strip()
     now = monotonic()
     key = (settings.jev_preview_model, settings.jev_preview_min_confidence, query)
+    session_key = session_id or "legacy"
     with _lock:
         hit = _cache.get(key)
         if hit and now - hit[0] < 60:
             _cache.move_to_end(key)
             return hit[1].model_copy(update={"cached": True})
-        if now - _last_call < .75:
+        last_call = _last_calls.get(session_key, 0.0)
+        if now - last_call < .75:
             raise PreviewLimited("입력 내용을 모으고 있습니다. 잠시 뒤 다시 입력해 주세요.")
-        _last_call = now
+        _last_calls[session_key] = now
+        _last_calls.move_to_end(session_key)
+        if len(_last_calls) > 1024:
+            _last_calls.popitem(last=False)
     payload = build_request(query, settings.jev_preview_model)
     try:
         response = httpx.post(API_URL, json=payload,

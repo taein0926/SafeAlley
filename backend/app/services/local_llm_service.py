@@ -11,7 +11,10 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.agent import ParsedRouteIntent, RoutePreference
-from app.services.incomplete_conditions import incomplete_condition_factors
+from app.services.incomplete_conditions import (
+    has_explicit_safety_facility_request,
+    incomplete_condition_factors,
+)
 
 
 class LocalLLMUnavailableError(RuntimeError):
@@ -40,7 +43,8 @@ A보다 B를 원하면 A를 넣지 않는다. A도 중요하고 B도 중요하�
 뒤에 적게/없이/많게 같은 요청 방향이 이어진 완성 조건은 보존한다.
 단어의 등장 횟수나 부정어만으로 조건을 추측하지 않는다.
 factor: 최단/짧은 길/빠른 길/가까운 길/거리=distance_m,
-안전=safety_score, 조명/가로등=streetlight_score,
+안전=safety_score, 안전시설·도움시설이 가깝거나 접근하기 좋은 길=safety_score/maximize,
+조명/가로등=streetlight_score,
 CCTV=cctv_score, 건널목/횡단보도=crosswalk_count, 계단=stairs_distance_m,
 보도/인도=sidewalk_coverage_percent,
 경사/평지/완만한 길=max_slope_percent, 경찰서 접근성=police_accessibility.
@@ -235,6 +239,8 @@ def _normalize_explicit_route_preferences(query: str, intent: ParsedRouteIntent)
         _set_preference(intent, "stairs_distance_m", "minimize")
     if re.search(r"경사.{0,12}(?:완만|낮|적)", query):
         _set_preference(intent, "max_slope_percent", "minimize")
+    if has_explicit_safety_facility_request(query):
+        _set_preference(intent, "safety_score", "maximize")
     if NEARBY_FACILITY_ROUTE.search(query) and not re.search(
         r"최단|짧은\s*(?:길|경로)|빠른\s*(?:길|경로)|거리|멀리\s*돌아", query
     ):

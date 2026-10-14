@@ -66,7 +66,7 @@ const { baseUrl, createTestPage, rankingResult } = require('./ui-fixtures.cjs');
         applied: badges.filter(e => e.dataset.applied === "true").length,
       };
     });
-    assert.deepEqual(layout.labels, ["거리", "가로등", "CCTV", "안전시설", "계단", "건널목", "육교", "시간대"]);
+    assert.deepEqual(layout.labels, ["거리", "가로등", "CCTV", "도움시설", "계단", "건널목", "육교", "시간대"]);
     assert.equal(layout.rows.length, 2);
     assert.equal(layout.gridHeight, 56);
     assert(layout.heights.every(height => height === 26));

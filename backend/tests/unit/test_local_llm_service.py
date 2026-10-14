@@ -997,6 +997,19 @@ def test_reconsidered_crossing_and_gentle_slope_use_requested_directions() -> No
     assert slope.preferences[0].direction == "minimize"
 
 
+def test_explicit_safety_facility_access_is_preserved_for_routing() -> None:
+    intent = ParsedRouteIntent.model_validate({"preferences": []})
+
+    local_llm_service._normalize_explicit_route_preferences(
+        "안전시설과 가깝고 계단이 적은 길로 안내해줘", intent,
+    )
+
+    assert {item.factor: item.direction for item in intent.preferences} == {
+        "stairs_distance_m": "minimize",
+        "safety_score": "maximize",
+    }
+
+
 def test_reconsidered_crossing_allowance_cancels_earlier_avoidance() -> None:
     intent = ParsedRouteIntent.model_validate({
         "preferences": [
