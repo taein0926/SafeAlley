@@ -55,6 +55,7 @@ const examples = app.match(/const SEARCH_EXAMPLES = \[([\s\S]*?)\] as const;/)[1
     assert.equal(await picker.getAttribute('aria-expanded'), 'true');
     const buttons = grid.getByRole('button');
     assert.equal(await buttons.count(), 4);
+    assert.equal(await buttons.nth(0).textContent(), '가로등 · CCTV · 건널목');
     assert.equal(await buttons.nth(2).textContent(), '종합 조건');
     const labelsFit = await buttons.evaluateAll(elements => elements.every(element => element.scrollWidth <= element.clientWidth));
     assert(labelsFit, 'Example labels fit the narrowed two-column popup');
