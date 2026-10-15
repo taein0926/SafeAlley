@@ -62,6 +62,28 @@ test("side view can reserve extra screen space for endpoint pins", () => {
   assert.ok(routeCameraFrame(points, 1200, 800, .65, 0, 0, 64).range > routeCameraFrame(points, 1200, 800, .65).range);
 });
 
+test("compact result layout preserves a usable route viewport instead of zooming to a regional view", () => {
+  const points = [
+    { x: -270, y: -110, z: 0 },
+    { x: 0, y: 95, z: 0 },
+    { x: 270, y: 15, z: 0 },
+  ];
+  const frame = routeCameraFrame(points, 920, 674, .8, 687, 0, 128, -Math.PI / 2);
+
+  // The old fixed-padding calculation left roughly one horizontal pixel and
+  // produced a range large enough to show most of the Seoul metro area.
+  assert.ok(frame.range < 10_000, `unexpected regional camera range: ${frame.range}`);
+
+  const tanY = Math.tan(.8 / 2), tanX = tanY * 920 / 674;
+  const screens = points.map((point) => ({
+    x: (1 + (point.x - frame.rightOffset) / ((frame.range - point.z) * tanX)) * 920 / 2,
+    y: (1 - (point.y - frame.upOffset) / ((frame.range - point.z) * tanY)) * 674 / 2,
+  }));
+  assert.ok(Math.min(...screens.map(({ x }) => x)) >= 687);
+  assert.ok(Math.max(...screens.map(({ x }) => x)) <= 920);
+  assert.ok(Math.max(...screens.map(({ x }) => x)) - Math.min(...screens.map(({ x }) => x)) >= 150);
+});
+
 test("top view fits every route vertex beyond floating search and detail cards", () => {
   for (const inset of [0, 416, 832]) {
     const width = 1440, height = 900, fov = .8, pitch = -Math.PI / 2;
