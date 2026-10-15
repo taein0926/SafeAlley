@@ -1,4 +1,5 @@
 export const ROUTE_CAMERA_PITCH = -55 * Math.PI / 180;
+const MIN_ROUTE_VIEWPORT_WIDTH = 160;
 
 // Fit the actual route vertices, not an enclosing sphere. Camera-space depth
 // accounts for perspective while the left inset excludes the result panel.
@@ -8,9 +9,27 @@ export function routeCameraFrame(
 ) {
   const tanY = Math.tan(fovY / 2);
   const tanX = tanY * width / height;
-  const left = 2 * (Math.min(Math.max(0, leftInset), width - 2 * padding - 1) + padding) / width - 1;
-  const right = 1 - 2 * padding / width;
-  const top = 1 - 2 * padding / height;
+  // On compact screens the search panel and the floating route cards can
+  // leave less horizontal room than the requested fixed padding. Reserving
+  // that padding anyway collapses the usable viewport to a one-pixel strip,
+  // which makes Cesium zoom out to a regional view for a sub-kilometre route.
+  // Keep the full padding when it fits, otherwise spend only the space left
+  // after preserving a practical route viewport. Bias the reduced budget to
+  // the right so endpoint pins still avoid the map controls where possible.
+  const minimumViewport = Math.min(MIN_ROUTE_VIEWPORT_WIDTH, Math.max(1, width));
+  const boundedInset = Math.min(Math.max(0, leftInset), Math.max(0, width - minimumViewport));
+  const horizontalPaddingBudget = Math.max(0, width - boundedInset - minimumViewport);
+  const fullPaddingBudget = 2 * padding;
+  const leftPadding = horizontalPaddingBudget >= fullPaddingBudget
+    ? padding
+    : Math.min(padding, horizontalPaddingBudget * 0.4);
+  const rightPadding = horizontalPaddingBudget >= fullPaddingBudget
+    ? padding
+    : Math.min(padding, horizontalPaddingBudget - leftPadding);
+  const verticalPadding = Math.min(padding, Math.max(0, (height - 1) / 2));
+  const left = 2 * (boundedInset + leftPadding) / width - 1;
+  const right = 1 - 2 * rightPadding / width;
+  const top = 1 - 2 * verticalPadding / height;
   const sin = Math.sin(-pitch), cos = Math.cos(-pitch);
   const projected = (points.length ? points : [{ x: 0, y: 0, z: 0 }]).map(({ x, y, z }) => {
     const forward = x * Math.sin(heading) + y * Math.cos(heading);
