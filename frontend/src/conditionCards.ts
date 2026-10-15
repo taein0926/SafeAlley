@@ -23,7 +23,8 @@ export function emptyConditionCards(state: CardState = "analyzing"): ConditionCa
 
 export function conditionCards(legacy: readonly string[], conditions?: readonly ConditionCard[]): ConditionCard[] {
   const byFactor = new Map(conditions?.map((card) => [card.factor, card]) ?? []);
-  const applied = new Set(legacy);
+  // Structured results are authoritative; the legacy umbrella safety flag is not a help-facility condition.
+  const applied = new Set(conditions ? [] : legacy);
   return CONDITION_ORDER.map((factor) => byFactor.get(factor) ?? {
     factor, state: applied.has(factor) ? "applied" : "not_applied",
   });

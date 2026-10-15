@@ -21,7 +21,28 @@ test("eight cards preserve actual API decisions without inferring new conditions
   const cards = conditionCards(["safety"], [{ factor: "streetlight", state: "applied" }, { factor: "time", state: "applied", period: "night" }]);
   assert.equal(cards.length, 8);
   assert.equal(cards.find((card) => card.factor === "cctv")?.state, "not_applied");
+  assert.equal(cards.find((card) => card.factor === "safety")?.state, "not_applied");
   assert.equal(cards.find((card) => card.factor === "time")?.period, "night");
+});
+
+test("direct-search cards preserve the backend's day/night component decisions", () => {
+  for (const night of [false, true]) {
+    const cards = conditionCards(["safety"], [
+      { factor: "streetlight", state: night ? "applied" : "not_applied" },
+      { factor: "cctv", state: "applied" },
+      { factor: "safety", state: "applied" },
+      { factor: "time", state: "applied", period: night ? "night" : "day" },
+    ]);
+    assert.equal(cards.find(card => card.factor === "streetlight")?.state, night ? "applied" : "not_applied");
+    assert.equal(cards.find(card => card.factor === "cctv")?.state, "applied");
+    assert.equal(cards.find(card => card.factor === "safety")?.state, "applied");
+  }
+});
+
+test("CCTV-only results do not enable the separate safety-facility card", () => {
+  const cards = conditionCards(["safety"], [{ factor: "cctv", state: "applied" }]);
+  assert.equal(cards.find(card => card.factor === "cctv")?.state, "applied");
+  assert.equal(cards.find(card => card.factor === "safety")?.state, "not_applied");
 });
 
 test("condition cards always use the requested four-plus-four order with bridge after crossing", () => {

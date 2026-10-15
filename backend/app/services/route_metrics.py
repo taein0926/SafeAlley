@@ -63,6 +63,14 @@ def _segment_weighted_average(
     return None if total_distance == 0 else weighted_total / total_distance
 
 
+def safety_component_metrics(route: RoutePayload) -> dict[str, float | None]:
+    """Inspect aggregate-score components without adding new ranking factors."""
+    return {
+        factor: _segment_weighted_average(route, factor)
+        for factor in ("streetlight_score", "cctv_score", "help_point_score")
+    }
+
+
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "distance_m": MetricDefinition(
         description="Total route distance in metres",
