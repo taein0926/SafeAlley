@@ -62,7 +62,7 @@ const SEARCH_EXAMPLES = [
   "밤 9시에 비즈니스고등학교에서 청인학교까지 건널목 피해서 가로등, CCTV 많은 길로 안내해줘.",
   "밤 8시에 서화초에서 실버타운까지 가로등, CCTV 많은 길로 안내해줘. 계단도 피해서 안내해.",
   "밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 최단 거리로 안내해. 가로등, CCTV 많고 경찰서 주변인 길로 안내해. 계단 피하고 건널목 대신 육교로 갈래.",
-  "낮 2시에 인천비즈니스고등학교에서 와이지타워까지 CCTV가 많고 건널목을 적게 건너는 길로 안내해줘.",
+  "밤 10시에 도화119안전센터에서 두리하나어린이집 및 육아종합지원센터까지 가려고 해. 가로등이 많고 계단 없는 길로 안내해줘.",
 ] as const;
 type RequestState = "idle" | "loading" | "error";
 type MapSelectionNotice = { kind: "instruction" | "error" | "success"; text: string } | null;
