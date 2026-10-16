@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import pytest
+import httpx
 from app.main import app
 from app.services import speech_service as speech
 
@@ -70,3 +71,40 @@ def test_empty_and_overlong_transcriptions_are_rejected(monkeypatch, text):
                            headers={'Content-Type': 'audio/wav; codecs=pcm'})
     assert response.status_code == 422
     assert not speech._lock.locked()
+
+
+def test_private_gpu_transcription(monkeypatch):
+    def fake_post(url, **kwargs):
+        assert url == 'http://host.docker.internal:11436/transcribe'
+        assert kwargs['content'].startswith(b'RIFF')
+        return httpx.Response(200, json={'text': '계단 피해서 안내해', 'language': 'ko',
+                                         'model': 'small', 'duration_s': 1.0, 'latency_ms': 300})
+    monkeypatch.setenv('STT_REMOTE_URL', 'http://host.docker.internal:11436')
+    monkeypatch.setattr(httpx, 'post', fake_post)
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 200
+    assert response.json()['text'] == '계단 피해서 안내해'
+
+
+def test_gpu_unavailable_falls_back_to_cpu(monkeypatch):
+    class FakeModel:
+        def transcribe(self, *_args, **_kwargs):
+            return iter([SimpleNamespace(text='CPU 대체 처리')]), None
+    monkeypatch.setenv('STT_REMOTE_URL', 'http://host.docker.internal:11436')
+    monkeypatch.setattr(httpx, 'post', lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        httpx.ConnectError('unavailable')))
+    monkeypatch.setattr(speech, '_model', FakeModel())
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 200
+    assert response.json()['text'] == 'CPU 대체 처리'
+
+
+def test_gpu_rejects_invalid_audio_without_cpu_fallback(monkeypatch):
+    monkeypatch.setenv('STT_REMOTE_URL', 'http://host.docker.internal:11436')
+    monkeypatch.setattr(httpx, 'post', lambda *_args, **_kwargs: httpx.Response(
+        422, json={'detail': '음성이 감지되지 않았습니다.'}))
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 422

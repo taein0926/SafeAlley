@@ -50,6 +50,7 @@ services:
       JEV_PREVIEW_ENABLED: ${JEV_PREVIEW_ENABLED:-false}
       JEV_PREVIEW_MIN_CONFIDENCE: ${JEV_PREVIEW_MIN_CONFIDENCE:-0.7}
       STT_MODEL: ${STT_MODEL:-small}
+      STT_REMOTE_URL: ${STT_REMOTE_URL:-}
       STT_MODEL_DIR: /models/stt
       NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-SafeAlley-MVP/0.1}

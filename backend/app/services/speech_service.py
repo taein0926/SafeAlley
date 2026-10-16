@@ -1,5 +1,5 @@
 # Adapted from pilot2/agent d3aea330 (local speech input).
-"""Local CPU STT; audio lives only in request memory, never in application logs."""
+"""Speech recognition via private GPU service, with local CPU fallback."""
 from io import BytesIO
 import os
 from threading import Lock
@@ -52,6 +52,23 @@ def decode_audio(payload):
 
 def transcribe(payload):
     global _model
+    remote_url = os.getenv('STT_REMOTE_URL', '').strip()
+    if remote_url:
+        import httpx
+        try:
+            response = httpx.post(remote_url.rstrip('/') + '/transcribe', content=payload,
+                                  headers={'content-type': 'audio/wav'},
+                                  timeout=httpx.Timeout(90.0, connect=3.0))
+            if response.status_code in (413, 422):
+                detail = response.json().get('detail', '음성을 변환하지 못했습니다.')
+                raise SpeechError(detail, response.status_code)
+            if response.is_success:
+                return response.json()
+            # A temporarily unavailable GPU must not disable speech input.
+        except SpeechError:
+            raise
+        except (httpx.RequestError, ValueError):
+            pass
     if not _lock.acquire(blocking=False):
         raise SpeechError('다른 음성을 변환 중입니다. 잠시 후 다시 시도해 주세요.', 503)
     started = perf_counter()
@@ -70,7 +87,7 @@ def transcribe(payload):
             raise SpeechError('음성이 감지되지 않았습니다. 조용한 곳에서 다시 말해 주세요.')
         if len(text) > 500:
             raise SpeechError('인식된 질문이 너무 깁니다. 짧게 다시 녹음해 주세요.')
-        return dict(text=text, language='ko', model=model_name,
+        return dict(text=text, language='ko', model=model_name, device='cpu',
                     duration_s=round(len(audio) / 16000, 2),
                     latency_ms=round((perf_counter() - started) * 1000, 1))
     except SpeechError:

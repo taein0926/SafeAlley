@@ -6,15 +6,15 @@
 
 ## 1. VM 앱 + GPU Ollama (현재 분리 구성)
 
-VM에서 frontend/backend/database/weather를 실행하고 기존 GPU 호스트 Ollama를 사용합니다.
+VM에서 frontend/backend/database/weather를 실행하고 기존 GPU 호스트 Ollama와 별도 GPU Whisper 서비스를 사용합니다.
 루트 docker-compose.yml + deployment/compose.vm.override.yml 조합입니다.
 manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼용하지 않습니다.
 
 ```text
 브라우저 → 승인된 포워딩/HTTPS proxy → VM frontend(Nginx)
                                         └→ backend(FastAPI) → PostGIS
-                                                          → host gateway:11435
-                                                              └→ SSH 터널 → GPU Ollama
+                                                          → host gateway:11435 → SSH 터널 → GPU Ollama
+                                                          → host gateway:11436 → SSH 터널 → GPU Whisper
                             weather 배치 → KMA/KASI → PostGIS
 브라우저 → 외부 OSM 타일 (직접 요청)
 ```
@@ -24,6 +24,10 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
   gateway 주소/방화벽/SSH 키·서버 지문·재연결 방식은 실제 서버에 맞춰 관리합니다.
 - backend 설정 주소는 http://host.docker.internal:11435, 기본 모델 qwen3.6:35b.
 - GPU 서버의 기존 Ollama/모델/다른 서비스는 임의로 재시작하거나 교체하지 않습니다.
+- 음성은 VM FastAPI에서만 받습니다. GPU Whisper는 GPU 서버의 127.0.0.1에만 바인딩하고
+  별도 제한된 SSH 키/터널로 연결합니다. 터널이 일시 중단되면 VM의 CPU Whisper로 대체합니다.
+  `backend/app/services/gpu_stt_server.py`는 GPU 호스트에서 별도 Python 환경으로 실행하며
+  `STT_MODEL=small`, `STT_MODEL_DIR`와 CUDA 12/cuDNN 9 런타임을 사용합니다.
 - 루트 비공개 .env에 서버 DB 비밀번호, 날씨 키, 실제 모델을 설정합니다.
   Jev는 별도 승인 시에만 JEV_PREVIEW_ENABLED/TYPESAFE_API_KEY를 넣습니다.
 
