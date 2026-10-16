@@ -19,6 +19,7 @@ DEPLOY_FILES = (
     "deployment/compose.yml", "deployment/.env.example", "deployment/manage.py",
     "deployment/package.py", "deployment/README.md", "deployment/test_deployment.py",
     "deployment/compose.vm.override.yml",
+    "deployment/local-gpu-stt-tunnel.ps1",
 )
 ROOT_FILES = {"README.md", "NOTICE.md", ".gitignore", ".env.example", "AGENTS.md", "docker-compose.yml"}
 DENY_PARTS = {".git", ".local", ".private", "secrets", "raw", "processed", "node_modules",

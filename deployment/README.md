@@ -53,6 +53,17 @@ curl -f http://127.0.0.1:8080/api/health
 직원 PC의 localhost는 VM이 아닙니다. 담당자가 승인한 SSH -L 포워딩/HTTPS proxy로 접속합니다.
 외부 공개 포트/주소를 문서 예시만 보고 새로 열지 않습니다.
 
+### 노트북 개발 환경에서 GPU 음성 사용
+
+로컬 Docker는 기본적으로 CPU 음성 인식을 사용합니다. 승인된 GPU 서버에 Whisper가
+설치되어 있다면, 노트북 사용자 전용 SSH 키를 GPU 서버의 Whisper 포트에만 허용하고
+로컬에서 사용할 때만 `deployment/local-gpu-stt-tunnel.ps1`을 실행해
+`127.0.0.1:11436` 터널을 엽니다. 서버 접속에는 노트북 터널이 필요하지 않습니다.
+키와 서버 지문은 사용자 `.ssh`에 두고 저장소에 넣지 않습니다. 로컬 비공개 `.env`에는
+`STT_REMOTE_URL=http://host.docker.internal:11436`을 설정합니다. GPU 연결이 끊기면
+VM과 동일하게 로컬 Docker 백엔드의 CPU Whisper로 대체됩니다. 터널이 살아 있는지는
+`http://127.0.0.1:11436/health`로, 실제 음성 응답의 `device`가 `cuda`인지로 확인합니다.
+
 ## 2. 단일 GPU 서버 대안
 
 deployment/compose.yml은 GPU Ollama 컨테이너까지 같은 프로젝트에 구성하는 별도 설치 방식입니다.
