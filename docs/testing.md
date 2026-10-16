@@ -17,6 +17,8 @@ docker compose run --rm --no-deps --entrypoint python -v "${PWD}/data_pipeline:/
 백엔드 통합 테스트는 로컬 PostGIS에 `test-*-fixture` 데이터만 생성하고 종료 후
 정리한다. 파이프라인 공간 적재 테스트는 트랜잭션 롤백을 사용한다.
 운영 서버 DB를 연결해서 실행하지 않는다.
+음성 단위 테스트는 GPU 서비스/VM 대체 분기를 모의 검증하며 실제 GPU 속도나
+마이크 정확도를 보장하지 않는다.
 공식 원본 ZIP이 없는 테스트와 명시적 환경설정이 필요한 live proxy 테스트의
 skip은 통과와 구분해서 보고한다.
 
@@ -62,3 +64,16 @@ Shift+Enter 줄바꿈, 한글 조합 확정·키 반복·빈 입력의 검색 �
 Jev 호출, 실제 LLM 추론, 추천 이력 DB 쓰기는 수행하지 않는다. 이는 UI 회귀
 검증이며 AI 모델 정확도나 실제 경로 품질의 live 검증을 대체하지 않는다.
 지도와 가로등 밀집도 타일은 실행 중인 로컬 서비스의 실제 자산을 읽는다.
+
+## 배포 후 연결 확인
+
+VM 배포 디렉터리에서 backend/frontend의 healthy 상태와 `/api/health`, 지도 타일을 확인한다.
+backend의 실제 `OLLAMA_MODEL`과 host gateway 11435의 Ollama 응답을 대조한다.
+저장소 VM override의 모델 기본값은 실제 비공개 서버 설정을 증명하지 않는다.
+
+승인된 HTTPS 또는 localhost 접속에서 짧은 음성을 직접 녹음하고 브라우저 개발자 도구의
+`/api/speech/transcribe` 응답에서 `model=small`, `device=cuda`, 인식 텍스트를 확인한다.
+`device=cpu`라면 GPU 처리 성공으로 보고하지 말고 VM↔GPU 11436 연결과 GPU 서비스 상태를 확인한다.
+GPU 연결 실패 시 CPU 대체는 운영 터널을 일부러 중단하지 말고 격리된 테스트 환경에서 확인한다.
+응답의 `latency_ms`는 디코딩·추론 내부 시간이고 브라우저↔VM↔GPU 전체 왕복 시간은 아니다.
+실제 모델 호출·마이크·공간 경로 확인은 mock 테스트와 구분해서 보고한다.

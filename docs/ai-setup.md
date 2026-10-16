@@ -21,7 +21,11 @@ docker compose exec backend python -c "import os,urllib.request; print(urllib.re
 ## VM/GPU 또는 GPU 터널
 
 승인된 터널은 GPU Ollama loopback 11434를 host gateway 11435로 전달합니다.
-VM override의 기본 모델은 qwen3.6:35b입니다.
+저장소 VM override의 기본 모델은 `qwen3.6:35b`이지만, 2026-10-16 확인한
+실제 VM backend의 `OLLAMA_MODEL`은 `gemma4:26b`입니다. 서버의 비공개
+`.env`와 `vm.override.yml`을 정본으로 확인하고 템플릿 기본값과 혼동하지 않습니다.
+당시 VM backend에서 GPU Ollama의 모델 목록과 `/api/show` 연결을 확인했으며,
+`gemma4:26b`의 응답은 `Q4_K_M` 양자화·`25.2B` 파라미터였습니다.
 Windows 로컬에서도 GPU를 사용하려면 실제 승인된 터널 주소/포트와 모델에 맞게 .env를 설정합니다.
 단일 GPU Compose 대안은 http://ollama:11434를 사용하므로 VM 터널 설정과 다릅니다.
 
@@ -29,6 +33,8 @@ GPU 호스트의 ollama list/ps, VM/PC 터널의 수신 포트·지문·접속 �
 터널 창 종료·절전·재부팅 후 복구 방식은 서버 운영 정책을 따릅니다.
 GPU 공용 Ollama를 임의로 재시작하거나 기존 모델을 제거하지 않습니다.
 비밀번호/개인키는 문서·소스에 기록하지 않습니다.
+GPU 음성 인식은 별도의 11436 터널·Whisper 서비스이며 Ollama 모델을 바꿔도
+음성 인식 모델이 바뀌지 않습니다. [음성 입력](speech-input.md)을 참고합니다.
 
 ## 로컬 앱에서 기존 GPU Gemma 사용
 

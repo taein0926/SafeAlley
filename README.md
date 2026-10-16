@@ -14,7 +14,7 @@
 - 경로 비교: 맞춤·최단 후보의 거리·예상 시간·계단·육교·횡단보도 정보를 표시하고 동일 경로는 중복 제거합니다.
 - 지도: OSM 배경지도, 건물 3D 표현, 시설·계단/육교 토글, 유지되는 2D/3D 시점.
 - 날씨: 미추홀구 대표 격자 예보와 당일 일출·일몰 캐시.
-- 음성 입력: backend CPU Whisper로 텍스트화합니다. 자동으로 길찾기를 실행하지 않습니다.
+- 음성 입력: VM에서는 GPU 서버의 Whisper `small`로 우선 변환하고, 연결 실패 시 backend CPU로 대체합니다. 자동으로 길찾기를 실행하지 않습니다.
 - 소개창: 세션 첫 접속에 표시하며 닫기·ESC·바깥 클릭을 지원합니다.
 
 ## 구성
@@ -23,7 +23,8 @@
 브라우저 ── 직접 타일 요청 ── OSM Tile Server
    └─ React / CesiumJS (Nginx)
         └─ /api/* → FastAPI → PostgreSQL / PostGIS
-                       ├─ Ollama: 문장 해석
+                       ├─ Ollama: 문장 해석(GPU 서버 터널)
+                       ├─ Whisper: 음성 변환(GPU 서버 우선·backend CPU 대체)
                        ├─ Jev: 선택적 입력 중 조건 해석
                        └─ Nominatim: 장소 검색 fallback
 
@@ -71,7 +72,7 @@ Backend 시작 시 Alembic migration을 적용하고 현재 저장소 head는 00
 | 요구사항 미리보기 | JEV_PREVIEW_ENABLED / TYPESAFE_API_KEY | 기본 false, 별도 유료 Jev 기능 |
 | 날씨 | KMA_SERVICE_KEY / KASI_SERVICE_KEY | 서비스별 공공데이터포털 승인 키 |
 | 장소 fallback | NOMINATIM_BASE_URL / NOMINATIM_USER_AGENT | 지역 제한·캐시·요청 간격 적용 |
-| 음성 | STT_MODEL | small, CPU 추론·stt_models 볼륨 캐시 |
+| 음성 | STT_MODEL / STT_REMOTE_URL | `small`; 원격 주소가 있으면 GPU 우선, 연결 실패 시 CPU INT8·stt_models 볼륨 캐시 |
 | 지도 | VITE_OSM_TILE_URL / VITE_BUILDING_SOURCE | OSM 타일 / molit-gis-building |
 
 Windows 호스트 Ollama를 사용하는 **기본 로컬 설정**(모델을 실행할 충분한 GPU 자원이 필요합니다):
@@ -85,8 +86,9 @@ docker compose up -d --force-recreate backend
 ```
 
 다른 모델/서버를 사용하면 .env를 실제 설치에 맞게 설정합니다.
-VM/GPU 분리 설정은 qwen3.6:35b와 승인된 SSH 터널의 host gateway 포트 11435를 사용합니다.
-로컬 기본값과 배포 설정은 혼용하지 않습니다. [배포 안내](deployment/README.md)를 참고하세요.
+VM/GPU 분리 설정은 승인된 SSH 터널의 host gateway 포트 11435(Ollama)·11436(Whisper)을 사용합니다.
+저장소의 VM override 기본 모델은 `qwen3.6:35b`지만, 2026-10-16 확인한 실제 VM 설정 모델은 `gemma4:26b`입니다.
+로컬 기본값·배포 템플릿·서버 비공개 설정을 혼동하지 마세요. [배포 안내](deployment/README.md)를 참고하세요.
 환경변수 변경은 컨테이너 재생성, VITE_* 변경은 frontend 재빌드가 필요합니다.
 
 ## 검색·데이터 원칙
@@ -143,7 +145,9 @@ output/          로컬 검증 산출물(Git 제외)
 
 ## 문서와 검증
 
-배포 소스 전달본은 저장소 루트의 `SafeAlley-deploy.tar.gz` 하나입니다.
+배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 `output/deployment/`에 생성합니다.
+문서 수정 전 VM에 적용했던 소스 묶음은 `SafeAlley-main-942c752.tar.gz`였으며, 해당 묶음에는 README와 `docs/`·`deployment/README.md`가 포함됩니다.
+실제 최신 배포 커밋은 서버 릴리스의 `release.json`으로 확인합니다. 문서 수정은 새 커밋과 새 묶음을 만들기 전까지 기존 전달본에 반영되지 않습니다.
 실제 .env·DB·모델은 포함하지 않으며, 아카이브 내부 release.json으로 소스 커밋과 파일 체크섬을 확인합니다.
 기존 VM 업데이트에서는 데이터·비공개 설정·GPU 모델을 보존합니다. [배포 절차](deployment/README.md)
 

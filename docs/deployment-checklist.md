@@ -8,7 +8,8 @@
 - [ ] 배포 commit과 미커밋 포함 여부를 기록한다.
 - [ ] VM/GPU: 루트 Compose + compose.vm.override.yml, 기존 GPU Ollama와 승인된 SSH 터널.
 - [ ] 단일 GPU 대안: deployment/compose.yml + manage.py. VM override와 혼용하지 않는다.
-- [ ] VM backend에서 host gateway 11435와 설정 모델 qwen3.6:35b에 접속할 수 있는지 확인한다.
+- [ ] VM backend에서 host gateway 11435의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 2026-10-16 VM 확인 모델은 `gemma4:26b`이며 템플릿 기본값 `qwen3.6:35b`와 구분한다.
+- [ ] VM backend에서 host gateway 11436의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
 - [ ] frontend loopback 8080에 승인된 포워딩/HTTPS·접근제어 proxy를 연결한다.
 - [ ] DB/backend/Ollama를 외부 공개하지 않는다. user_id는 로그인 기능이 아니다.
 - [ ] 키·비밀번호·SSH 개인키·백업을 Git/소스 ZIP/로그에 넣지 않는다.
@@ -23,7 +24,8 @@
 - [ ] demo가 운영 분석값을 덮어쓰지 않도록 설정·재분석을 확인한다.
 - [ ] 원천·가공·타일·모델은 소스와 별도 관리하고 가로등 갱신 후 히트맵을 재생성한다.
 - [ ] 실제 모델 준비/추론 후 ollama ps에서 GPU 사용을 확인한다.
-- [ ] Whisper CPU 모델 캐시·HTTPS 마이크·자원 제한을 확인한다.
+- [ ] 실제 음성 응답의 `device=cuda`와 텍스트를 확인한다. GPU 연결 실패 시 CPU INT8 대체 경로는 운영 터널을 끊지 말고 별도 테스트 환경에서 검증한다.
+- [ ] CPU 대체 모델 캐시·HTTPS 마이크·음성 크기/길이 제한과 동시 요청 제한을 확인한다.
 - [ ] Jev는 별도 승인 키로만 활성화하고 실패를 성공처럼 처리하지 않는다.
 - [ ] KMA/KASI 수집/5분 재시도·DB 캐시를 확인한다.
 

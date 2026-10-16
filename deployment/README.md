@@ -8,6 +8,7 @@
 
 VM에서 frontend/backend/database/weather를 실행하고 기존 GPU 호스트 Ollama와 별도 GPU Whisper 서비스를 사용합니다.
 루트 docker-compose.yml + deployment/compose.vm.override.yml 조합입니다.
+기존 VM 릴리스는 템플릿에서 별도로 보관한 비공개 `vm.override.yml`을 적용합니다.
 manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼용하지 않습니다.
 
 ```text
@@ -22,7 +23,9 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
 - VM 공개 앱 포트는 기본 127.0.0.1:8080; backend/DB 공개 포트는 제거합니다.
 - 터널은 승인된 GPU Ollama loopback 11434를 Docker host gateway 11435로 연결합니다.
   gateway 주소/방화벽/SSH 키·서버 지문·재연결 방식은 실제 서버에 맞춰 관리합니다.
-- backend 설정 주소는 http://host.docker.internal:11435, 기본 모델 qwen3.6:35b.
+- backend 설정 주소는 http://host.docker.internal:11435입니다. 저장소 템플릿의
+  기본 모델은 `qwen3.6:35b`지만 2026-10-16 확인한 실제 VM 모델은 `gemma4:26b`입니다.
+  모델 값은 매 배포마다 적용된 비공개 설정과 backend 환경에서 확인합니다.
 - GPU 서버의 기존 Ollama/모델/다른 서비스는 임의로 재시작하거나 교체하지 않습니다.
 - 음성은 VM FastAPI에서만 받습니다. GPU Whisper는 GPU 서버의 127.0.0.1에만 바인딩하고
   별도 제한된 SSH 키/터널로 연결합니다. 터널이 일시 중단되면 VM의 CPU Whisper로 대체합니다.
@@ -31,22 +34,23 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
 - 루트 비공개 .env에 서버 DB 비밀번호, 날씨 키, 실제 모델을 설정합니다.
   Jev는 별도 승인 시에만 JEV_PREVIEW_ENABLED/TYPESAFE_API_KEY를 넣습니다.
 
-설정 검증과 빌드 예시(서버의 해당 release 디렉터리에서):
+설정 검증과 빌드 예시(기존 VM의 해당 release 디렉터리에서):
 
 ```bash
-docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f deployment/compose.vm.override.yml config --quiet
-docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f deployment/compose.vm.override.yml build backend frontend weather
+docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f vm.override.yml config --quiet
+docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f vm.override.yml build backend frontend
 ```
 
 신규 설치 순서: 빌드 → 빈 DB → 승인된 공간 백업 복원 → migration → 히트맵 → 앱 시작.
 운영 중인 DB에는 restore를 덮어쓰지 않습니다. migration head는 0016입니다.
 기존 환경 업데이트는 먼저 백업/이전 release·설정·이미지를 보관한 뒤 수행합니다.
 
-데이터가 준비된 환경의 실행/점검:
+데이터가 준비된 환경을 처음 시작할 때의 실행/점검 예시입니다.
+기존 VM의 앱만 갱신할 때는 아래 갱신 절차의 `--no-deps`를 사용합니다.
 
 ```bash
-docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f deployment/compose.vm.override.yml up -d
-docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f deployment/compose.vm.override.yml ps
+docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f vm.override.yml up -d
+docker compose --env-file .env -p safealley-deploy -f docker-compose.yml -f vm.override.yml ps
 curl -f http://127.0.0.1:8080/api/health
 ```
 
@@ -94,13 +98,17 @@ models는 모델 준비 단계이며 서비스 시작만으로 모델이 자동 
 
 ## 전달·백업
 
-저장소 루트의 `SafeAlley-deploy.tar.gz`가 소스 전달본입니다.
+소스 전달본은 `deployment/package.py`가 지정한 출력 경로에 만듭니다.
+문서 수정 전 VM의 `main-942c752` 릴리스에 적용했던 묶음은
+`output/deployment/SafeAlley-main-942c752.tar.gz`였습니다.
+실제 최신 배포 커밋은 서버 릴리스의 `release.json`으로 확인합니다.
 소스 tar.gz, 비공개 DB dump+체크섬, 서버 비공개 .env를 구분합니다.
 tar.gz는 Docker 이미지·공간 DB·원본·모델·비밀값을 포함한 오프라인 설치본이 아닙니다.
 
 ```powershell
 # 개발 PC에서 필요한 경우만. 기존 대상은 덮어쓰지 않습니다.
-python deployment/package.py --ref HEAD --output output/deployment/SafeAlley-deploy.tar.gz
+$releaseCommit = (git rev-parse --short HEAD).Trim()
+python deployment/package.py --ref HEAD --output "output/deployment/SafeAlley-main-$releaseCommit.tar.gz"
 python deployment/manage.py backup --source-local --exclude-feedback --file output/private-transfer/safealley.dump
 ```
 
@@ -114,6 +122,10 @@ DB dump는 암호화되지 않으므로 별도 접근권한/전송 보호가 필
 기존 VM 갱신은 파일 SHA256 확인 → 새 `main-커밋` 디렉터리에 `SafeAlley/` 내용 추출 →
 기존 `.env`와 `vm.override.yml` 복사 → DB 백업·이전 이미지 보관 → backend/frontend 빌드·교체 →
 health/공간 API/지도 타일/화면 확인 순서입니다. DB·weather 컨테이너와 GPU 모델은 재생성하지 않습니다.
+기존 VM 앱 갱신에는 `--no-deps`로 backend와 frontend를 차례로 교체해
+database/weather를 재생성하지 않습니다. 새 버전의 backend·frontend health와
+GPU Ollama·Whisper 연결을 각각 확인합니다. 템플릿 override가 기존 비공개
+`vm.override.yml`의 실제 모델·터널 설정을 덮어쓰지 않게 합니다.
 새 버전 검증 후 이전 전달용 tar.gz만 정리하며, 이전 소스 폴더·백업·이미지는 롤백용으로 남깁니다.
 저장소의 전달본 커밋과 아카이브 내부 release.json의 소스 base_commit은 구분합니다.
 
