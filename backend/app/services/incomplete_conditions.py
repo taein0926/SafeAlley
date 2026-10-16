@@ -14,7 +14,7 @@ NOUN_FACTORS = {
     "씨씨티비": "cctv_score", "감시카메라": "cctv_score",
     "안전시설": "safety_score", "도움시설": "safety_score", "경찰서": "police_accessibility",
     "파출소": "police_accessibility", "보도": "sidewalk_coverage_percent", "인도": "sidewalk_coverage_percent",
-    "경사": "max_slope_percent", "육교": "pedestrian_bridge_count",
+    "육교": "pedestrian_bridge_count",
     "고가보도": "pedestrian_bridge_count", "거리": "distance_m",
 }
 _NOUN = "(?:" + "|".join(sorted(NOUN_FACTORS, key=len, reverse=True)) + ")"

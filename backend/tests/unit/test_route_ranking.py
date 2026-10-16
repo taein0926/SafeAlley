@@ -508,7 +508,6 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
             "crosswalk_count", 1, 2,
             "지도에 기록된 건널목은 다른 길보다 1개 적어요",
         ),
-        ("max_slope_percent", 2.5, 6.0, "최대 경사는 다른 길보다 3.5%p 낮아요"),
     ],
 )
 def test_secondary_explanation_covers_accessibility_metrics(
@@ -534,7 +533,6 @@ def test_secondary_explanation_covers_accessibility_metrics(
     ("stairs_distance_m", "minimize", 0, 20),
     ("crosswalk_count", "minimize", 1, 3),
     ("sidewalk_coverage_percent", "maximize", 90, 70),
-    ("max_slope_percent", "minimize", 1, 4),
     ("cctv_score", "maximize", 72, 58),
 ])
 def test_route_evidence_uses_custom_route_terminology(factor, direction, chosen, other):
@@ -576,7 +574,6 @@ def test_proxy_evidence_explains_inputs_without_exposing_abstract_score() -> Non
             "crosswalk_count", 1, 2,
             "지도에 기록된 건널목이 맞춤 경로보다 1개 적어",
         ),
-        ("max_slope_percent", 2.5, 6.0, "최대 경사가 맞춤 경로보다 3.5%p 낮아"),
     ],
 )
 def test_primary_accessibility_metric_uses_plain_comparison(
@@ -869,11 +866,15 @@ def test_general_road_fallback_uses_only_candidates_satisfying_hard_avoidance(mo
 
 
 
-def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:
+def test_retired_slope_preference_is_not_used_for_ranking(monkeypatch) -> None:
+    shortest = _route("shortest", 100, 20)
+    custom = _route("custom", 130, 90)
+    shortest["properties"]["max_slope_percent"] = 8.0
+    custom["properties"]["max_slope_percent"] = 2.0
     monkeypatch.setattr(route_ranking_service, "get_shortest_route",
-                        lambda **_: _route("shortest", 100, 20))
+                        lambda **_: shortest)
     monkeypatch.setattr(route_ranking_service, "get_custom_route",
-                        lambda **_: _route("custom", 130, 90))
+                        lambda **_: custom)
 
     result = route_ranking_service.rank_route_candidates(
         _arguments([{"factor": "max_slope_percent", "direction": "minimize", "weight": 1}])
@@ -881,8 +882,19 @@ def test_missing_dem_is_not_described_as_a_flat_route(monkeypatch) -> None:
 
     assert result["selected_route_type"] is None
     assert result["recommendation_status"] == "no_supported_preferences"
-    assert any("DEM은 현재 적재되지 않았습니다" in note for note in result["recommendation_notes"])
+    assert result["unsupported_preferences"][0].factor == "max_slope_percent"
+    assert result["candidates"][0]["metrics"]["max_slope_percent"] == 8.0
+    assert result["candidates"][0]["route"]["properties"]["max_slope_percent"] == 8.0
     assert "평지" not in result["recommendation_reason"]
+
+    with_distance = route_ranking_service.rank_route_candidates(
+        _arguments([
+            {"factor": "distance_m", "direction": "minimize", "weight": 1},
+            {"factor": "max_slope_percent", "direction": "minimize", "weight": 100},
+        ])
+    )
+    assert with_distance["selected_route_type"] == "shortest"
+    assert with_distance["unsupported_preferences"][0].factor == "max_slope_percent"
 
 
 def test_reviewed_candidate_can_be_selected_over_unverified_higher_score() -> None:

@@ -35,18 +35,18 @@ export class SpeechCapture {
   private controller?: AbortController;
   private state: SpeechState = "idle";
   private env: SpeechEnvironment;
-  private notify: (state: SpeechState, message: string) => void;
+  private notify: (state: SpeechState) => void;
   private receive: (text: string, revision: number) => void;
 
   constructor(
     env: SpeechEnvironment,
-    notify: (state: SpeechState, message: string) => void,
+    notify: (state: SpeechState) => void,
     receive: (text: string, revision: number) => void,
   ) { this.env = env; this.notify = notify; this.receive = receive; }
 
-  private update(state: SpeechState, message: string) {
+  private update(state: SpeechState) {
     this.state = state;
-    this.notify(state, message);
+    this.notify(state);
   }
 
   private release() {
@@ -67,7 +67,7 @@ export class SpeechCapture {
     this.release();
     this.controller?.abort();
     this.state = "idle";
-    if (notify) this.notify("idle", "음성 입력을 취소했습니다.");
+    if (notify) this.notify("idle");
   }
 
   stop() {
@@ -77,11 +77,11 @@ export class SpeechCapture {
   async start(revision: number) {
     if (this.state !== "idle") return;
     const generation = ++this.generation;
-    this.update("permission", "마이크 권한을 확인하는 중…");
+    this.update("permission");
     try {
       const type = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
         .find((value) => this.env.supports(value));
-      if (!type) throw new Error("지원하는 녹음 형식이 없습니다. Chrome/Edge에서 직접 입력해 주세요.");
+      if (!type) throw new Error("Unsupported audio format");
       const stream = await this.env.getUserMedia();
       if (generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop());
@@ -97,41 +97,37 @@ export class SpeechCapture {
         size += event.data.size;
         if (size > 8 * 1024 * 1024) {
           this.cancel(false);
-          this.update("idle", "녹음 크기가 8MB를 초과했습니다. 짧게 다시 녹음해 주세요.");
+          this.update("idle");
         } else if (event.data.size) chunks.push(event.data);
       };
       recorder.onerror = () => {
         this.cancel(false);
-        this.update("idle", "녹음 오류가 발생했습니다. 마이크를 확인해 주세요.");
+        this.update("idle");
       };
       recorder.onstop = async () => {
         this.release();
         if (generation !== this.generation) return;
-        this.update("transcribing", "로컬에서 음성을 변환하는 중… 최초 사용은 모델 준비로 더 걸릴 수 있습니다.");
+        this.update("transcribing");
         const controller = new AbortController();
         this.controller = controller;
         const timeout = setTimeout(() => controller.abort(), 180000);
         try {
-          if (!size) throw new Error("녹음 내용이 없습니다. 다시 녹음해 주세요.");
+          if (!size) throw new Error("Empty recording");
           const text = await this.env.transcribe(new Blob(chunks, { type }), controller.signal);
           if (generation !== this.generation) return;
-          this.update("idle", "인식된 출발지·도착지·조건을 확인한 뒤 경로 검색을 눌러 주세요.");
+          this.update("idle");
           this.receive(text, revision);
-        } catch (error) {
-          if (generation === this.generation) this.update("idle", error instanceof Error && error.name === "AbortError"
-            ? "음성 변환 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요."
-            : error instanceof Error ? error.message : "음성 변환에 실패했습니다.");
+        } catch {
+          if (generation === this.generation) this.update("idle");
         } finally { clearTimeout(timeout); }
       };
       recorder.start(1000);
-      this.update("recording", "녹음 중… 같은 버튼을 다시 누르면 중지하고 텍스트로 변환합니다. 최대 30초까지 녹음합니다.");
+      this.update("recording");
       this.timer = setTimeout(() => this.stop(), 29000);
-    } catch (error) {
+    } catch {
       if (generation !== this.generation) return;
       this.release();
-      this.update("idle", error instanceof Error && error.name === "NotAllowedError"
-        ? "마이크 권한이 거부됐습니다. 브라우저 권한을 확인하거나 직접 입력해 주세요."
-        : "마이크를 사용할 수 없습니다. 장치 연결과 브라우저 지원을 확인해 주세요.");
+      this.update("idle");
     }
   }
 }

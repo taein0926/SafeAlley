@@ -93,6 +93,6 @@ def transcribe(payload):
     except SpeechError:
         raise
     except Exception as exc:
-        raise SpeechError('로컬 음성 모델을 실행하지 못했습니다. 모델 준비 상태를 확인해 주세요.', 503) from exc
+        raise SpeechError('음성 인식 모델을 실행하지 못했습니다. 서비스 상태를 확인해 주세요.', 503) from exc
     finally:
         _lock.release()

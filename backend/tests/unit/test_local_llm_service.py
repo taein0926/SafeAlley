@@ -352,7 +352,7 @@ def test_local_llm_preserves_explicit_no_stairs_when_model_omits_it(monkeypatch)
     }
 
 
-def test_local_llm_preserves_explicit_flat_ground_when_model_omits_it(monkeypatch) -> None:
+def test_local_llm_does_not_invent_retired_slope_preference(monkeypatch) -> None:
     monkeypatch.setattr(
         local_llm_service,
         "_request_ollama",
@@ -368,35 +368,48 @@ def test_local_llm_preserves_explicit_flat_ground_when_model_omits_it(monkeypatc
     )
 
     assert {item.factor: item.direction for item in intent.preferences} == {
-        "max_slope_percent": "minimize", "cctv_score": "maximize"
+        "cctv_score": "maximize"
     }
 
 
-def test_local_llm_retries_flatness_alias_and_omitted_cctv(monkeypatch) -> None:
-    responses = iter([
-        {"message": {"content": """{
-            "origin_name":"주안역", "destination_name":"현대유비스병원",
-            "departure_time":null, "profile":"pedestrian",
-            "preferences":[{"factor":"flatness","direction":"maximize","weight":1}]
-        }"""}},
-        {"message": {"content": """{
-            "origin_name":"주안역", "destination_name":"현대유비스병원",
-            "departure_time":null, "profile":"pedestrian",
-            "preferences":[
-                {"factor":"max_slope_percent","direction":"minimize","weight":1},
-                {"factor":"cctv_score","direction":"maximize","weight":1}
-            ]
-        }"""}},
-    ])
-    monkeypatch.setattr(local_llm_service, "_request_ollama", lambda _: next(responses))
+@pytest.mark.parametrize("slope_factor", ["flatness", "max_slope_percent"])
+def test_local_llm_drops_retired_slope_factors_without_losing_cctv(monkeypatch, slope_factor) -> None:
+    model_output = {
+        "origin_name": "주안역", "destination_name": "현대유비스병원",
+        "departure_time": None, "profile": "pedestrian",
+        "preferences": [
+            {"factor": slope_factor, "direction": "minimize"},
+            {"factor": "cctv_score", "direction": "maximize"},
+        ],
+    }
+    monkeypatch.setattr(local_llm_service, "_request_ollama", lambda _: {
+        "message": {"content": json.dumps(model_output, ensure_ascii=False)}
+    })
 
     intent = local_llm_service.parse_route_intent(
         "주안역에서 현대유비스병원까지 평지는 우선하고 CCTV가 많은 길을 찾아줘"
     )
 
     assert {item.factor: item.direction for item in intent.preferences} == {
-        "max_slope_percent": "minimize", "cctv_score": "maximize"
+        "cctv_score": "maximize"
     }
+
+
+def test_flat_ground_after_explicit_no_stairs_keeps_only_stair_avoidance(monkeypatch) -> None:
+    monkeypatch.setattr(local_llm_service, "_request_ollama", lambda _: {
+        "message": {"content": json.dumps({
+            "origin_name": "주안역", "destination_name": "인천사랑병원",
+            "preferences": [{"factor": "max_slope_percent", "direction": "minimize"}],
+        }, ensure_ascii=False)}
+    })
+
+    intent = local_llm_service.parse_route_intent(
+        "주안역에서 인천사랑병원까지 계단 말고 평지로 안내해줘"
+    )
+
+    assert [(item.factor, item.direction) for item in intent.preferences] == [
+        ("stairs_distance_m", "avoid")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -756,7 +769,7 @@ def test_permissive_or_unmet_need_is_not_substituted(
         (
             "인천사랑병원에서 현대유비스병원까지 평지 위주로 가되 경찰서 가까운 길을 추천해줘",
             {"max_slope_percent": "minimize", "police_accessibility": "maximize", "distance_m": "minimize"},
-            {"max_slope_percent": "minimize", "police_accessibility": "maximize"},
+            {"police_accessibility": "maximize"},
         ),
     ],
 )
@@ -979,7 +992,7 @@ def test_correction_without_repeated_factor_uses_last_named_factor() -> None:
     ]
 
 
-def test_reconsidered_crossing_and_gentle_slope_use_requested_directions() -> None:
+def test_reconsidered_crossing_uses_requested_direction() -> None:
     crossing = ParsedRouteIntent.model_validate({
         "preferences": [{"factor": "crosswalk_count", "direction": "avoid"}]
     })
@@ -987,15 +1000,6 @@ def test_reconsidered_crossing_and_gentle_slope_use_requested_directions() -> No
         "횡단보도가 없는 길로. 다시 생각해보니 적게 건너면 돼", crossing,
     )
     assert crossing.preferences[0].direction == "minimize"
-
-    slope = ParsedRouteIntent.model_validate({
-        "preferences": [{"factor": "max_slope_percent", "direction": "maximize"}]
-    })
-    local_llm_service._normalize_explicit_route_preferences(
-        "경사가 완만했으면 해", slope,
-    )
-    assert slope.preferences[0].direction == "minimize"
-
 
 def test_explicit_safety_facility_access_is_preserved_for_routing() -> None:
     intent = ParsedRouteIntent.model_validate({"preferences": []})

@@ -81,7 +81,6 @@ export const FACTOR_LABELS: Record<string, string> = {
   stairs_distance_m: "계단 구간",
   safety_score: "복합 안전 지표",
   sidewalk_coverage_percent: "보도 구간 비율",
-  max_slope_percent: "경사",
   police_accessibility: "경찰서 접근성",
   elevator_accessibility: "승강기 접근성",
   wheelchair_accessibility: "휠체어 접근성",

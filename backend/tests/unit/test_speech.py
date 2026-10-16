@@ -57,6 +57,7 @@ def test_error_releases_inference_lock(monkeypatch):
     response = client.post('/api/speech/transcribe', content=wav(1, 500),
                            headers={'Content-Type': 'audio/wav'})
     assert response.status_code == 503
+    assert response.json()['detail'] == '음성 인식 모델을 실행하지 못했습니다. 서비스 상태를 확인해 주세요.'
     assert 'private implementation error' not in response.text
     assert not speech._lock.locked()
 

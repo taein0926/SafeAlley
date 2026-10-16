@@ -3,9 +3,6 @@ import test from "node:test";
 
 import {
   buildDirectRouteToolCall,
-  confidenceLabel,
-  criterionOutcomeLabel,
-  selectComparableCriteria,
   currentLocalTime,
   estimatedWalkingMinutes,
   formatCrosswalkCount,
@@ -17,19 +14,7 @@ import {
   sliderToUnit,
   WALKING_SPEED_MPS,
 } from "./routeSearch.ts";
-import type { RecommendationCriterion, ResolvedPlace, RouteCandidate, RouteType } from "./types.ts";
-
-test("comparison display retains only meaningful better/worse outcomes in source order", () => {
-  const criteria: RecommendationCriterion[] = (["similar", "better", "not_compared", "worse", "unavailable"] as const).map((outcome) => ({
-    factor: outcome, label: outcome, outcome, summary: outcome,
-    confidence: "high", confidence_reason: "test",
-  }));
-  assert.deepEqual(selectComparableCriteria(criteria), [criteria[1], criteria[3]]);
-  assert.equal(criteria.length, 5);
-  assert.deepEqual(selectComparableCriteria([criteria[0], criteria[2], criteria[4]]), []);
-  assert.deepEqual(selectComparableCriteria([]), []);
-});
-
+import type { ResolvedPlace, RouteCandidate, RouteType } from "./types.ts";
 
 const origin: ResolvedPlace = {
   name: "주안역",
@@ -91,17 +76,6 @@ test("0-100 slider values map to the backend stairs range", () => {
   assert.equal(sliderToUnit(0), 0);
   assert.equal(sliderToUnit(65), 0.65);
   assert.equal(sliderToUnit(100), 1);
-});
-
-test("recommendation evidence labels are plain Korean", () => {
-  assert.equal(criterionOutcomeLabel("better"), "맞춤 경로 우세");
-  assert.equal(criterionOutcomeLabel("similar"), "차이 거의 없음");
-  assert.equal(criterionOutcomeLabel("worse"), "비교 경로 우세");
-  assert.equal(criterionOutcomeLabel("not_compared"), "비교 경로 없음");
-  assert.equal(criterionOutcomeLabel("unavailable"), "비교 불가");
-  assert.equal(confidenceLabel("high"), "근거 높음");
-  assert.equal(confidenceLabel("medium"), "근거 보통");
-  assert.equal(confidenceLabel("low"), "근거 낮음");
 });
 
 test("walking estimate uses distance, not routing cost", () => {

@@ -50,14 +50,15 @@ factor: 최단/짧은 길/빠른 길/가까운 길/거리=distance_m,
 조명/가로등=streetlight_score,
 CCTV=cctv_score, 건널목/횡단보도=crosswalk_count, 계단=stairs_distance_m,
 보도/인도=sidewalk_coverage_percent,
-경사/평지/완만한 길=max_slope_percent, 경찰서 접근성=police_accessibility.
+경찰서 접근성=police_accessibility.
 police_accessibility는 접근하기 좋은 정도다. 경찰서가 가까운 길은 maximize이며,
 시설까지의 거리를 뜻하는 값이 아니다. 경찰서를 피하는 요청은 avoid로 보존한다.
-미지원 조건도 snake_case factor로 보존한다. flatness는 쓰지 않는다.
-direction: 적게/짧게/평지=minimize, 많게/밝게/안전하게=maximize, 없이/피해/없는 길=avoid.
+미지원 조건도 snake_case factor로 보존한다. 단, 경사·평지 요청은 현재 경로 추천에서 지원하지 않으므로 preferences에 넣거나 임의로 계단 회피로 바꾸지 않는다.
+"계단 말고 평지"처럼 계단 자체를 피하라는 명시적 요청은 계단 회피로 보존한다.
+direction: 적게/짧게=minimize, 많게/밝게/안전하게=maximize, 없이/피해/없는 길=avoid.
 각 조건에 인접한 수식어를 적용: 횡단보도는 적고 CCTV가 많은=각각 minimize, maximize.
-계단을 피하지 말라는 것은 계단 회피 요청이 아니다. 평지가 필요 없다는 것도 경사 조건이 아니다.
-횡단보도를 건너도 괜찮다, 평지가 아니어도 된다는 허용 표현도 회피/경사 조건이 아니다.
+계단을 피하지 말라는 것은 계단 회피 요청이 아니다.
+횡단보도를 건너도 괜찮다는 허용 표현도 회피 조건이 아니다.
 최단거리 말고/짧은 길보다는 다른 조건을 우선한다면 distance_m을 넣지 않는다.
 조금 멀어져도 괜찮다는 말도 거리 최소화 요청이 아니다.
 너무 멀리 돌아가지 않게는 distance_m/minimize도 함께 보존한다.
@@ -128,9 +129,6 @@ CROSSING_DISCLAIMER = re.compile(
     r"(?:피하(?:지|진)\s*(?:말|않|안)|피할\s*필요(?:는|가)?\s*없"
     r"|건너도\s*(?:괜찮|돼|되))"
 )
-FLAT_DISCLAIMER = re.compile(
-    r"평지(?:는|가|일)?\s*(?:필요(?:는|가)?\s*없|아니어도\s*(?:괜찮|돼|되))"
-)
 DISTANCE_COMPARISON = re.compile(
     r"(?:최단거리|(?:가장\s*)?짧은\s*길|가장\s*가까운\s*길)\s*"
     r"(?:보단|보다는?|말고)"
@@ -153,7 +151,6 @@ FACTOR_MENTIONS = {
     "streetlight_score": re.compile(r"가로등|조명|밝기|밝은\s*길|어두운\s*길"),
     "cctv_score": re.compile(r"CCTV", re.IGNORECASE),
     "sidewalk_coverage_percent": re.compile(r"보도|인도"),
-    "max_slope_percent": re.compile(r"평지|경사"),
     "police_accessibility": re.compile(r"경찰서|파출소"),
     "safety_score": re.compile(r"안전"),
 }
@@ -222,9 +219,6 @@ def _reconcile_disclaimed_preferences(query: str, intent: ParsedRouteIntent) -> 
             _set_preference(intent, "crosswalk_count", "minimize")
         else:
             _drop_preference(intent, "crosswalk_count")
-    if FLAT_DISCLAIMER.search(query) and not re.search(r"경사.{0,14}(?:낮|완만|적)", query):
-        _drop_preference(intent, "max_slope_percent")
-        _drop_preference(intent, "flatness")
     if DISTANCE_COMPARISON.search(query) or DISTANCE_CONCESSION.search(query):
         _drop_preference(intent, "distance_m")
 
@@ -235,16 +229,9 @@ def _normalize_explicit_route_preferences(query: str, intent: ParsedRouteIntent)
         if item.factor == "stairs_count" and item.direction in {"avoid", "minimize"}:
             _drop_preference(intent, "stairs_count")
             _set_preference(intent, "stairs_distance_m", item.direction)
-    # Preserve the existing repair retry for explicit "평지" requests, where
-    # the first model response may also have omitted another named condition.
-    if "평지" not in query and any(item.factor == "flatness" for item in intent.preferences):
-        _drop_preference(intent, "flatness")
-        _set_preference(intent, "max_slope_percent", "minimize")
     if re.search(r"계단(?:이|은|는|을|를|가)?\s*(?:적게|적은|적고|최소)", query):
         _drop_preference(intent, "stairs_count")
         _set_preference(intent, "stairs_distance_m", "minimize")
-    if re.search(r"경사.{0,12}(?:완만|낮|적)", query):
-        _set_preference(intent, "max_slope_percent", "minimize")
     if has_explicit_safety_facility_request(query):
         _set_preference(intent, "safety_score", "maximize")
     if NEARBY_FACILITY_ROUTE.search(query) and not re.search(
@@ -343,8 +330,6 @@ def _apply_explicit_correction(query: str, intent: ParsedRouteIntent) -> None:
                 _set_preference(intent, factor, "avoid")
             elif re.search(r"적게|적은|적으면|덜|최소", tail):
                 _set_preference(intent, factor, "minimize")
-        elif factor == "max_slope_percent" and re.search(r"낮|완만|적|평탄", tail):
-            _set_preference(intent, factor, "minimize")
         elif re.search(r"많|밝|높|우선", tail):
             _set_preference(intent, factor, "maximize")
     # A correction can refer back to the previous factor without repeating it:
@@ -569,13 +554,6 @@ def _preserve_crossing_preference(query: str, intent: ParsedRouteIntent) -> None
     _set_preference(intent, "crosswalk_count", direction)
 
 
-def _preserve_explicit_flat_ground(query: str, intent: ParsedRouteIntent) -> None:
-    """Retain an explicit flat-ground request if the small model drops it."""
-    if "평지" not in query or FLAT_DISCLAIMER.search(query):
-        return
-    _set_preference(intent, "max_slope_percent", "minimize")
-
-
 def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
     if EXPLICIT_TIME_PATTERN.search(_clock_text(query)) and not _arrival_time_only(query) and intent.departure_time is None:
         raise ValueError("An explicit departure time was omitted")
@@ -598,8 +576,6 @@ def _validate_query_semantics(query: str, intent: ParsedRouteIntent) -> None:
         "stairs_distance_m"
     ) != "avoid":
         raise ValueError("An explicit no-stairs constraint was not preserved")
-    if "평지" in query and not FLAT_DISCLAIMER.search(query) and "flatness" in factors:
-        raise ValueError("flatness duplicates the mapped max_slope_percent factor")
 
 
 def _discard_unmentioned_distance(query: str, intent: ParsedRouteIntent) -> None:
@@ -710,6 +686,12 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             raise LocalLLMOutputError("Ollama response has no message content")
         try:
             intent = ParsedRouteIntent.model_validate_json(content)
+            # Old model responses may still name the retired slope preference.
+            # Keep route geometry metadata, but never turn it into a route request.
+            intent.preferences = [
+                item for item in intent.preferences
+                if item.factor not in {"max_slope_percent", "flatness"}
+            ]
             _discard_invented_time(query, intent)
             _correct_explicit_departure_time(query, intent)
             _reconcile_disclaimed_preferences(query, intent)
@@ -719,7 +701,6 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _preserve_unsupported_requests(query, intent)
             _preserve_explicit_no_stairs(query, intent)
             _preserve_crossing_preference(query, intent)
-            _preserve_explicit_flat_ground(query, intent)
             if AVOID_DARK_ROAD.search(query):
                 _set_preference(intent, "streetlight_score", "maximize")
             if AVOID_DETOUR.search(query):
@@ -750,7 +731,6 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
                             "실제 언급된 장소만 채우고 없는 출발지/도착지는 null로 둔다. "
                             "'까지' 자체는 장소명이 아니다. 사용자가 말한 조건을 모두 보존하라. "
                             "밤 11시는 23:00:00, 오전 12시는 00:00:00이다. "
-                            "평지는 max_slope_percent/minimize이며 flatness는 추가하지 않는다. "
                             "CCTV가 명시됐으면 cctv_score를 빠뜨리지 않는다. "
                             "수정된 JSON만 반환하라."
                         ),

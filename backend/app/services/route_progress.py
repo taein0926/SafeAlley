@@ -5,13 +5,13 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
 from app.repositories.safety_repository import SafetyRepositoryError, count_route_facilities
+from app.services.route_metrics import METRIC_REGISTRY
 
 ProgressCallback = Callable[[dict], None]
 LABELS = {
     "distance_m": "거리", "streetlight_score": "가로등", "cctv_score": "CCTV",
     "stairs_distance_m": "계단 구간", "crosswalk_count": "건널목",
     "safety_score": "안전시설 지표", "sidewalk_coverage_percent": "보행공간 비율",
-    "max_slope_percent": "경사",
 }
 
 
@@ -50,6 +50,8 @@ def comparison_reports(callback: ProgressCallback | None, candidates: list[dict]
         return
     for preference in preferences:
         factor = preference.factor
+        if factor not in METRIC_REGISTRY:
+            continue
         label = LABELS.get(factor, factor)
         last_letter = ord(label[-1])
         object_label = label + ("을" if 0xAC00 <= last_letter <= 0xD7A3 and (last_letter - 0xAC00) % 28 else "를")
@@ -64,7 +66,7 @@ def comparison_reports(callback: ProgressCallback | None, candidates: list[dict]
                 formatted = f"약 {value:.0f}m"
             elif factor == "crosswalk_count":
                 formatted = f"OSM 기록 {value:.0f}개"
-            elif factor in {"sidewalk_coverage_percent", "max_slope_percent"}:
+            elif factor == "sidewalk_coverage_percent":
                 formatted = f"{value:.1f}%"
             else:
                 formatted = f"위치 지표 {value:.1f}"

@@ -35,7 +35,6 @@ PRIORITY_PHRASES = {
     "crosswalk_count": "OSM 건널목 구간을 줄이는 조건으로",
     "stairs_distance_m": "지도에 표시된 계단 구간을 피하는 조건으로",
     "sidewalk_coverage_percent": "지도에 표시된 보행공간을 참고해",
-    "max_slope_percent": "지도에 기록된 경사를 참고해",
 }
 METRIC_NAMES = {
     "distance_m": "거리",
@@ -46,7 +45,6 @@ METRIC_NAMES = {
     "stairs_distance_m": "계단 구간 회피",
     "stairs": "계단",
     "sidewalk_coverage_percent": "보행공간 비율",
-    "max_slope_percent": "경사",
     "population_score": "유동인구",
     "police_accessibility": "경찰 도움시설 접근성",
 }
@@ -86,7 +84,6 @@ CRITERION_LABELS = {
     "crosswalk_count": "건널목 회피",
     "stairs_distance_m": "계단 구간",
     "sidewalk_coverage_percent": "보행공간",
-    "max_slope_percent": "경사",
 }
 CRITERION_CONFIDENCE = {
     "distance_m": ("high", "도로망 구간 길이를 직접 합산했습니다."),
@@ -108,7 +105,6 @@ CRITERION_CONFIDENCE = {
         "low",
         "OSM에서 보행공간으로 확인된 구간만 계산했습니다.",
     ),
-    "max_slope_percent": ("low", "전 구간에 명시된 OSM 경사 정보가 있을 때만 계산합니다."),
 }
 
 
@@ -307,8 +303,6 @@ def _metric_tolerance(factor: str, value: float) -> float:
     if factor in {"crosswalk_count", "stairs_distance_m",
                   "sidewalk_coverage_percent"}:
         return 0.5
-    if factor == "max_slope_percent":
-        return 0.1
     return 0.01
 
 
@@ -317,7 +311,7 @@ def _criterion_value_text(factor: str, value: float) -> str:
         return _distance_text(value)
     if factor == "crosswalk_count":
         return f"{value:.0f}개"
-    if factor in {"sidewalk_coverage_percent", "max_slope_percent"}:
+    if factor == "sidewalk_coverage_percent":
         return f"{value:.1f}%" if value % 1 else f"{value:.0f}%"
     return f"{value:.1f}"
 
@@ -498,11 +492,6 @@ def _secondary_condition_sentence(
             return "확인된 보행공간 비율은 두 경로가 거의 같아요."
         direction = "높아요" if difference > 0 else "낮아요"
         return f"확인된 보행공간 비율은 {comparison_label}보다 {abs(difference):.0f}%p {direction}"
-    if factor == "max_slope_percent":
-        if abs(difference) < 0.1:
-            return "지도에 기록된 최대 경사는 두 경로가 거의 같아요."
-        relation = "낮아요" if difference < 0 else "높아요"
-        return f"지도에 기록된 최대 경사는 {comparison_label}보다 {abs(difference):.1f}%p {relation}"
     if factor in PROXY_FACTORS:
         if abs(difference) <= 1:
             return None
@@ -542,11 +531,6 @@ def _metric_evidence_note(
         return f"OSM 건널목 기록: 맞춤 경로 {chosen_value:.0f}개, {comparison_label} {other_value:.0f}개."
     if factor == "sidewalk_coverage_percent":
         return f"확인된 보행공간 비율: 맞춤 경로 {chosen_value:.0f}%, {comparison_label} {other_value:.0f}%."
-    if factor == "max_slope_percent":
-        return (
-            "지도에 기록된 최대 경사: "
-            f"맞춤 경로 {chosen_value:.1f}%, {comparison_label} {other_value:.1f}%."
-        )
     if factor in PROXY_FACTORS:
         label = PROXY_EVIDENCE_LABELS[factor]
         if chosen_value == other_value:
@@ -679,11 +663,6 @@ def _recommendation_explanation(
                                 f"지도에 기록된 계단 구간이 {comparison_label}보다 "
                                 f"약 {abs(change):.0f}m 짧아 이 길을 추천했어요."
                             )
-                        elif primary.factor == "max_slope_percent":
-                            summary = (
-                                f"지도에 기록된 최대 경사가 {comparison_label}보다 "
-                                f"{abs(change):.1f}%p 낮아 이 길을 추천했어요."
-                            )
                         else:
                             metric_name = METRIC_NAMES.get(primary.factor, "요청 조건")
                             direction = "높아요" if primary.direction == "maximize" else "낮아요"
@@ -737,8 +716,6 @@ def _recommendation_explanation(
                 "일부 구간의 인도·횡단 연결 정보가 없어 건널목 수를 비교할 수 없습니다. "
                 "경로 탐색에 건널목 비용을 사용했더라도 추천 근거로 삼지 않았습니다."
             )
-        elif item.factor == "max_slope_percent":
-            notes.append("경사는 전 구간 측정 자료가 없어 추천 조건에 반영하지 않았습니다. DEM은 현재 적재되지 않았습니다.")
         elif "hard avoidance" in item.reason:
             notes.append(f"{label} 요청을 충족하는 후보가 없어 해당 조건을 반영하지 않았습니다.")
         else:

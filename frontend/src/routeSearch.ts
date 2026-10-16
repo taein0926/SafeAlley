@@ -1,6 +1,5 @@
 import type {
   AgentExecutionResponse,
-  RecommendationCriterion,
   ResolvedPlace,
   RouteCandidate,
   RouteType,
@@ -59,28 +58,6 @@ export type DisplayedRouteCandidate = {
   candidate: RouteCandidate;
   label: "최단경로" | "맞춤경로";
 };
-
-export function criterionOutcomeLabel(
-  outcome: "better" | "similar" | "worse" | "not_compared" | "unavailable",
-): string {
-  return {
-    better: "맞춤 경로 우세",
-    similar: "차이 거의 없음",
-    worse: "비교 경로 우세",
-    not_compared: "비교 경로 없음",
-    unavailable: "비교 불가",
-  }[outcome];
-}
-
-export function selectComparableCriteria(
-  criteria: readonly RecommendationCriterion[],
-): RecommendationCriterion[] {
-  return criteria.filter(({ outcome }) => outcome === "better" || outcome === "worse");
-}
-
-export function confidenceLabel(confidence: "high" | "medium" | "low"): string {
-  return { high: "근거 높음", medium: "근거 보통", low: "근거 낮음" }[confidence];
-}
 
 export function sliderToUnit(value: number): number {
   return Math.min(100, Math.max(0, value)) / 100;

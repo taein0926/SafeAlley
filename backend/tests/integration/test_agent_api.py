@@ -114,7 +114,7 @@ def test_agent_validates_stairs_weight_range() -> None:
     assert response.status_code == 422
 
 
-def test_agent_reports_registered_metrics_that_have_no_source_data() -> None:
+def test_agent_reports_retired_slope_preference_as_unsupported() -> None:
     response = client.post(
         "/api/agent/execute",
         json={
@@ -138,6 +138,7 @@ def test_agent_reports_registered_metrics_that_have_no_source_data() -> None:
     payload = response.json()
     assert payload["selected_route"] is None
     assert payload["unsupported_preferences"][0]["factor"] == "max_slope_percent"
+    assert "No metric" in payload["unsupported_preferences"][0]["reason"]
 
 
 def test_agent_rejects_unregistered_tools_and_extra_fields() -> None:

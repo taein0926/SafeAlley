@@ -16,7 +16,6 @@ LEARNABLE_DIRECTIONS = {
     "crosswalk_count": "minimize",
     "stairs_distance_m": "minimize",
     "sidewalk_coverage_percent": "maximize",
-    "max_slope_percent": "minimize",
 }
 LEARNING_RATE = 0.2
 

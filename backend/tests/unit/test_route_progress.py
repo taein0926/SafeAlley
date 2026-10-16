@@ -77,3 +77,15 @@ def test_comparisons_show_tradeoffs_instead_of_always_favoring_custom():
     assert "CCTV를 비교" in events[0]["message"]
     assert "최단 후보가 더 유리" in events[0]["message"]
     assert "맞춤 후보가 더 유리" in events[1]["message"]
+
+
+def test_retired_slope_metric_is_not_compared_in_progress():
+    candidates = [
+        {"route_type": "shortest", "metrics": {"max_slope_percent": 8.0}},
+        {"route_type": "custom", "metrics": {"max_slope_percent": 2.0}},
+    ]
+    events = []
+    route_progress.comparison_reports(events.append, candidates, [
+        RoutePreference(factor="max_slope_percent", direction="minimize"),
+    ])
+    assert events == []

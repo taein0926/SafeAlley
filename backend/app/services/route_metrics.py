@@ -106,15 +106,14 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         description="Route distance on confirmed sidewalk or pedestrian space",
         extractor=lambda route: _property_number(route, "sidewalk_coverage_percent"),
     ),
-    "max_slope_percent": MetricDefinition(
-        description="Maximum explicit OSM incline percentage on the route",
-        extractor=lambda route: _property_number(route, "max_slope_percent"),
-    ),
 }
 
 
 def calculate_route_metrics(route: RoutePayload) -> dict[str, float | None]:
-    return {
+    metrics = {
         name: definition.extractor(route)
         for name, definition in METRIC_REGISTRY.items()
     }
+    # Keep the existing response field for clients, but never rank by it.
+    metrics["max_slope_percent"] = _property_number(route, "max_slope_percent")
+    return metrics
