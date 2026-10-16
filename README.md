@@ -145,9 +145,8 @@ output/          로컬 검증 산출물(Git 제외)
 
 ## 문서와 검증
 
-배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 `output/deployment/`에 생성합니다.
-문서 수정 전 VM에 적용했던 소스 묶음은 `SafeAlley-main-942c752.tar.gz`였으며, 해당 묶음에는 README와 `docs/`·`deployment/README.md`가 포함됩니다.
-실제 최신 배포 커밋은 서버 릴리스의 `release.json`으로 확인합니다. 문서 수정은 새 커밋과 새 묶음을 만들기 전까지 기존 전달본에 반영되지 않습니다.
+배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 생성합니다. GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 최신 전달본으로 교체하며, `output/deployment/`는 로컬 보관용입니다.
+실제 서버 적용 커밋은 서버 릴리스의 `release.json`으로 확인합니다. 문서 수정은 새 커밋과 새 묶음을 만들기 전까지 기존 전달본에 반영되지 않습니다.
 실제 .env·DB·모델은 포함하지 않으며, 아카이브 내부 release.json으로 소스 커밋과 파일 체크섬을 확인합니다.
 기존 VM 업데이트에서는 데이터·비공개 설정·GPU 모델을 보존합니다. [배포 절차](deployment/README.md)
 

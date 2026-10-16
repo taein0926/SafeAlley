@@ -99,9 +99,9 @@ models는 모델 준비 단계이며 서비스 시작만으로 모델이 자동 
 ## 전달·백업
 
 소스 전달본은 `deployment/package.py`가 지정한 출력 경로에 만듭니다.
-문서 수정 전 VM의 `main-942c752` 릴리스에 적용했던 묶음은
-`output/deployment/SafeAlley-main-942c752.tar.gz`였습니다.
-실제 최신 배포 커밋은 서버 릴리스의 `release.json`으로 확인합니다.
+GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 교체 가능한 최신 전달본이며,
+`output/deployment/`의 커밋명별 파일은 로컬 보관용입니다. 실제 서버 적용 커밋은
+서버 릴리스의 `release.json`으로 확인합니다.
 소스 tar.gz, 비공개 DB dump+체크섬, 서버 비공개 .env를 구분합니다.
 tar.gz는 Docker 이미지·공간 DB·원본·모델·비밀값을 포함한 오프라인 설치본이 아닙니다.
 
@@ -109,6 +109,7 @@ tar.gz는 Docker 이미지·공간 DB·원본·모델·비밀값을 포함한 �
 # 개발 PC에서 필요한 경우만. 기존 대상은 덮어쓰지 않습니다.
 $releaseCommit = (git rev-parse --short HEAD).Trim()
 python deployment/package.py --ref HEAD --output "output/deployment/SafeAlley-main-$releaseCommit.tar.gz"
+# 검증 후 GitLab 전달본을 교체할 때는 압축본과 .sha256을 함께 갱신합니다.
 python deployment/manage.py backup --source-local --exclude-feedback --file output/private-transfer/safealley.dump
 ```
 
