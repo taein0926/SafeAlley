@@ -10,6 +10,7 @@ import { useWeather, WeatherHud } from "./components/WeatherHud";
 import { facilityToggleFactor } from "./facilityToggleIcons";
 import { ConditionIcon } from "./components/ConditionIcon";
 import { routeInputMarkerImage } from "./routeMarkers";
+import { browserUuid } from "./browserUuid";
 import { createRouteSelectionSaver } from "./routeSelection";
 import { mergeWorkUpdate, queryRouteWithProgress } from "./routeProgress";
 import type { RouteWorkUpdate } from "./routeProgress";
@@ -71,7 +72,7 @@ function anonymousUserId(): string {
   const storageKey = "safealley-user-id";
   const saved = window.localStorage.getItem(storageKey);
   if (saved) return saved;
-  const created = window.crypto.randomUUID();
+  const created = browserUuid(window.crypto);
   window.localStorage.setItem(storageKey, created);
   return created;
 }
