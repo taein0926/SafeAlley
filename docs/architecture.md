@@ -1,6 +1,6 @@
 # 아키텍처
 
-이 문서는 2026-10-16 확인한 VM 앱 배포본 `942c752`를 기준으로 작성했습니다. 이후 실제 배포 커밋과 비공개 설정은 서버에서 다시 확인합니다.
+이 문서는 2026-10-19 확인한 VM 구성 기준입니다. 실제 배포 소스 커밋은 서버 릴리스의 `release.json`에서 확인합니다. 문서 갱신 전 릴리스는 `c69e359`였습니다.
 
 ## 애플리케이션 경계
 
@@ -42,9 +42,9 @@ Frontend/backend는 public, backend/database는 private internal 네트워크를
 배치 작업은 외부 수집/DB 적재를 위해 두 네트워크를 사용합니다.
 로컬 루프백 포트: frontend 3000, backend 8000, DB 5432.
 
-VM/GPU 방식은 루트 Compose + deployment/compose.vm.override.yml입니다.
-VM에 앱/DB/weather를 두고 host gateway 11435(Ollama)·11436(Whisper)의 승인된 SSH 터널로 GPU 서버에 접속합니다.
-2026-10-16 확인한 VM 모델은 `gemma4:26b`입니다. 저장소 VM override의 `qwen3.6:35b`는 설정하지 않았을 때의 템플릿 기본값입니다.
+VM/GPU 방식은 루트 Compose와 VM 전용 override를 사용합니다.
+VM에 앱/DB/weather를 두고 승인된 SSH 터널로 GPU 서버의 Ollama·Whisper에 접속합니다.
+실제 모델·터널 주소와 템플릿 기본값의 차이는 [배포 안내](../deployment/README.md)를 확인합니다.
 VM은 frontend 루프백 8080만 공개하고 backend/DB 포트는 제거합니다.
 단일 GPU 서버 대안은 deployment/compose.yml이며 두 방식을 혼용하지 않습니다.
 

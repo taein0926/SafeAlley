@@ -22,11 +22,12 @@ docker compose run --rm --no-deps --entrypoint python -v "${PWD}/data_pipeline:/
 공식 원본 ZIP이 없는 테스트와 명시적 환경설정이 필요한 live proxy 테스트의
 skip은 통과와 구분해서 보고한다.
 
-배포 스크립트의 격리된 계약 테스트(서버 배포/접속 없음):
+배포 스크립트의 격리된 계약 테스트(서버 배포/접속 없음). 아래 Windows 예시는
+`uv`가 설치된 환경을 기준으로 하며, 정상 동작하는 Python 3.10+가 있으면 `python -m unittest discover -v`도 가능합니다.
 
 ```powershell
 Push-Location deployment
-python -m unittest discover -v
+uv run --python 3.12 --no-project python -m unittest discover -v
 Pop-Location
 ```
 
@@ -68,12 +69,12 @@ Jev 호출, 실제 LLM 추론, 추천 이력 DB 쓰기는 수행하지 않는다
 ## 배포 후 연결 확인
 
 VM 배포 디렉터리에서 backend/frontend의 healthy 상태와 `/api/health`, 지도 타일을 확인한다.
-backend의 실제 `OLLAMA_MODEL`과 host gateway 11435의 Ollama 응답을 대조한다.
+backend의 실제 `OLLAMA_MODEL`과 적용된 `OLLAMA_BASE_URL`의 Ollama 응답을 대조한다.
 저장소 VM override의 모델 기본값은 실제 비공개 서버 설정을 증명하지 않는다.
 
 승인된 HTTPS 또는 localhost 접속에서 짧은 음성을 직접 녹음하고 브라우저 개발자 도구의
 `/api/speech/transcribe` 응답에서 `model=small`, `device=cuda`, 인식 텍스트를 확인한다.
-`device=cpu`라면 GPU 처리 성공으로 보고하지 말고 VM↔GPU 11436 연결과 GPU 서비스 상태를 확인한다.
+`device=cpu`라면 GPU 처리 성공으로 보고하지 말고 적용된 `STT_REMOTE_URL` 연결과 GPU 서비스 상태를 확인한다.
 GPU 연결 실패 시 CPU 대체는 운영 터널을 일부러 중단하지 말고 격리된 테스트 환경에서 확인한다.
 응답의 `latency_ms`는 디코딩·추론 내부 시간이고 브라우저↔VM↔GPU 전체 왕복 시간은 아니다.
 실제 모델 호출·마이크·공간 경로 확인은 mock 테스트와 구분해서 보고한다.

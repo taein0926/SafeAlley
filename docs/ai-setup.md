@@ -20,12 +20,10 @@ docker compose exec backend python -c "import os,urllib.request; print(urllib.re
 
 ## VM/GPU 또는 GPU 터널
 
-승인된 터널은 GPU Ollama loopback 11434를 host gateway 11435로 전달합니다.
-저장소 VM override의 기본 모델은 `qwen3.6:35b`이지만, 2026-10-16 확인한
-실제 VM backend의 `OLLAMA_MODEL`은 `gemma4:26b`입니다. 서버의 비공개
-`.env`와 `vm.override.yml`을 정본으로 확인하고 템플릿 기본값과 혼동하지 않습니다.
-당시 VM backend에서 GPU Ollama의 모델 목록과 `/api/show` 연결을 확인했으며,
-`gemma4:26b`의 응답은 `Q4_K_M` 양자화·`25.2B` 파라미터였습니다.
+VM의 실제 모델·터널 주소는 적용된 비공개 `.env`와 `vm.override.yml`에서
+확인합니다. 템플릿 기본값과 검증 절차는 [배포 안내](../deployment/README.md)를 따릅니다.
+2026-10-16 VM backend에서 GPU Ollama의 모델 목록과 `/api/show` 연결을 확인했으며,
+당시 `gemma4:26b`의 응답은 `Q4_K_M` 양자화·`25.2B` 파라미터였습니다.
 Windows 로컬에서도 GPU를 사용하려면 실제 승인된 터널 주소/포트와 모델에 맞게 .env를 설정합니다.
 단일 GPU Compose 대안은 http://ollama:11434를 사용하므로 VM 터널 설정과 다릅니다.
 

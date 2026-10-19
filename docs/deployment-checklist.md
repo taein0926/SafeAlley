@@ -8,8 +8,8 @@
 - [ ] 배포 commit과 미커밋 포함 여부를 기록한다.
 - [ ] VM/GPU: 루트 Compose + compose.vm.override.yml, 기존 GPU Ollama와 승인된 SSH 터널.
 - [ ] 단일 GPU 대안: deployment/compose.yml + manage.py. VM override와 혼용하지 않는다.
-- [ ] VM backend에서 host gateway 11435의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 2026-10-16 VM 확인 모델은 `gemma4:26b`이며 템플릿 기본값 `qwen3.6:35b`와 구분한다.
-- [ ] VM backend에서 host gateway 11436의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
+- [ ] VM backend에서 적용된 `OLLAMA_BASE_URL`의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 템플릿 기본값을 실제 모델로 단정하지 않는다.
+- [ ] VM backend에서 적용된 `STT_REMOTE_URL`의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
 - [ ] frontend loopback 8080에 승인된 포워딩/HTTPS·접근제어 proxy를 연결한다.
 - [ ] DB/backend/Ollama를 외부 공개하지 않는다. user_id는 로그인 기능이 아니다.
 - [ ] 키·비밀번호·SSH 개인키·백업을 Git/소스 ZIP/로그에 넣지 않는다.

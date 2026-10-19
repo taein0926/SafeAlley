@@ -106,11 +106,11 @@ GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 교체 가능한 최�
 tar.gz는 Docker 이미지·공간 DB·원본·모델·비밀값을 포함한 오프라인 설치본이 아닙니다.
 
 ```powershell
-# 개발 PC에서 필요한 경우만. 기존 대상은 덮어쓰지 않습니다.
+# uv가 설치된 Windows 개발 PC에서 필요한 경우만. 기존 대상은 덮어쓰지 않습니다.
 $releaseCommit = (git rev-parse --short HEAD).Trim()
-python deployment/package.py --ref HEAD --output "output/deployment/SafeAlley-main-$releaseCommit.tar.gz"
+uv run --python 3.12 --no-project python deployment/package.py --ref HEAD --output "output/deployment/SafeAlley-main-$releaseCommit.tar.gz"
 # 검증 후 GitLab 전달본을 교체할 때는 압축본과 .sha256을 함께 갱신합니다.
-python deployment/manage.py backup --source-local --exclude-feedback --file output/private-transfer/safealley.dump
+uv run --python 3.12 --no-project python deployment/manage.py backup --source-local --exclude-feedback --file output/private-transfer/safealley.dump
 ```
 
 package.py는 커밋된 Git 파일만 포함합니다. 미커밋 변경은 배포되지 않으며

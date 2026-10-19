@@ -86,9 +86,8 @@ docker compose up -d --force-recreate backend
 ```
 
 다른 모델/서버를 사용하면 .env를 실제 설치에 맞게 설정합니다.
-VM/GPU 분리 설정은 승인된 SSH 터널의 host gateway 포트 11435(Ollama)·11436(Whisper)을 사용합니다.
-저장소의 VM override 기본 모델은 `qwen3.6:35b`지만, 2026-10-16 확인한 실제 VM 설정 모델은 `gemma4:26b`입니다.
-로컬 기본값·배포 템플릿·서버 비공개 설정을 혼동하지 마세요. [배포 안내](deployment/README.md)를 참고하세요.
+VM/GPU 분리 구성의 실제 모델·터널 주소는 로컬 기본값과 다를 수 있습니다.
+적용된 서버 설정과 템플릿의 차이는 [배포 안내](deployment/README.md)에서 확인하세요.
 환경변수 변경은 컨테이너 재생성, VITE_* 변경은 frontend 재빌드가 필요합니다.
 
 ## 검색·데이터 원칙
