@@ -11,6 +11,11 @@ VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/RE
 
 ## 현재 안내
 
+서비스 구성도 편집 원본은 [SVG](assets/service-architecture.svg)이며 소스 전달본에도 포함합니다.
+로컬 `output`의 발표자료·화면정의서·구성도 이미지는 Git/배포 소스 압축본과 별도로 관리합니다.
+현재 안내용 발표자료는 `SafeAlley_발표자료_v3.pptx`이고, 이전 v1/v2·날짜별 기술별첨은
+당시 상태의 보관 자료이지 현재 배포 상태를 설명하는 정본이 아닙니다.
+
 - [시작](../README.md), [아키텍처](architecture.md), [DB](database-schema.md), [라우팅](routing.md)
 - [데이터 운영](data-pipeline.md), [건물 원천/매핑](building-data.md)
 - [날씨](weather.md), [음성](speech-input.md), [소개창](welcome-intro.md)

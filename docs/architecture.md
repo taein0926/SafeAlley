@@ -5,6 +5,11 @@
 
 ## 애플리케이션 경계
 
+현재 서비스 구성도의 편집 원본은 [service-architecture.svg](assets/service-architecture.svg)입니다.
+브라우저는 HTTPS로 VM에 접속하고, VM과 GPU 서버 사이에만 비공개 SSH 터널을 사용합니다.
+GPU의 Ollama `gemma4:26b`와 faster-whisper `small`은 별도 서비스입니다.
+이 원본에서 로컬 `output`의 구성도 PNG/SVG와 최신 발표자료의 구성도를 함께 갱신합니다.
+
 ```text
 브라우저
  ├─ OSM 타일 직접 HTTPS 요청

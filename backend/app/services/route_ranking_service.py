@@ -499,7 +499,7 @@ def _secondary_condition_sentence(
                    else PROXY_EVIDENCE_LABELS[factor])
         if difference > 0:
             return f"{subject}을 종합하면 이 길이 더 유리해요."
-        return f"다만 {subject}만 보면 {comparison_label}이 더 유리해요."
+        return f"다만 {subject}만 보면 {comparison_label} 쪽이 더 유리해요."
     return None
 
 

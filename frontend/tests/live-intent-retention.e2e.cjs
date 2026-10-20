@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const { baseUrl, createTestPage } = require('./ui-fixtures.cjs');
 const factors = ['distance', 'streetlight', 'cctv', 'safety', 'stairs', 'crossing', 'bridge', 'time'];
 
-// Mocked preview endpoints only: no Jev payment and no Qwen/DB route search.
+// Mocked preview endpoints only: no Jev payment and no Ollama/DB route search.
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   let releaseSecond;

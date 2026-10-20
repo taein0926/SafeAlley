@@ -39,6 +39,10 @@ Pop-Location
 관리 대상 백업 정리 테스트가 포함된다. 중복 배포 차단의 Linux flock 테스트는
 Windows에서 skip되며 Linux 격리 환경에서 따로 실행한다.
 
+`tests/unit/test_evaluation_contracts.py`는 전체 자연어 평가셋에 폐기된 경사 선호 정답이
+없는지 확인하고, 현재 추천 설명 회귀 사례를 실행한다. 실제 GPU 호출 없이 정답 자료와
+설명 함수의 일치 여부를 검사하는 것이며 새로운 모델 정확도 측정은 아니다.
+
 ## Frontend
 
 Node 22.18 이상 또는 TypeScript strip-types를 지원하는 Node와 `npm ci`가 필요하다.

@@ -39,6 +39,19 @@ docker compose exec backend python -m evals.evaluate_intent --set acceptance_202
 
 ## 결과 해석
 
+평가 정답은 현재 지원 범위에 맞춘다. 경사 회피를 제거한 뒤에도 입력 문장은 남겨
+다른 조건이 보존되는지 검사하지만 `max_slope_percent`를 정답 선호로 요구하지 않는다.
+경사 메타데이터의 보존과 경사 회피 요청 지원은 별개다.
+
+`evaluate_recommendation_explanations.py`는 실제 LLM·DB를 호출하지 않는 설명 회귀 평가다.
+현재 화면 후보인 `shortest`/`custom`, 건널목 비교, 거리 차이, 자료 부족·완전 회피 한계를
+검사한다. 예전 `safe`/`balanced` 후보나 교차로·경사 추천을 현재 정답으로 사용하지 않는다.
+backend 단위 테스트에서도 같은 설명 사례를 실행해 문구와 기능이 다시 어긋나지 않게 한다.
+
+```powershell
+docker compose run --rm --no-deps backend python -m evals.evaluate_recommendation_explanations
+```
+
 요약에는 필드별 오류, 요청하지 않은 조건 추가, 필요한 조건 누락, 선호 방향
 오류, 강한 회피조건 오류, 지연시간 중앙값·95백분위, 실패 ID가 포함된다.
 명령은 모든 사례가 기대값과 맞을 때만 종료 코드 0을 반환한다.

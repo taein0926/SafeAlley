@@ -92,7 +92,6 @@ textarea { font: inherit; }
 .reopen-results { width: calc(100% - 40px); margin: 20px; padding: 12px; border: 1px solid #547386; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; }
 
 .map-info-panel,
-.map-status,
 .facility-controls {
   position: absolute;
   z-index: 10;
@@ -161,7 +160,6 @@ textarea { font: inherit; }
 }
 .density-legend-scale { display: flex; justify-content: space-between; margin-top: 2px; }
 .weather-hud { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 8px 12px; border-radius: 16px; color: #1d5b99; background: #e0edf9; }
-.weather-hud-toprow { display: flex; align-items: center; justify-content: center; gap: 6px 10px; }
 .weather-hud-heading { color: #506a77; font-size: .65rem; text-align: center; white-space: nowrap; }
 .weather-hud-values { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0; font-size: .875rem; font-weight: 400; line-height: 1.5; text-align: center; }
 .weather-hud-values > span { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 24px; font: inherit; white-space: nowrap; }
@@ -415,25 +413,7 @@ textarea { font: inherit; }
 .result-heading span,
 .result-heading small { color: #78958f; font-size: 0.78rem; }
 .result-heading strong { overflow-wrap: anywhere; line-height: 1.5; font-size: .88rem; }
-.route-explanation { margin-top: 16px; padding: 14px 16px; border: 1px solid rgba(79, 224, 174, 0.3); border-radius: 12px; background: rgba(79, 224, 174, 0.08); }
-.route-explanation { font-size: .82rem; }
-.route-explanation > strong { color: #85e6c5; font-size: .82rem; font-weight: 750; }
 .result-panel > p { order: 3; }
-.route-explanation > p { margin: 7px 0 0; line-height: 1.5; }
-.criterion-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-.criterion { padding: 10px 11px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; background: rgba(0, 0, 0, 0.12); }
-.criterion header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.criterion header strong { color: #eef7f4; font-size: 0.82rem; }
-.criterion header span { padding: 3px 7px; border-radius: 99px; color: #d9e7e3; background: rgba(255, 255, 255, 0.08); font-size: 0.68rem; font-weight: 750; }
-.criterion--better header span { color: #8ff0cf; background: rgba(79, 224, 174, 0.14); }
-.criterion--worse header span { color: #ffd0a8; background: rgba(255, 153, 67, 0.14); }
-.criterion--unavailable header span { color: #ffbbc4; background: rgba(255, 92, 112, 0.14); }
-.criterion > p { margin: 6px 0 0; color: #dce9e5; font-size: 0.77rem; line-height: 1.45; }
-.criterion > small { display: block; margin-top: 5px; color: #88a69f; font-size: 0.68rem; line-height: 1.4; }
-.route-explanation ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
-.route-explanation li + li { margin-top: 4px; }
-.route-explanation .recommendation-icons { padding-left: 0; margin: 13px 0; }
-.route-explanation .recommendation-icons .recommendation-badge { margin-top: 0; }
 .route-cards { display: grid; gap: 10px; margin-top: 12px; order: 1; }
 
 .route-card {
@@ -526,18 +506,6 @@ textarea { font: inherit; }
 .map-info-panel dt { color: #78958f; }
 .map-info-panel dd { overflow-wrap: anywhere; color: #eef7f4; font-weight: 700; }
 
-.map-status {
-  bottom: 82px;
-  left: 22px;
-  width: 245px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  color: #9fb7b2;
-  font-size: 0.68rem;
-}
-
-.map-status summary { cursor: pointer; font-weight: 700; }
-.map-status p { margin: 8px 0 0; line-height: 1.4; }
 
 .map-rendering-error {
   position: absolute;
@@ -556,9 +524,9 @@ textarea { font: inherit; }
 .cesium-viewer-bottom,
 .cesium-viewer-toolbar { margin: 10px; }
 
-/* Floating UI follows the applied map time, not an unsubmitted time input. */
+/* The application keeps light floating panels while the basemap follows day/night. */
 .app-shell[data-theme="day"] { color: #183744; color-scheme: light; background: #eaf0f5; }
-.app-shell[data-theme="day"] :is(.map-info-panel, .map-status, .facility-controls, .search-panel-handle) {
+.app-shell[data-theme="day"] :is(.map-info-panel, .facility-controls, .search-panel-handle) {
   color: #183744;
   border-color: rgba(40, 84, 100, .22);
   background: rgba(250, 253, 255, .96);
@@ -577,18 +545,8 @@ textarea { font: inherit; }
 .app-shell[data-theme="day"] :is(input, textarea)::placeholder { color: #6d8390; }
 .app-shell[data-theme="day"] :is(.location-input button, .departure-time-control button) { color: #36596b; border-color: #b7ccd5; }
 .app-shell[data-theme="day"] :is(.location-input button:hover, .location-input button[aria-pressed="true"]) { color: #07563d; background: #dbf3e9; }
-.app-shell[data-theme="day"] :is(.route-criteria output, .preference-slider-ticks [data-selected="true"], .route-explanation > strong, .selection-message) { color: #087653; }
+.app-shell[data-theme="day"] :is(.route-criteria output, .preference-slider-ticks [data-selected="true"], .selection-message) { color: #087653; }
 .app-shell[data-theme="day"] .route-criteria input[type="range"] { accent-color: #16835f; }
-.app-shell[data-theme="day"] .route-explanation { border-color: #a6d9c7; background: #edf8f3; }
-.route-explanation .criterion-list { padding-left: 0; }
-.app-shell[data-theme="day"] .criterion { border-color: #bfd9ce; background: #fff; }
-.app-shell[data-theme="day"] .criterion header strong,
-.app-shell[data-theme="day"] .criterion > p { color: #183744; }
-.app-shell[data-theme="day"] .criterion > small { color: #506a77; }
-.app-shell[data-theme="day"] .criterion header span { color: #36596b; background: #eaf1f5; }
-.app-shell[data-theme="day"] .criterion--better header span { color: #086044; background: #ddf4e9; }
-.app-shell[data-theme="day"] .criterion--worse header span { color: #825107; background: #fff4da; }
-.app-shell[data-theme="day"] .criterion--unavailable header span { color: #9c3043; background: #ffedf0; }
 .app-shell[data-theme="day"] .recommendation-icons .recommendation-badge { --badge-cutout: #deefff; color: #164f85; background: #deefff; border-color: #377cac; }
 .app-shell[data-theme="day"] .recommendation-icons .recommendation-badge[data-applied="false"] { --badge-cutout: #fff; color: #60707d; background: transparent; border-color: #8997a3; }
 .app-shell[data-theme="day"] .route-card--active .recommendation-badge[data-applied="false"] { --badge-cutout: #f0f6ff; }

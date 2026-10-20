@@ -1,4 +1,7 @@
-"""Read OSM pedestrian tags without replacing the existing road dataset."""
+"""Legacy juan-v1 subset collector, not the current district-wide refresh.
+
+Current full-area updates use collectors.osm and loaders.osm_refresh.
+"""
 import json
 import os
 from pathlib import Path

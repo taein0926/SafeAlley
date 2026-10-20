@@ -70,6 +70,6 @@ export function WeatherHud({ data, error, date, time, requested = false }: Retur
       <span className="weather-condition">{symbol.label}</span>{" "}
       <span className="weather-temperature" title="예보 기온">{forecast.temperature_c === null ? "기온 미제공" : `${forecast.temperature_c}°C`}</span>{" "}
       <span className="weather-wind" title="예보 풍속">{forecast.wind_speed_ms === null ? "풍속 미제공" : `${forecast.wind_speed_ms} m/s`}</span>
-    </div> : <div className="weather-hud-unavailable">{error ? "날씨 연결 재시도 중…" : !data ? "날씨 확인 중…" : data.forecast_status === "stale" ? "최신 예보 자동 갱신 대기 중…" : "해당 시간 예보 미연결 · 자동 재조회 중"}</div>}
+    </div> : <div className="weather-hud-unavailable">{error ? "날씨 연결 재시도 중…" : !data ? "날씨 확인 중…" : "해당 시간 예보 미연결 · 자동 재조회 중"}</div>}
   </section>;
 }

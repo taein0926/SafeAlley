@@ -28,5 +28,5 @@
   {"id":"hard-1","category":"hard_constraint","query":"주안역에서 더나눔병원까지 계단이 하나도 없는 길만 알려줘","origin":"주안역","destination":"더나눔병원","preferences":{"stairs_distance_m":"avoid"}},
   {"id":"hard-2","category":"hard_constraint","query":"주안역에서 인천사랑병원까지 횡단보도를 절대 건너지 않는 길로 가줘","origin":"주안역","destination":"인천사랑병원","preferences":{"crosswalk_count":"avoid"}},
   {"id":"hard-3","category":"hard_constraint","query":"주안역에서 인천사랑병원까지 횡단보도는 가급적 피하고 싶어","origin":"주안역","destination":"인천사랑병원","preferences":{"crosswalk_count":"minimize"}},
-  {"id":"supported-1","category":"supported","query":"주안역에서 인천사랑병원까지 경사가 낮은 길로 가줘","origin":"주안역","destination":"인천사랑병원","preferences":{"max_slope_percent":"minimize"}}
+  {"id":"supported-1","category":"retired_condition","query":"주안역에서 인천사랑병원까지 경사가 낮은 길로 가줘","origin":"주안역","destination":"인천사랑병원","preferences":{}}
 ]

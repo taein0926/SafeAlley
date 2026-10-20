@@ -113,3 +113,8 @@ def test_requested_hour_is_not_replaced_by_another_hour_when_missing(monkeypatch
     result = weather_service.get_weather(time(22, 30), now=NOW)
     assert calls == [(NOW.replace(hour=22, minute=0), NOW.date())]
     assert result.forecast_status == "unavailable" and result.forecast is None
+
+
+def test_weather_contract_has_no_retired_stale_status():
+    from app.schemas.weather import WeatherResponse
+    assert WeatherResponse.model_json_schema()["properties"]["forecast_status"]["enum"] == ["available", "unavailable"]

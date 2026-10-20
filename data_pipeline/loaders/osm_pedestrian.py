@@ -1,4 +1,7 @@
-"""Additive pedestrian metadata load. Never replace roads or safety scores."""
+"""Legacy juan-v1 metadata load; not a district-wide update command.
+
+Never replace roads or safety scores. Current full-area refreshes use osm_refresh.
+"""
 import argparse
 import json
 from datetime import datetime, timezone
@@ -37,7 +40,7 @@ def load_pedestrian_metadata(document: dict, backup_dir: Path) -> dict:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="과거 juan-v1 일부 영역용 도구입니다. 미추홀구 전체 갱신은 loaders.osm_refresh를 사용하세요.")
     parser.add_argument("--input", type=Path, default=Path("raw/osm/juan_pedestrian.json"))
     parser.add_argument("--collect", action="store_true")
     parser.add_argument("--apply", action="store_true")

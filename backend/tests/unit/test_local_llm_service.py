@@ -1152,3 +1152,16 @@ def test_last_explicit_clock_matches_preview_and_final_intent(monkeypatch) -> No
     assert local_llm_service.preview_factor_evidence(query, "time") == (
         "positive", "day"
     )
+
+
+def test_connection_error_guides_service_users_without_laptop_tunnel_instructions(monkeypatch):
+    import httpx
+
+    def fail(*args, **kwargs):
+        raise httpx.ConnectError("unavailable")
+
+    monkeypatch.setattr(local_llm_service.httpx, "post", fail)
+    with pytest.raises(local_llm_service.LocalLLMUnavailableError) as error:
+        local_llm_service._request_ollama({})
+    assert "서비스 관리자" in str(error.value)
+    assert "SSH 터널 창" not in str(error.value)

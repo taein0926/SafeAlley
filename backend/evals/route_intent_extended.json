@@ -2,11 +2,11 @@
   {"query":"주안역에서 인천사랑병원까지 밤 9시에 가는데, 횡단보도는 되도록 적고 CCTV가 많은 길로 안내해줘","origin":"주안역","destination":"인천사랑병원","time":"21:00:00","preferences":{"crosswalk_count":"minimize","cctv_score":"maximize"}},
   {"query":"현대유비스병원에서 주안역으로 돌아갈 때 계단을 피하고 가로등이 많은 길을 찾아줘","origin":"현대유비스병원","destination":"주안역","preferences":{"stairs_distance_m":"avoid","streetlight_score":"maximize"}},
   {"query":"새벽 5시 주안역에서 더나눔병원까지 가장 짧으면서 보행공간이 많은 길로 가고 싶어","origin":"주안역","destination":"더나눔병원","time":"05:00:00","preferences":{"distance_m":"minimize","sidewalk_coverage_percent":"maximize"}},
-  {"query":"인천사랑병원에서 현대유비스병원까지 평지 위주로 가되 경찰서 가까운 길을 추천해줘","origin":"인천사랑병원","destination":"현대유비스병원","preferences":{"max_slope_percent":"minimize","police_accessibility":"maximize"}},
+  {"query":"인천사랑병원에서 현대유비스병원까지 평지 위주로 가되 경찰서 가까운 길을 추천해줘","origin":"인천사랑병원","destination":"현대유비스병원","preferences":{"police_accessibility":"maximize"}},
   {"query":"밤 12시에 주안역에서 인천사랑병원까지 계단 없이 안전한 길로 부탁해","origin":"주안역","destination":"인천사랑병원","time":"00:00:00","preferences":{"stairs_distance_m":"avoid","safety_score":"maximize"}},
   {"query":"더나눔병원에서 주안역까지 횡단보도를 안 지나는 길이 있으면 그쪽으로 안내해줘","origin":"더나눔병원","destination":"주안역","preferences":{"crosswalk_count":"avoid"}},
-  {"query":"주안역에서 현대유비스병원까지 거리는 짧게, 경사는 낮게, CCTV는 많은 길을 골라줘","origin":"주안역","destination":"현대유비스병원","preferences":{"distance_m":"minimize","max_slope_percent":"minimize","cctv_score":"maximize"}},
+  {"query":"주안역에서 현대유비스병원까지 거리는 짧게, 경사는 낮게, CCTV는 많은 길을 골라줘","origin":"주안역","destination":"현대유비스병원","preferences":{"distance_m":"minimize","cctv_score":"maximize"}},
   {"query":"오후 4시 20분에 더나눔병원에서 인천사랑병원까지 계단이 적고 보도가 많은 경로가 좋아","origin":"더나눔병원","destination":"인천사랑병원","time":"16:20:00","preferences":{"stairs_distance_m":"minimize","sidewalk_coverage_percent":"maximize"}},
   {"query":"주안역에서 인천사랑병원까지 가로등과 CCTV가 많으면서 횡단보도가 적은 길을 알려줘","origin":"주안역","destination":"인천사랑병원","preferences":{"streetlight_score":"maximize","cctv_score":"maximize","crosswalk_count":"minimize"}},
-  {"query":"현대유비스병원에서 더나눔병원까지 최단거리 말고 계단 없는 평탄한 길로 안내해줘","origin":"현대유비스병원","destination":"더나눔병원","preferences":{"stairs_distance_m":"avoid","max_slope_percent":"minimize"}}
+  {"query":"현대유비스병원에서 더나눔병원까지 최단거리 말고 계단 없는 평탄한 길로 안내해줘","origin":"현대유비스병원","destination":"더나눔병원","preferences":{"stairs_distance_m":"avoid"}}
 ]

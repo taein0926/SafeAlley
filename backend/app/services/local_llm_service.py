@@ -626,7 +626,7 @@ def _request_ollama(payload: dict[str, object]) -> dict[str, object]:
         data = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise LocalLLMUnavailableError(
-            "GPU 모델 서버 연결 또는 응답에 실패했습니다. SSH 터널 창과 서버 상태를 확인한 뒤 다시 검색해 주세요."
+            "모델 서버 연결 또는 응답에 실패했습니다. 잠시 후 다시 시도하고, 계속되면 서비스 관리자에게 문의해 주세요."
         ) from exc
     if not isinstance(data, dict):
         raise LocalLLMOutputError("Ollama returned an invalid response envelope")

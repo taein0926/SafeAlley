@@ -1,6 +1,8 @@
-import { type RecommendationFactor } from "../recommendationBadges";
+import type { AgentExecutionResponse } from "../types";
 import { CARD_STATE_LABELS, CONDITION_LABELS, conditionCards, type ConditionCard, type CardFactor } from "../conditionCards";
 import { ConditionIcon } from "./ConditionIcon";
+
+type RecommendationFactor = NonNullable<AgentExecutionResponse["recommendation_factors"]>[number];
 
 const PREVIEW_LABELS: Record<CardFactor, string> = {
   distance: "거리", streetlight: "가로등", cctv: "CCTV", safety: "안전시설",

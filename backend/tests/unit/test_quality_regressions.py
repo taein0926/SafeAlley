@@ -61,7 +61,7 @@ def test_model_outage_is_not_replaced_with_another_model(monkeypatch):
     def fail(*args, **kwargs):
         raise httpx.ConnectError("unreachable")
     monkeypatch.setattr(llm.httpx, "post", fail)
-    with pytest.raises(llm.LocalLLMUnavailableError, match="SSH 터널"):
+    with pytest.raises(llm.LocalLLMUnavailableError, match="서비스 관리자"):
         llm._request_ollama({})
 
 

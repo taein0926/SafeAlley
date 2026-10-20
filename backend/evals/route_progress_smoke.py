@@ -1,4 +1,4 @@
-"""Observe a real Qwen/DB query through the frontend proxy."""
+"""Observe the configured Ollama/DB workflow through the frontend proxy."""
 
 import argparse
 import json

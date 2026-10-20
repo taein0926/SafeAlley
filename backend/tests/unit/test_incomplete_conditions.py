@@ -143,7 +143,7 @@ def test_typo_spacing_colloquial_and_late_corrections(query, factor, evidence, c
     assert preview_factor_evidence(query, factor) == (evidence, choice)
 
 
-def test_qwen_invented_crossing_direction_is_removed_without_losing_cctv(monkeypatch):
+def test_model_invented_crossing_direction_is_removed_without_losing_cctv(monkeypatch):
     llm.clear_intent_cache()
     content = {"departure_time": "14:00:00", "preferences": [
         {"factor": "cctv_score", "direction": "maximize"},

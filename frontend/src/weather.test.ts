@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { koreaDate, koreaTime, matchingWeather, weatherRefreshDelay, weatherSymbol, type WeatherData } from "./weather.ts";
 import { isNightDepartureTime } from "./nightMode.ts";
+import { readFileSync } from "node:fs";
+
+test("retired forecast-age status and waiting copy do not remain in the UI contract", () => {
+  const hud = readFileSync(new URL("./components/WeatherHud.tsx", import.meta.url), "utf8");
+  const contract = readFileSync(new URL("./weather.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(contract, /"stale"/);
+  assert.doesNotMatch(hud, /최신 예보 자동 갱신 대기 중/);
+});
 
 test("unavailable weather retries sooner and returns to normal polling after recovery", () => {
   assert.equal(weatherRefreshDelay(null), 60_000);
-  assert.equal(weatherRefreshDelay({ forecast_status: "stale" } as WeatherData), 60_000);
   assert.equal(weatherRefreshDelay({ forecast_status: "unavailable" } as WeatherData), 60_000);
   assert.equal(weatherRefreshDelay({ forecast_status: "available", solar: null } as WeatherData), 60_000);
   assert.equal(weatherRefreshDelay({ forecast_status: "available", solar: {} } as WeatherData), 15 * 60_000);

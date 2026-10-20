@@ -54,6 +54,10 @@ docker compose --profile tools run --rm --no-deps --entrypoint python pipeline -
 ```
 
 41 Way/77 계단 구간 등의 과거 건수는 snapshot 기록이며 영구 고정 상수가 아닙니다.
+`collectors/osm_pedestrian.py`와 `loaders/osm_pedestrian.py`의 `juan-v1` 수집·적재는
+주안역 일부 영역을 다루던 과거 작업 도구입니다. 미추홀구 전체 최신화 명령이 아니며
+현재 전체 갱신에는 위 `loaders.osm_refresh`를 사용합니다. 이전 metadata와의 호환을
+위해 남긴 도구를 전체 수집으로 오인해 운영 DB에 실행하지 않습니다.
 원본 재적재 후 계단 metadata·topology·source·안전도 coverage를 실제로 비교합니다.
 이번 문서/테스트 정리는 도로를 새 수집하거나 DB를 갱신하는 작업이 아닙니다.
 

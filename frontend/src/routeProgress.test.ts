@@ -41,9 +41,9 @@ test("route_progress reaches the UI callback while the HTTP response is still op
     }) + "\n"));
     await arrived;
     assert.equal(finished, false);
-    streamController!.enqueue(new TextEncoder().encode('{"type":"result","data":{"model":"qwen3:4b"}}\n'));
+    streamController!.enqueue(new TextEncoder().encode('{"type":"result","data":{"model":"gemma4:26b"}}\n'));
     streamController!.close();
-    assert.equal((await query).model, "qwen3:4b");
+    assert.equal((await query).model, "gemma4:26b");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -54,7 +54,7 @@ test("stream parser handles split lines and returns the final result", async () 
   const lines = [
     { type: "stage", stage: "interpreting" },
     { type: "interpreted", data: { preferences: [] } },
-    { type: "result", data: { model: "qwen3:4b", result: { candidates: [] } } },
+    { type: "result", data: { model: "gemma4:26b", result: { candidates: [] } } },
   ].map((event) => JSON.stringify(event)).join("\n") + "\n";
   const bytes = new TextEncoder().encode(lines);
   globalThis.fetch = async () => new Response(new ReadableStream({
@@ -69,7 +69,7 @@ test("stream parser handles split lines and returns the final result", async () 
     const received: string[] = [];
     const result = await queryRouteWithProgress("질문", "test-user", (event) => received.push(event.type));
     assert.deepEqual(received, ["stage", "interpreted", "result"]);
-    assert.equal(result.model, "qwen3:4b");
+    assert.equal(result.model, "gemma4:26b");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -85,7 +85,7 @@ test("stream error never becomes a successful route", async () => {
   }
 });
 
-test("Qwen preferences become explicit questions without invented probabilities", () => {
+test("Model preferences become explicit questions without invented probabilities", () => {
   const interpretation: RouteQueryResponse["interpretation"] = {
     origin_name: "주안역", destination_name: "병원", departure_time: "22:00:00", profile: "pedestrian",
     preferences: [

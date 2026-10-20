@@ -2,7 +2,7 @@ export type WeatherData = {
   date: string;
   departure_time: string;
   region_label: string;
-  forecast_status: "available" | "unavailable" | "stale";
+  forecast_status: "available" | "unavailable";
   forecast: {
     provider: "kma";
     forecast_at: string; issued_at: string; temperature_c: number | null;

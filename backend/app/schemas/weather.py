@@ -30,7 +30,7 @@ class WeatherResponse(BaseModel):
     date: date
     departure_time: time
     region_label: str = "미추홀구 대표 지점"
-    forecast_status: Literal["available", "unavailable", "stale"]
+    forecast_status: Literal["available", "unavailable"]
     forecast: Forecast | None
     solar: SolarTimes | None
     theme_source: Literal["official_solar", "fallback"]

@@ -494,7 +494,7 @@ def test_distance_and_cctv_tradeoff_does_not_claim_cctv_advantage() -> None:
     reason, notes = route_ranking_service._recommendation_explanation(
         selected, candidates, preferences, [], "ready", None,
     )
-    assert "다만 CCTV와의 거리·주변 밀도·분포 공백만 보면 맞춤 경로이 더 유리해요" in reason
+    assert "다만 CCTV와의 거리·주변 밀도·분포 공백만 보면 맞춤 경로 쪽이 더 유리해요" in reason
     assert "이 길이 더 유리" not in reason
     assert any("CCTV와의 거리·주변 밀도·분포 공백: 맞춤 경로이 더 유리합니다" in note
                for note in notes)
