@@ -95,7 +95,12 @@ database 컨테이너·기존 데이터 볼륨·외부 포트·터널·GPU 서�
 기존 migration 변경/삭제는 거절합니다. 새 migration은 검토 후 `--allow-migration`을 명시해야 합니다.
 DB가 변경된 뒤 실패하면 자동 앱 롤백도 중단합니다. 해당 백업과 schema 호환성을 별도 검토하세요.
 `docker-compose.yml`, DB 초기화 파일, `frontend/nginx.conf`가 바뀐 압축본은 고정 운영 설정과의
-의미상 병합이 필요하므로 자동 배포를 거절합니다. 이는 새 포트/설정이 운영 환경을 덮어쓰지 않게 하는 안전장치입니다.
+의미상 병합이 필요하므로 기본적으로 자동 배포를 거절합니다. 이는 새 포트/설정이 운영 환경을 덮어쓰지 않게 하는 안전장치입니다.
+검토된 예외는 tools 전용 pipeline의 `OSM_SAFETY_SCORE_MODE` 기본값을 `demo`에서 `uniform`으로
+바꾼 정확한 Compose 파일 해시 쌍뿐입니다. 운영 구성에 database/backend/weather/frontend 네 서비스만
+있을 때만 허용하며, 새 Compose를 운영 설정에 합치거나 pipeline을 실행하지 않습니다.
+다른 Compose 변경·Nginx 변경·DB 초기화 변경은 계속 차단합니다. 이 보완이 설치되지 않은 기존
+업데이터는 해당 변경도 거절하므로 운영 설정 검토 후 업데이트 도구부터 별도로 설치해야 합니다.
 
 최근 앱 업데이트를 되돌릴 때(해당 DB revision이 유지된 경우만):
 

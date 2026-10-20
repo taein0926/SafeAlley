@@ -28,6 +28,12 @@ DEFAULT_BASE = Path("/home/ltmetric/safealley-deploy")
 MAX_SOURCE_BYTES = 512 * 1024 * 1024
 RELEASE_NAMESPACE = "safealley-release"
 RELEASE_TIMEZONE = timezone(timedelta(hours=9))
+# 검토 완료: tools 전용 pipeline의 OSM 초기 점수 기본값만 demo -> uniform.
+# 고정 VM 구성에 pipeline/추가 서비스가 없을 때 이 정확한 원본 쌍만 허용한다.
+REVIEWED_COMPOSE_TRANSITIONS = frozenset({(
+    "03f96de9f0b783372f12c9ce81fe3074bf51ad5bc09410fa897e5c36deb863d2",
+    "799ea0fda9304664370cab2b7ea47186081306ddf98effbeba4ab9ba6eb18c6d",
+)})
 # Deliberate allowlist: never infer ownership from a broad prefix on a shared host.
 IMAGE_REPOSITORIES = frozenset({
     "safealley-backend", "safealley-frontend", "safealley-frontend-check",
@@ -180,9 +186,15 @@ def subset(hashes, prefix):
     return {k: v for k, v in hashes.items() if k.startswith(prefix)}
 
 
-def check_contract(old, new, allow_migration=False):
-    for name in ("docker-compose.yml", "frontend/nginx.conf"):
-        require(old.get(name) == new.get(name), name + " changed; review fixed runtime configuration before updating.")
+def check_contract(old, new, allow_migration=False, runtime_services=None):
+    name = "docker-compose.yml"
+    if old.get(name) != new.get(name):
+        require((old.get(name), new.get(name)) in REVIEWED_COMPOSE_TRANSITIONS
+                and runtime_services is not None and set(runtime_services) == set(SERVICES),
+                name + " changed; review fixed runtime configuration before updating.")
+        print("검토된 Compose 변경 승인: 운영 VM에 없는 tools pipeline의 OSM 기본값만 변경. 고정 실행 설정은 유지합니다.", flush=True)
+    name = "frontend/nginx.conf"
+    require(old.get(name) == new.get(name), name + " changed; review fixed runtime configuration before updating.")
     require(subset(old, "database/init/") == subset(new, "database/init/"), "Database init files changed; manual review required.")
     old_migrations = subset(old, "backend/alembic/")
     new_migrations = subset(new, "backend/alembic/")
@@ -572,7 +584,8 @@ print('GPU_ENDPOINTS_OK')'''
         with tempfile.TemporaryDirectory(prefix="safealley-build-") as temp:
             source = Path(temp)
             manifest = unpack(archive, source)
-            migrations = check_contract(state["hashes"], manifest["sha256"], allow_migration)
+            migrations = check_contract(state["hashes"], manifest["sha256"], allow_migration,
+                                        runtime_services=load(self.config)["services"])
             if manifest["base_commit"] == state["commit"] and not rebuild:
                 require(manifest["sha256"] == state["hashes"], "Same commit with different source content refused.")
                 self.consume_upload(archive, state)

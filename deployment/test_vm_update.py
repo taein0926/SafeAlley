@@ -111,6 +111,41 @@ class ContractTests(unittest.TestCase):
         new = {**self.old, "backend/app/example.py": "b" * 64}
         self.assertFalse(updater.check_contract(self.old, new))
 
+    def reviewed_hashes(self):
+        before, after = next(iter(updater.REVIEWED_COMPOSE_TRANSITIONS))
+        return {**self.old, "docker-compose.yml": before}, {**self.old, "docker-compose.yml": after}
+
+    def test_reviewed_tools_default_change_allowed_for_fixed_four_services(self):
+        old, new = self.reviewed_hashes()
+        self.assertFalse(updater.check_contract(old, new, runtime_services=updater.SERVICES))
+
+    def test_review_requires_explicit_fixed_runtime_without_pipeline(self):
+        old, new = self.reviewed_hashes()
+        for services in [None, ("backend",), (*updater.SERVICES, "pipeline"), (*updater.SERVICES, "ollama")]:
+            with self.subTest(services=services), self.assertRaises(RuntimeError):
+                updater.check_contract(old, new, runtime_services=services)
+
+    def test_review_does_not_allow_other_protected_changes(self):
+        old, new = self.reviewed_hashes()
+        for name in ["frontend/nginx.conf", "database/init/001_extensions.sql"]:
+            with self.subTest(name=name), self.assertRaises(RuntimeError):
+                updater.check_contract(old, {**new, name: "c" * 64}, runtime_services=updater.SERVICES)
+
+    def test_review_does_not_allow_reverse_or_unknown_compose_hash(self):
+        old, new = self.reviewed_hashes()
+        for before, after in [(new, old), (old, {**new, "docker-compose.yml": "c" * 64})]:
+            with self.assertRaises(RuntimeError):
+                updater.check_contract(before, after, runtime_services=updater.SERVICES)
+
+    def test_reviewed_pair_matches_exactly_one_pipeline_default_line(self):
+        root = Path(__file__).resolve().parents[1]
+        current = (root / "docker-compose.yml").read_text(encoding="utf-8")
+        line = "OSM_SAFETY_SCORE_MODE: ${OSM_SAFETY_SCORE_MODE:-uniform}"
+        self.assertEqual(current.count(line), 1)
+        previous = current.replace(line, "OSM_SAFETY_SCORE_MODE: ${OSM_SAFETY_SCORE_MODE:-demo}")
+        pair = (hashlib.sha256(previous.encode()).hexdigest(), hashlib.sha256(current.encode()).hexdigest())
+        self.assertIn(pair, updater.REVIEWED_COMPOSE_TRANSITIONS)
+
     def test_runtime_changes_require_manual_review(self):
         for name in ["docker-compose.yml", "frontend/nginx.conf", "database/init/001_extensions.sql"]:
             with self.subTest(name=name), self.assertRaises(RuntimeError):
