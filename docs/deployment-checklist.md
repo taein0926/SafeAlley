@@ -46,5 +46,7 @@
 - [ ] 현재 Nginx의 stream buffering off, query timeout 660초, 음성 8MB/180초를 유지한다. 외부 HTTP proxy를 추가하는 경우에도 같은 제한을 반영한다.
 - [ ] 재부팅 후 컨테이너/터널 복구·동시 부하·로그/디스크를 확인한다.
 - [ ] 이미지 롤백과 DB 복원은 별도이며 자동 downgrade/볼륨 삭제를 하지 않는다.
+- [ ] 배포 성공 후 이미지 자동 정리가 현재·직전 복구 및 모든 컨테이너의 이미지를 보존하는지 확인한다. Workhub 등 다른 프로젝트·공유 이미지·볼륨·빌드 캐시는 정리하지 않는다. 수동 미리보기는 `runtime/update.py clean-images --dry-run`을 사용한다.
+- [ ] 현재 VM의 앱 태그는 `safealley-release/<서비스>:한국일시-짧은커밋`, DB는 `safealley-release/database:postgres17-postgis3.5`에 digest를 고정한다. 운영·직전 복구 설정이 실제 동일 이미지 ID를 가리키는지 확인하며 이름 변경 때문에 DB를 교체하지 않는다.
 
 [구성별 명령](../deployment/README.md).

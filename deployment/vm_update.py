@@ -7,7 +7,7 @@ First adoption is explicit; never initializes/restores a database or touches GPU
 import argparse
 import copy
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import http.client
 import json
@@ -26,6 +26,52 @@ PREFIX = {"backend": "backend/", "weather": "data_pipeline/", "frontend": "front
 PROJECT = "safealley-deploy"
 DEFAULT_BASE = Path("/home/ltmetric/safealley-deploy")
 MAX_SOURCE_BYTES = 512 * 1024 * 1024
+RELEASE_NAMESPACE = "safealley-release"
+RELEASE_TIMEZONE = timezone(timedelta(hours=9))
+# Deliberate allowlist: never infer ownership from a broad prefix on a shared host.
+IMAGE_REPOSITORIES = frozenset({
+    "safealley-backend", "safealley-frontend", "safealley-frontend-check",
+    "safealley-deploy-backend", "safealley-deploy-frontend", "safealley-deploy-weather",
+    "safealley-deploy-pipeline", "safealley-deploy/frontend",
+    "safealley-rollback-backend", "safealley-rollback-frontend",
+    "safealley-rollback-weather", "safealley-rollback-database",
+    "safealley-vm/backend", "safealley-vm/frontend", "safealley-vm/weather",
+    "safealley-release/backend", "safealley-release/frontend", "safealley-release/weather",
+    "safealley-release/database",
+})
+
+
+def release_image_tag(service, commit, checkpoint_stamp):
+    require(service in APPS, "배포 이미지 서비스 이름이 올바르지 않습니다.")
+    require(re.fullmatch(r"[a-f0-9]{40}", commit), "배포 이미지 커밋 형식이 올바르지 않습니다.")
+    require(re.fullmatch(r"[0-9]{8}T[0-9]{12}Z", checkpoint_stamp), "배포 이미지 시각 형식이 올바르지 않습니다.")
+    instant = datetime.strptime(checkpoint_stamp, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+    stamp = instant.astimezone(RELEASE_TIMEZONE).strftime("%Y%m%d-%H%M%S")
+    return f"{RELEASE_NAMESPACE}/{service}:{stamp}-{commit[:7]}"
+
+
+def image_repository(ref):
+    return ref.split("@", 1)[0] if "@" in ref else ref.rsplit(":", 1)[0]
+
+
+def image_refs(image):
+    return (image.get("RepoTags") or []) + (image.get("RepoDigests") or [])
+
+
+def image_cleanup_plan(images, containers, retained):
+    protected = set(retained) | {c["Image"] for c in containers}
+    result = {}
+    for item in images:
+        refs = image_refs(item)
+        # Shared aliases/digests, unknown repositories and anonymous images are not ours to remove.
+        if (item["Id"] in protected or not refs
+                or any(image_repository(r) not in IMAGE_REPOSITORIES for r in refs)):
+            continue
+        require(re.fullmatch(r"sha256:[a-f0-9]{64}", item["Id"]), "이미지 ID 형식이 올바르지 않습니다.")
+        for ref in refs:
+            require(not ref.startswith("-") and not any(c.isspace() for c in ref), "이미지 참조 형식이 올바르지 않습니다.")
+            result[ref] = item["Id"]
+    return result
 
 
 def require(ok, message):
@@ -206,6 +252,87 @@ class VM:
         ids = run(["docker", "ps", "-aq"]).split() if all_containers else [PROJECT + "-" + s + "-1" for s in SERVICES]
         items = json.loads(run(["docker", "inspect", *ids])) if ids else []
         return items if all_containers else {x["Config"]["Labels"]["com.docker.compose.service"]: x for x in items}
+
+    def images(self):
+        ids = list(dict.fromkeys(run(["docker", "image", "ls", "--all", "--quiet", "--no-trunc"]).split()))
+        return json.loads(run(["docker", "image", "inspect", *ids])) if ids else []
+
+    def retained_images(self, state):
+        require(not (self.runtime / "pending.json").exists(), "미완료 배포가 있어 이미지 정리를 중단합니다.")
+        configs = [self.config]
+        if state.get("previous"):
+            checkpoint = Path(state["previous"]["checkpoint"])
+            require(checkpoint.resolve() == checkpoint and checkpoint.parent == self.private / "updates",
+                    "직전 복구 설정 경로가 안전하지 않습니다.")
+            require(load(checkpoint / "state.json")["commit"] == state["previous"]["commit"],
+                    "직전 복구 커밋과 설정이 일치하지 않습니다.")
+            configs.append(checkpoint / "compose.json")
+        refs = set()
+        for config in configs:
+            require(config.is_file() and not config.is_symlink(), "보존할 이미지 설정 파일이 없습니다.")
+            model = load(config)["services"]
+            require(set(model) == set(SERVICES), "보존할 서비스 구성이 예상과 다릅니다.")
+            refs.update(model[s]["image"] for s in SERVICES)
+        retained = {}
+        for ref in sorted(refs):
+            require(isinstance(ref, str) and not ref.startswith("-"), "보존할 이미지 참조가 올바르지 않습니다.")
+            retained[ref] = json.loads(run(["docker", "image", "inspect", ref]))[0]["Id"]
+        return retained
+
+    def clean_images(self, dry_run=False):
+        """Exact owned refs only, never force/prune or delete a container/volume/cache."""
+        state = load(self.state)
+        retained = self.retained_images(state)
+        images = self.images()
+        containers = self.live(all_containers=True)
+        plan = image_cleanup_plan(images, containers, retained.values())
+        tags = [r for r in plan if "@" not in r]
+        print(f"SafeAlley 이미지 정리 대상: {len(set(plan.values()))}개 이미지 / {len(tags)}개 태그", flush=True)
+        if dry_run:
+            for ref in sorted(tags): print("정리 예정: " + ref, flush=True)
+            return {"planned_images": len(set(plan.values())), "planned_tags": len(tags)}
+        checkpoint = Path(state["checkpoint"])
+        require(checkpoint.resolve() == checkpoint and checkpoint.parent == self.private / "updates"
+                and checkpoint.is_dir(), "이미지 정리 기록 경로가 안전하지 않습니다.")
+        # Keep protected snapshots in the existing recovery checkpoint, not a new release directory.
+        report = {"planned": plan, "retained": retained, "removed": [], "skipped": [], "complete": False}
+        report_path = checkpoint / ("image-cleanup-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + ".json")
+        write_json(report_path, report)
+        foreign = {r: i["Id"] for i in images for r in image_refs(i)
+                   if image_repository(r) not in IMAGE_REPOSITORIES}
+        original_containers = {c["Id"]: c["Image"] for c in containers}
+        # Tags first. Docker may also remove associated digests; absent refs are simply skipped.
+        for ref in sorted(plan, key=lambda r: ("@" in r, r)):
+            require(load(self.state) == state and self.retained_images(state) == retained,
+                    "배포 상태 또는 복구 이미지가 변경되어 정리를 중단합니다.")
+            fresh = image_cleanup_plan(self.images(), self.live(all_containers=True), retained.values())
+            if fresh.get(ref) != plan[ref]:
+                report["skipped"].append(ref)
+                continue
+            run(["docker", "image", "rm", "--no-prune", ref])
+            report["removed"].append(ref)
+            write_json(report_path, report)
+        after = self.images()
+        after_refs = {r: i["Id"] for i in after for r in image_refs(i)}
+        require(all(after_refs.get(r) == image for r, image in foreign.items()),
+                "다른 프로젝트 이미지 참조가 변경되었습니다. 정리 기록을 확인하세요.")
+        after_containers = {c["Id"]: c["Image"] for c in self.live(all_containers=True)}
+        require(all(after_containers.get(c) == image for c, image in original_containers.items()),
+                "컨테이너 구성이 변경되었습니다. 정리 기록을 확인하세요.")
+        require(self.retained_images(state) == retained, "현재·직전 복구 이미지 확인에 실패했습니다.")
+        removed_ids = set(plan.values()) - {i["Id"] for i in after}
+        report.update(complete=True, removed_images=len(removed_ids),
+                      removed_tags=sum(r not in after_refs for r in tags))
+        write_json(report_path, report)
+        print(f"이미지 정리 완료: {report['removed_images']}개 이미지 / {report['removed_tags']}개 태그. "
+              "현재·직전 복구 및 모든 컨테이너·다른 프로젝트 이미지 보존 확인.", flush=True)
+        return report
+
+    def auto_clean_images(self):
+        try:
+            self.clean_images()
+        except (RuntimeError, OSError, ValueError, KeyError):
+            print("주의: 배포는 성공했지만 이미지 자동 정리는 안전을 위해 중단했습니다. clean-images --dry-run으로 확인하세요.", flush=True)
 
     def recreate(self, services, folder):
         for service in services:
@@ -449,6 +576,7 @@ print('GPU_ENDPOINTS_OK')'''
             if manifest["base_commit"] == state["commit"] and not rebuild:
                 require(manifest["sha256"] == state["hashes"], "Same commit with different source content refused.")
                 self.consume_upload(archive, state)
+                self.auto_clean_images()
                 print("ALREADY CURRENT: no build or replacement performed."); return
             require(shutil.disk_usage(self.base).free >= 5 * 1024**3, "At least 5 GiB free space is required.")
             changed = [s for s in APPS if rebuild or subset(state["hashes"], PREFIX[s]) != subset(manifest["sha256"], PREFIX[s])]
@@ -456,8 +584,12 @@ print('GPU_ENDPOINTS_OK')'''
             old_model = load(self.config)
             model = copy.deepcopy(old_model)
             args = load(self.private / "build-args.json")
+            # Never overwrite an existing release tag, including same-second rebuilds.
+            tags = {s: release_image_tag(s, manifest["base_commit"], checkpoint.name.split("-", 1)[1]) for s in changed}
+            existing = {r for image in self.images() for r in image_refs(image)} if changed else set()
+            require(not (set(tags.values()) & existing), "같은 배포 이미지 이름이 이미 있습니다. 기존 이미지는 덮어쓰지 않습니다. 잠시 후 다시 실행하세요.")
             for service in changed:
-                tag = "safealley-vm/" + service + ":" + manifest["base_commit"] + "-" + checkpoint.name.split("-", 1)[1].lower()
+                tag = tags[service]
                 command = ["docker", "build", "--tag", tag]
                 environment = os.environ.copy()
                 if service == "frontend":
@@ -508,6 +640,7 @@ print('GPU_ENDPOINTS_OK')'''
                 except (RuntimeError, OSError):
                     print("WARNING: update succeeded; old package/backup cleanup stopped for safety.", flush=True)
             self.consume_upload(archive, new_state)
+            self.auto_clean_images()
         print("UPDATED " + new_state["commit"] + "; temporary source removed; previous images and DB checkpoint retained.", flush=True)
 
     def prune(self, state):
@@ -563,6 +696,8 @@ def main():
     sub.add_parser("finalize")
     sub.add_parser("status")
     sub.add_parser("rollback")
+    cleanup = sub.add_parser("clean-images", help="현재·직전 복구 이미지를 보존하고 오래된 SafeAlley 이미지만 정리합니다.")
+    cleanup.add_argument("--dry-run", action="store_true", help="삭제하지 않고 정리 대상만 확인합니다.")
     update = sub.add_parser("update")
     update.add_argument("--archive", type=Path, required=True)
     update.add_argument("--allow-migration", action="store_true")
@@ -576,6 +711,10 @@ def main():
         elif args.command == "finalize": vm.finalize()
         elif args.command == "update": vm.update(args.archive.absolute(), args.allow_migration, args.rebuild)
         elif args.command == "rollback": vm.rollback()
+        elif args.command == "clean-images":
+            vm.verify()
+            vm.clean_images(args.dry_run)
+            vm.verify()
         else:
             vm.verify()
             state = load(vm.state)

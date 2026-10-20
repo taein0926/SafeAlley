@@ -135,6 +135,11 @@ class ContractTests(unittest.TestCase):
 
 
 class UpdateTests(unittest.TestCase):
+    def setUp(self):
+        images = patch.object(updater.VM, "images", return_value=[])
+        images.start()
+        self.addCleanup(images.stop)
+
     def setup_vm(self, root):
         vm = updater.VM(root)
         vm.runtime.mkdir(); vm.private.mkdir(); vm.packages.mkdir()
@@ -165,9 +170,11 @@ class UpdateTests(unittest.TestCase):
             root = Path(tmp); vm, folder, model = self.setup_vm(root)
             p, manifest = make_archive(root)
             state = updater.load(vm.state); state['commit'] = manifest['base_commit']; updater.write_json(vm.state, state)
-            with patch.object(vm, "verify"), patch.object(vm, "live"), patch.object(vm, "backup") as backup:
+            with patch.object(vm, "verify"), patch.object(vm, "live"), patch.object(vm, "backup") as backup, \
+                 patch.object(vm, "auto_clean_images") as cleanup:
                 vm.update(p)
             backup.assert_not_called()
+            cleanup.assert_called_once()
 
     def test_replacement_failure_restores_previous_config_without_db_restore(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,14 +219,16 @@ class UpdateTests(unittest.TestCase):
             p, manifest = make_archive(root, {**FILES, "frontend/src/example.ts": b"new"})
             with patch.object(vm, "verify"), patch.object(vm, "live", return_value={}), patch.object(vm, "backup", return_value=folder), \
                  patch.object(vm, "database_revision", return_value="0016"), patch.object(vm, "recreate") as recreate, \
-                 patch.object(vm, "prune"), patch.object(updater, "run") as command:
+                 patch.object(vm, "prune"), patch.object(vm, "auto_clean_images") as cleanup, patch.object(updater, "run") as command:
                 vm.update(p)
+            cleanup.assert_called_once()
             state = updater.load(vm.state)
             self.assertEqual(state['commit'], manifest['base_commit'])
             self.assertEqual(state['previous']['commit'], 'b' * 40)
             self.assertEqual(updater.load(vm.config)['services']['database'], model['services']['database'])
             self.assertEqual(recreate.call_args.args[0], ['frontend'])
             build_command = next(c.args[0] for c in command.call_args_list if c.args[0][:2] == ['docker', 'build'])
+            self.assertIn('safealley-release/frontend:20261020-200000-aaaaaaa', build_command)
             self.assertFalse(Path(build_command[-1]).exists())
             self.assertFalse((vm.runtime / 'pending.json').exists())
 
@@ -254,6 +263,19 @@ class UpdateTests(unittest.TestCase):
             self.assertFalse(obsolete.exists())
             for p in [current, previous, unrelated, preserved/'safealley.key']: self.assertTrue(p.exists())
 
+    def test_existing_release_tag_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); vm, folder, model = self.setup_vm(root)
+            p, _ = make_archive(root, {**FILES, "frontend/src/example.ts": b"new"})
+            existing = image_fixture("c", "safealley-release/frontend:20261020-200000-aaaaaaa")
+            with patch.object(vm, "verify"), patch.object(vm, "live", return_value={}), \
+                 patch.object(vm, "backup", return_value=folder), patch.object(vm, "images", return_value=[existing]), \
+                 patch.object(updater, "run") as command:
+                with self.assertRaisesRegex(RuntimeError, "덮어쓰지"): vm.update(p)
+            command.assert_not_called()
+            self.assertEqual(updater.load(vm.config), model)
+            self.assertFalse((vm.runtime / "pending.json").exists())
+
     @unittest.skipUnless(os.name == 'posix', 'Linux flock test runs on the VM')
     def test_concurrent_update_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -261,6 +283,180 @@ class UpdateTests(unittest.TestCase):
             with vm.lock():
                 with self.assertRaisesRegex(RuntimeError, 'Another deployment'):
                     with vm.lock(): pass
+
+
+def image_fixture(letter, *tags, digests=()):
+    return {"Id": "sha256:" + letter * 64, "RepoTags": list(tags), "RepoDigests": list(digests)}
+
+
+class ImageCleanupTests(unittest.TestCase):
+    def setUp(self):
+        self.old = image_fixture("a", "safealley-vm/backend:old")
+
+    def test_only_explicit_owned_repositories_are_candidates(self):
+        images = [self.old, image_fixture("b", "workhub-server/workhub:old"),
+                  image_fixture("c", "safealley-unknown:old"), image_fixture("d")]
+        self.assertEqual(updater.image_cleanup_plan(images, [], []), {"safealley-vm/backend:old": self.old["Id"]})
+
+    def test_release_namespace_cleanup_and_shared_alias_protection(self):
+        release = image_fixture("b", "safealley-release/backend:20261020-144545-9babb6f")
+        shared = image_fixture("c", "safealley-release/frontend:old", "workhub-release/frontend:old")
+        self.assertEqual(updater.image_cleanup_plan([release, shared], [], []),
+                         {release["RepoTags"][0]: release["Id"]})
+        self.assertEqual(updater.image_cleanup_plan([release], [], [release["Id"]]), {})
+
+    def test_release_database_current_id_is_protected(self):
+        database = image_fixture("d", "safealley-release/database:postgres17-postgis3.5")
+        self.assertEqual(updater.image_cleanup_plan([database], [], [database["Id"]]), {})
+        self.assertEqual(updater.image_cleanup_plan([database], [{"Image": database["Id"]}], []), {})
+        self.assertEqual(updater.image_cleanup_plan([database], [], []),
+                         {database["RepoTags"][0]: database["Id"]})
+
+    def test_current_and_previous_ids_protected_with_all_aliases(self):
+        previous = image_fixture("b", "safealley-vm/frontend:previous", "safealley-frontend:alias")
+        self.assertEqual(updater.image_cleanup_plan([self.old, previous], [], [self.old["Id"], previous["Id"]]), {})
+
+    def test_stopped_other_container_protects_owned_image(self):
+        stopped = {"Id": "other", "Image": self.old["Id"], "State": {"Running": False}}
+        self.assertEqual(updater.image_cleanup_plan([self.old], [stopped], []), {})
+
+    def test_shared_foreign_tag_protects_entire_image(self):
+        shared = image_fixture("a", "safealley-vm/backend:old", "workhub-server/workhub:backup")
+        self.assertEqual(updater.image_cleanup_plan([shared], [], []), {})
+
+    def test_shared_foreign_digest_protects_entire_image(self):
+        shared = image_fixture("a", "safealley-vm/backend:old", digests=["workhub-server/workhub@sha256:" + "a"*64])
+        self.assertEqual(updater.image_cleanup_plan([shared], [], []), {})
+
+    def test_owned_digests_are_explicit_candidates(self):
+        image = image_fixture("a", "safealley-vm/backend:old", digests=["safealley-vm/backend@sha256:" + "a"*64])
+        self.assertEqual(set(updater.image_cleanup_plan([image], [], [])), set(updater.image_refs(image)))
+
+    def setup_cleanup(self, root):
+        vm, folder, model = UpdateTests().setup_vm(root)
+        keep = image_fixture("b", "safealley-vm/backend:current")
+        state = updater.load(vm.state); state["checkpoint"] = str(folder)
+        updater.write_json(vm.state, state)
+        return vm, folder, keep
+
+    def test_dry_run_never_removes_images_or_writes_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, folder, keep = self.setup_cleanup(Path(tmp))
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", return_value=[self.old, keep]), patch.object(vm, "live", return_value=[]), \
+                 patch.object(updater, "run") as command:
+                self.assertEqual(vm.clean_images(True)["planned_images"], 1)
+            command.assert_not_called()
+            self.assertFalse(list(folder.glob("image-cleanup-*")))
+
+    def test_cleanup_removes_exact_tag_without_force_or_parent_prune(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, folder, keep = self.setup_cleanup(Path(tmp))
+            foreign = image_fixture("c", "workhub-server/workhub:old")
+            container = {"Id": "workhub", "Image": foreign["Id"]}
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", side_effect=[[self.old, keep, foreign], [self.old, keep, foreign], [keep, foreign]]), \
+                 patch.object(vm, "live", return_value=[container]), patch.object(updater, "run") as command:
+                result = vm.clean_images()
+            command.assert_called_once_with(["docker", "image", "rm", "--no-prune", "safealley-vm/backend:old"])
+            self.assertTrue(result["complete"])
+            self.assertEqual(result["removed_images"], 1)
+            self.assertTrue(list(folder.glob("image-cleanup-*")))
+
+    def test_new_container_reference_prevents_previously_planned_removal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, keep = self.setup_cleanup(Path(tmp))
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", return_value=[self.old, keep]), \
+                 patch.object(vm, "live", side_effect=[[], [{"Id": "new", "Image": self.old["Id"]}], []]), \
+                 patch.object(updater, "run") as command:
+                result = vm.clean_images()
+            command.assert_not_called()
+            self.assertEqual(result["removed_images"], 0)
+
+    def test_retagged_candidate_is_not_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, keep = self.setup_cleanup(Path(tmp))
+            replacement = image_fixture("c", "safealley-vm/backend:old")
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", side_effect=[[self.old, keep], [replacement, keep], [replacement, keep]]), \
+                 patch.object(vm, "live", return_value=[]), patch.object(updater, "run") as command:
+                vm.clean_images()
+            command.assert_not_called()
+
+    def test_missing_previous_checkpoint_refuses_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, _ = self.setup_cleanup(Path(tmp))
+            state = updater.load(vm.state)
+            state["previous"] = {"commit": "c"*40, "checkpoint": str(vm.private / "updates/missing")}
+            with self.assertRaises(OSError): vm.retained_images(state)
+
+    def test_pending_update_refuses_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, _ = self.setup_cleanup(Path(tmp))
+            updater.write_json(vm.runtime / "pending.json", {})
+            with self.assertRaisesRegex(RuntimeError, "미완료"): vm.retained_images(updater.load(vm.state))
+
+    def test_current_and_previous_compose_references_are_resolved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, folder, _ = self.setup_cleanup(Path(tmp))
+            state = updater.load(vm.state)
+            state["previous"] = {"commit": state["commit"], "checkpoint": str(folder)}
+            current = {"services": {s: {"image": "safealley-vm/backend:current-" + s} for s in updater.SERVICES}}
+            updater.write_json(vm.config, current)
+            with patch.object(updater, "run", return_value=json.dumps([{"Id": self.old["Id"]}])) as command:
+                retained = vm.retained_images(state)
+            self.assertEqual(len(retained), 8)
+            self.assertEqual(command.call_count, 8)
+
+    def test_missing_retained_docker_image_stops_before_removal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, _ = self.setup_cleanup(Path(tmp))
+            with patch.object(updater, "run", side_effect=RuntimeError("missing image")) as command:
+                with self.assertRaisesRegex(RuntimeError, "missing image"): vm.clean_images()
+            self.assertEqual(command.call_args.args[0][:3], ["docker", "image", "inspect"])
+
+    def test_docker_removal_failure_stops_without_force_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, keep = self.setup_cleanup(Path(tmp))
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", return_value=[self.old, keep]), patch.object(vm, "live", return_value=[]), \
+                 patch.object(updater, "run", side_effect=RuntimeError("in use")) as command:
+                with self.assertRaisesRegex(RuntimeError, "in use"): vm.clean_images()
+            command.assert_called_once_with(["docker", "image", "rm", "--no-prune", "safealley-vm/backend:old"])
+
+    def test_foreign_reference_postcheck_detects_unexpected_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vm, _, keep = self.setup_cleanup(Path(tmp))
+            foreign = image_fixture("c", "workhub-server/workhub:old")
+            with patch.object(vm, "retained_images", return_value={"current": keep["Id"]}), \
+                 patch.object(vm, "images", side_effect=[[keep, foreign], [keep]]), \
+                 patch.object(vm, "live", return_value=[]), patch.object(updater, "run") as command:
+                with self.assertRaisesRegex(RuntimeError, "다른 프로젝트"): vm.clean_images()
+            command.assert_not_called()
+
+    def test_cleanup_failure_does_not_fail_successful_deployment(self):
+        vm = updater.VM("/unused")
+        with patch.object(vm, "clean_images", side_effect=RuntimeError("blocked")):
+            vm.auto_clean_images()
+
+
+class ReleaseImageTagTests(unittest.TestCase):
+    def test_korean_time_and_short_commit(self):
+        self.assertEqual(updater.release_image_tag("backend", "9babb6f" + "0" * 33, "20261020T054545935592Z"),
+                         "safealley-release/backend:20261020-144545-9babb6f")
+
+    def test_date_rollover_is_korean_time(self):
+        self.assertEqual(updater.release_image_tag("weather", "a" * 40, "20261020T160000000000Z"),
+                         "safealley-release/weather:20261021-010000-aaaaaaa")
+
+    def test_database_is_not_retagged(self):
+        with self.assertRaisesRegex(RuntimeError, "서비스"):
+            updater.release_image_tag("database", "a" * 40, "20261020T054545935592Z")
+
+    def test_invalid_commit_and_timestamp_are_rejected(self):
+        for commit, stamp in [("bad", "20261020T054545935592Z"), ("a" * 40, "20261020")]:
+            with self.assertRaises(RuntimeError): updater.release_image_tag("frontend", commit, stamp)
 
 
 if __name__ == '__main__':

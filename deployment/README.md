@@ -53,6 +53,16 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
 네 컨테이너의 Compose 기준 경로는 항상 `runtime`입니다. 소스는 임시 폴더에서 빌드하고
 성공/실패 후 제거합니다. 실행 코드는 이미지 안에 있으며 소스를 보려면 압축본을 해제합니다.
 업데이트 도구는 `deployment/vm_update.py`를 서버 `runtime/update.py`에 설치한 것입니다.
+앱 이미지 이름은 `safealley-release/<서비스명>:YYYYMMDD-HHMMSS-<커밋 앞 7자리>`입니다.
+일시는 이미지 배포 체크포인트의 한국 시간(KST)이며, 예시는
+`safealley-release/backend:20261020-144545-9babb6f`입니다.
+변경 없이 재사용하는 서비스 이미지는 기존 배포 일시·커밋을 유지합니다.
+같은 태그가 이미 있으면 덮어쓰지 않고 중단합니다. 현재·직전 구분은 운영/복구 Compose 설정으로
+관리하므로 별도의 `rollback-*` 별칭은 필요하지 않습니다.
+DB는 `safealley-release/database:postgres17-postgis3.5`로 표시합니다. 원본
+`postgis/postgis:17-3.5`와 동일한 이미지이며, 운영/복구 설정은 이 이름에 원본 manifest digest를
+붙여 고정합니다. DB는 앱 배포마다 재빌드하거나 날짜 태그를 바꾸지 않습니다.
+이미지·태그는 프로그램 참조이며 실제 DB 데이터 볼륨이나 DB dump가 아닙니다.
 GitLab 자동 배포나 로컬 commit 자동 push는 구성하지 않습니다.
 서버 도구는 Python 3.10+와 raw env_file을 지원하는 Docker Compose가 필요하며 현재 VM은
 Compose 5.6.0에서 검증했습니다. 기존 runtime 환경을 채택한 업데이트용 도구이지 빈 서버 설치 프로그램은 아닙니다.
@@ -73,7 +83,8 @@ python3 ~/safealley-deploy/runtime/update.py status
 도구는 체크섬·manifest·파일 경로 검증 → DB 백업·검증 → 변경된 backend/frontend/weather
 이미지 빌드 → Nginx TLS 설정 검사 → 앱 컨테이너 교체 → HTTPS/API/정적 파일·GPU 연결을 확인합니다.
 database 컨테이너·기존 데이터 볼륨·외부 포트·터널·GPU 서비스는 일반 업데이트에서 교체하지 않습니다.
-같은 커밋은 검증 후 변경 없이 종료하며 `--rebuild`는 동일 버전의 재빌드·교체를 명시적으로 요청합니다.
+같은 커밋은 검증과 이미지 정리만 하고 빌드·교체하지 않습니다.
+`--rebuild`는 동일 버전의 재빌드·교체를 명시적으로 요청합니다.
 
 빌드 실패는 기존 컨테이너를 교체하지 않습니다. 교체 후 검사 실패는 DB revision이 그대로인
 경우에만 이전 앱 이미지를 복구합니다. migration 변경 배포에서 교체가 시작된 뒤 실패하면
@@ -102,7 +113,27 @@ python3 ~/safealley-deploy/runtime/update.py rollback
 완료된 업데이트 체크포인트는 최근 2개를 유지하며, 최초 전환 백업·기존 수동 백업·실패 기록은
 자동으로 삭제하지 않습니다. Docker 전체 prune은 수행하지 않습니다.
 현재·직전 이미지가 복구에 필요하므로 수동으로 지우지 마세요.
-Docker 이미지·빌드 캐시는 자동 삭제하지 않으므로 디스크 용량은 별도 확인합니다.
+배포 성공 후(동일 커밋 확인·재빌드 포함) 오래된 SafeAlley 이미지를 자동 정리합니다.
+현재 운영 설정과 직전 복구 체크포인트의 이미지를 모두 보존하며, 실행·중지 상태를 포함한
+모든 컨테이너가 사용하는 이미지와 다른 프로젝트 태그/digest를 공유하는 이미지는 제외합니다.
+명시적으로 등록된 SafeAlley 저장소의 참조만 `docker image rm --no-prune`으로 제거합니다.
+이미지 ID 강제 삭제·Docker 전체 prune·볼륨/빌드 캐시 삭제는 하지 않습니다.
+출처를 확인할 수 없는 무태그 이미지나 미등록 저장소는 자동 삭제하지 않습니다.
+정리 전 참조를 다시 확인하며 복구 설정 누락·미완료 배포·삭제 오류가 있으면 정리를 중단합니다.
+정리 실패 때문에 정상 배포를 롤백하지 않으며 경고를 출력합니다.
+정리 기록은 현재 `private/updates/<체크포인트>/image-cleanup-*.json`에 저장합니다.
+예전 수동 백업 기록이 남아 있어도 이미지 보존 대상은 현재·직전 복구와 컨테이너 참조 기준입니다.
+빌드 캐시와 공유 레이어 때문에 표시된 이미지 크기 합계가 실제 회수 용량과 같지는 않습니다.
+
+수동 확인·정리는 다음과 같습니다(서비스 재시작 없음).
+
+```bash
+python3 ~/safealley-deploy/runtime/update.py clean-images --dry-run
+python3 ~/safealley-deploy/runtime/update.py clean-images
+```
+
+업데이터 코드 자체는 자동 교체하지 않습니다. 이 정책이 들어간 `deployment/vm_update.py`를
+서버의 `runtime/update.py`에 설치한 이후부터 자동 정리가 적용됩니다.
 status/update는 운영 설정을 임의로 최신 기본값으로 바꾸지 않습니다.
 
 신규 서버 설치 순서는 빌드 → 빈 DB → 승인된 공간 백업 복원 → migration → 히트맵 → 앱 시작입니다.
