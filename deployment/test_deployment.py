@@ -14,6 +14,28 @@ import package
 
 
 class PackageTests(unittest.TestCase):
+    def test_all_model_template_defaults_match_current_model(self):
+        defaults = {
+            ".env.example": "OLLAMA_MODEL=gemma4:26b",
+            "deployment/.env.example": "OLLAMA_MODEL=gemma4:26b",
+            "docker-compose.yml": "OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:26b}",
+            "deployment/compose.yml": "OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:26b}",
+            "deployment/compose.vm.override.yml": "OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:26b}",
+            "backend/app/core/config.py": 'ollama_model: str = Field(default="gemma4:26b", min_length=1)',
+        }
+        for name, value in defaults.items():
+            with self.subTest(name=name):
+                content = (package.ROOT / name).read_text(encoding="utf-8")
+                self.assertIn(value, content)
+                self.assertNotIn("qwen3:4b", content)
+                self.assertNotIn("qwen3.6:35b", content)
+
+    def test_osm_templates_use_non_demo_initial_scores(self):
+        self.assertIn("OSM_SAFETY_SCORE_MODE=uniform", (package.ROOT / ".env.example").read_text(encoding="utf-8"))
+        compose = (package.ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("OSM_SAFETY_SCORE_MODE: ${OSM_SAFETY_SCORE_MODE:-uniform}", compose)
+        self.assertNotIn("OSM_SAFETY_SCORE_MODE:-demo", compose)
+
     def test_frontend_image_normalizes_public_asset_permissions(self):
         dockerfile = (package.ROOT / 'frontend' / 'Dockerfile').read_text(encoding='utf-8')
         copy = dockerfile.index('COPY --from=build /app/dist /usr/share/nginx/html')

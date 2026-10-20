@@ -2,6 +2,7 @@ import json
 
 from collectors.osm import build_overpass_query
 from preprocess.osm_roads import (
+    _safety_score_mode,
     _incline_percent,
     _is_walkable,
     _walkability_factor,
@@ -9,6 +10,14 @@ from preprocess.osm_roads import (
     safety_score_for_segment,
 )
 from preprocess.roads import read_road_features
+
+
+def test_default_safety_mode_is_uniform_not_demo(monkeypatch) -> None:
+    monkeypatch.delenv("OSM_SAFETY_SCORE_MODE", raising=False)
+    monkeypatch.delenv("OSM_DEFAULT_SAFETY_SCORE", raising=False)
+    assert _safety_score_mode() == "uniform"
+    assert safety_score_for_segment("osm-way-1-edge-1", _safety_score_mode()) == 50
+    assert safety_score_for_segment("osm-way-2-edge-1", _safety_score_mode()) == 50
 
 
 def test_overpass_query_filters_michuhol_administrative_area() -> None:

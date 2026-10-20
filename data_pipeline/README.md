@@ -45,9 +45,14 @@ docker compose --profile tools run --rm pipeline --help
 
 OSM 최초 구축은 [데이터 운영](../docs/data-pipeline.md)을 먼저 따른다.
 `run-osm`/`load-osm`은 기존 source=osm 데이터를 교체한다.
-.env.example의 `OSM_SAFETY_SCORE_MODE=demo`는 실제 시설 점수가 아닌
-이전 PT용 설정이므로 기존 서비스에 무심코 재적재하지 않는다.
+.env.example과 Compose의 `OSM_SAFETY_SCORE_MODE` 기본값은 `uniform`이다.
+동일 임시값(기본 50)이며 실제 안전도 측정값이 아니므로 적재 후 실제 시설 자료로 재분석한다.
+`demo` 가상 점수는 명시적인 시험에서만 선택한다. 기존 .env를 덮어쓰거나 운영 DB를 자동 재적재하지 않는다.
 기존 DB의 갱신은 백업·metadata·dry run 검사를 갖춘 `loaders.osm_refresh`를 사용한다.
+
+건물 전처리·적재의 기본 source는 `molit-gis-building`이다. 다른 공식 원천은 `--source`로
+명시한다. 가공 파일의 source와 교체 대상이 다르면 DB 연결 전에 중단하며, 다른 출처로 표시된
+파일을 새 기본값으로 자동 재분류하지 않는다. 원천에 맞는 명시적 옵션 또는 재전처리가 필요하다.
 
 정밀 CCTV와 안전시설 원본을 준비한 경우:
 

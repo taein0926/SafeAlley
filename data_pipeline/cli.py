@@ -29,6 +29,7 @@ from preprocess.roads import read_road_features
 from preprocess.streetlights import preprocess_osm_streetlights, preprocess_streetlights
 
 
+DEFAULT_BUILDING_SOURCE = "molit-gis-building"
 RAW_OSM_PATH = Path(__file__).parent / "raw" / "osm" / "michuhol_roads.json"
 PROCESSED_ELEVATION_PATH = (
     Path(__file__).parent / "processed" / "elevation" / "road_slopes.json"
@@ -146,7 +147,7 @@ def preprocess_building_file(arguments: argparse.Namespace) -> None:
     stats = preprocess_buildings(
         Path(arguments.input),
         PROCESSED_BUILDINGS_PATH,
-        source=arguments.source or "imap",
+        source=arguments.source or DEFAULT_BUILDING_SOURCE,
         source_dataset=(
             arguments.source_dataset
             or "User-provided official building dataset"
@@ -168,7 +169,7 @@ def preprocess_building_file(arguments: argparse.Namespace) -> None:
 
 
 def load_building_file(arguments: argparse.Namespace) -> None:
-    source = arguments.source or "imap"
+    source = arguments.source or DEFAULT_BUILDING_SOURCE
     loaded_count = load_buildings(
         PROCESSED_BUILDINGS_PATH,
         replace_source=source,
@@ -370,7 +371,7 @@ def main() -> None:
         "--source-encoding",
         help="DBF text encoding when it cannot be detected, for example CP949",
     )
-    parser.add_argument("--source")
+    parser.add_argument("--source", help="데이터 출처. 건물은 생략 시 molit-gis-building이며 다른 원천은 명시합니다.")
     parser.add_argument("--road-source", default="osm")
     parser.add_argument("--cctv-source", default="michuhol-cctv-ai-ready")
     parser.add_argument("--help-point-source", default="ai-ready-help-points")

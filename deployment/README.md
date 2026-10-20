@@ -30,8 +30,8 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
   현재 인증서 만료는 2027-10-20 UTC이며 갱신과 브라우저 테스트가 필요합니다.
 - 터널은 승인된 GPU Ollama loopback 11434를 Docker host gateway 11435로 연결합니다.
   gateway 주소/방화벽/SSH 키·서버 지문·재연결 방식은 실제 서버에 맞춰 관리합니다.
-- backend 설정 주소는 http://host.docker.internal:11435입니다. 저장소 템플릿의
-  기본 모델은 `qwen3.6:35b`지만 2026-10-16 확인한 실제 VM 모델은 `gemma4:26b`입니다.
+- backend 설정 주소는 http://host.docker.internal:11435입니다. 저장소의 일반 실행·VM 분리·단일 GPU
+  구성은 모두 `gemma4:26b`를 기본값으로 사용하며 현재 VM에서도 이 모델을 사용합니다.
   모델 값은 매 배포마다 적용된 비공개 설정과 backend 환경에서 확인합니다.
 - GPU 서버의 기존 Ollama/모델/다른 서비스는 임의로 재시작하거나 교체하지 않습니다.
 - 음성은 VM FastAPI에서만 받습니다. GPU Whisper는 GPU 서버의 127.0.0.1에만 바인딩하고
@@ -178,7 +178,8 @@ python3 deployment/manage.py verify
 approved-transfer 경로는 실제 승인된 백업으로 바꿉니다.
 체크섬/빈 DB/앱 정지 검사를 통과해야 복원하며 --clean으로 삭제하지 않습니다.
 POSTGRES_PASSWORD는 24자 이상 새 임의값, OLLAMA_IMAGE는 운영자가 승인한 고정 tag/digest를 사용합니다.
-대안 설정의 기본 모델 qwen3:4b는 분리 구성의 qwen3.6:35b와 다릅니다.
+대안 설정도 기본 모델은 `gemma4:26b`입니다. 구성에 따라 Ollama 주소·실행 위치만 다르며,
+다른 모델이 필요하면 `OLLAMA_MODEL`로 명시합니다. 기존 VM의 비공개 환경설정은 변경하지 않습니다.
 models는 모델 준비 단계이며 서비스 시작만으로 모델이 자동 준비되지는 않습니다.
 
 ## 전달·백업

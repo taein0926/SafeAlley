@@ -8,6 +8,7 @@
 - [ ] 배포 source commit과 전달본 commit을 구분하고, 미커밋 파일은 패키지에 포함되지 않음을 확인한다.
 - [ ] 현재 VM: 고정 runtime/compose.json + private/service-env, 기존 GPU Ollama/Whisper와 승인된 SSH 터널. 루트 Compose + VM override는 신규 설치 템플릿이다.
 - [ ] 단일 GPU 대안: deployment/compose.yml + manage.py. VM override와 혼용하지 않는다.
+- [ ] 모든 실행 템플릿의 기본 모델은 gemma4:26b이며 실제 대상 모델을 확인한다. 새 데이터 구축은 OSM uniform 임시값 후 시설 재분석, 건물 source=molit-gis-building을 사용한다. 기존 환경설정·운영 DB를 자동 변경하지 않는다.
 - [ ] VM backend에서 적용된 `OLLAMA_BASE_URL`의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 템플릿 기본값을 실제 모델로 단정하지 않는다.
 - [ ] VM backend에서 적용된 `STT_REMOTE_URL`의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
 - [ ] 현재 연결은 외부 HTTPS :21802 → VM :8081 → frontend :80(TLS). HTTP 자동 이동·자체 서명 인증서 경고·마이크 권한과 인증서 만료를 확인한다.

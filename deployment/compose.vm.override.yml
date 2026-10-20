@@ -9,7 +9,7 @@ services:
       - host.docker.internal:host-gateway
     environment:
       OLLAMA_BASE_URL: http://host.docker.internal:11435
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.6:35b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:26b}
       STT_REMOTE_URL: http://host.docker.internal:11436
   frontend:
     ports: !override

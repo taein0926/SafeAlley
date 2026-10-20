@@ -35,8 +35,10 @@ docker compose --profile tools run --rm --build pipeline run-osm
 ```
 
 **source=osm 도로를 교체하는 명령이므로 기존 서비스 DB에는 무심코 실행하지 않습니다.**
-.env.example의 OSM_SAFETY_SCORE_MODE=demo는 과거 PT용 임시 점수입니다.
-실제 점수를 보존하려면 설정·재분석을 먼저 검토해야 합니다.
+.env.example과 Compose의 OSM_SAFETY_SCORE_MODE 기본값은 `uniform`입니다.
+이는 도로마다 동일한 임시값(기본 50)을 넣는 것이지 실제 시설 안전도를 계산하는 것은 아닙니다.
+실제 가로등·CCTV·안전시설을 적재한 뒤 아래 시설 분석을 실행해야 합니다.
+과거 PT용 가상 점수 `demo`는 명시적인 시험에서만 선택합니다. 기존 .env와 DB를 자동 변경하지 않습니다.
 
 ## 기존 DB 갱신
 

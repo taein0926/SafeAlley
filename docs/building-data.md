@@ -75,4 +75,9 @@ SHP는 `.shp`, `.shx`, `.dbf`, `.prj` 등 구성 파일을 모두 같은 디렉�
 - 국토교통부 GIS건물통합정보: `--source molit-gis-building`
 - 출처가 불명확한 파일: 적재하지 않음
 
+건물 CLI에서 `--source`를 생략하면 현재 사용하는 `molit-gis-building`으로 처리합니다.
+다른 공식 원천은 반드시 출처를 명시합니다. `load-buildings`는 가공 GeoJSON의 source와
+교체 대상이 다르면 DB 연결 전에 중단합니다. 다른 출처로 표시된 가공 파일을 자동 변경하거나
+기존 DB를 재분류하지 않으므로 실제 원천에 맞게 옵션을 지정하거나 다시 전처리해야 합니다.
+
 프론트엔드의 기본 조회 source는 현재 적재 데이터와 동일한 `molit-gis-building`입니다. `VITE_BUILDING_SOURCE` 빌드 변수로 다른 공식 원천을 선택할 수 있으며, 그 값은 DB `buildings.source`와 같아야 합니다.

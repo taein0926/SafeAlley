@@ -76,6 +76,14 @@ def read_building_features(path: Path) -> list[dict[str, Any]]:
 
 def load_buildings(path: Path, replace_source: str | None = None) -> int:
     features = read_building_features(path)
+    if replace_source is not None:
+        for feature in features:
+            source = str((feature.get("properties") or {}).get("source") or "").strip()
+            if source != replace_source:
+                raise BuildingLoadError(
+                    "가공 건물의 source와 교체 대상이 다릅니다. "
+                    "출처를 명시하고 다시 전처리하세요. 기존 DB에는 연결하지 않았습니다."
+                )
     loaded_count = 0
 
     with database_connection() as connection:

@@ -104,3 +104,5 @@ VM 이미지 정리는 `runtime/update.py clean-images --dry-run`으로 대상�
 동일성 및 HTTPS·GPU endpoint를 재확인한다. 이는 실제 롤백 실행이나 DB 복원 시험은 아니다.
 이미지 이름 규칙은 한국 시간 변환·날짜 경계·커밋 형식·기존 태그 덮어쓰기 차단 및
 `safealley-release/database` 보존을 테스트한다. DB는 앱 이미지 태그 생성/재빌드 대상에서 제외한다.
+실행 템플릿의 모델 기본값 일치, OSM의 비데모 기본값, 건물 CLI의 MOLIT 기본 출처와 명시적
+출처 유지도 회귀 검사한다. 건물 source 불일치 검사는 모의 DB 연결로 실제 접속 전에 중단됨을 확인한다.
