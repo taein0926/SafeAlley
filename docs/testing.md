@@ -5,6 +5,9 @@
 
 ## Python
 
+아래 단위·통합·UI 테스트는 소스를 clone한 개발/격리 테스트 환경에서 실행한다.
+현재 VM은 `runtime/private/packages` 구조이며 소스 폴더와 tools 프로필을 상시 제공하지 않는다.
+VM에서 루트 Compose 예시로 컨테이너를 재생성하거나 운영 DB에 fixture 테스트를 실행하지 않는다.
 저장소 루트 PowerShell에서 현재 소스를 읽기 전용으로 테스트 컨테이너에 연결한다.
 기존 실행 컨테이너 이미지의 오래된 테스트를 실행하지 않도록 주의한다.
 
@@ -30,6 +33,11 @@ Push-Location deployment
 uv run --python 3.12 --no-project python -m unittest discover -v
 Pop-Location
 ```
+
+여기에는 `vm_update.py`의 압축 경로·체크섬·manifest 검증, 운영 설정 변경 차단,
+빌드 실패 시 서비스 보존, 교체 실패 복구, migration 승인·복구 제한, 임시 소스 제거와
+관리 대상 백업 정리 테스트가 포함된다. 중복 배포 차단의 Linux flock 테스트는
+Windows에서 skip되며 Linux 격리 환경에서 따로 실행한다.
 
 ## Frontend
 
@@ -68,7 +76,17 @@ Jev 호출, 실제 LLM 추론, 추천 이력 DB 쓰기는 수행하지 않는다
 
 ## 배포 후 연결 확인
 
-VM 배포 디렉터리에서 backend/frontend의 healthy 상태와 `/api/health`, 지도 타일을 확인한다.
+VM에서는 먼저 아래 읽기/연결 검사를 실행한다. update 명령은 새 배포본을 실제로 적용할 때만 사용한다.
+
+```bash
+python3 ~/safealley-deploy/runtime/update.py status
+docker compose -p safealley-deploy -f ~/safealley-deploy/runtime/compose.json ps
+```
+
+status는 네 컨테이너의 상태·고정 설정 경로·이미지, HTTPS 인증서 검증·HTTP 이동,
+프론트 JS/CSS·DB health와 GPU Ollama 모델 목록·Whisper CUDA ready endpoint를 확인한다.
+날씨 값·지도 전체 데이터·실제 LLM 추론·음성 전사 정확도를 검사하는 명령은 아니다.
+backend/frontend의 healthy 상태와 `/api/health`, 지도 타일을 확인한다.
 backend의 실제 `OLLAMA_MODEL`과 적용된 `OLLAMA_BASE_URL`의 Ollama 응답을 대조한다.
 저장소 VM override의 모델 기본값은 실제 비공개 서버 설정을 증명하지 않는다.
 

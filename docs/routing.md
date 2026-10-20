@@ -40,7 +40,7 @@ d는 m, 80은 등록 건널목의 m 상당 비용이며 대기 시간/금액이 
   risk_weight=SAFE_ROUTE_RISK_WEIGHT × 시설 선호 합 / (시설+거리 선호 합).
   거리 계수 1, pedestrian 계수 0.5입니다.
 - 최단 risk 계수는 0. 단일 route API의 stairs_weight 기본 0은 추가 계단 비용이 없습니다.
-- 안전 route의 기본 거리/위험 가중치는 .env의 1 / 5입니다.
+- 안전 route의 기본 거리/위험 가중치는 1 / 5입니다. 로컬 .env 또는 VM private/service-env/backend.env에서 설정합니다.
 - stairs/crossing 가중치는 0–1. 계단은 safety_score 자체에 섞지 않습니다.
 
 명시적인 avoid는 별도 강한 조건입니다. 무계단 요청은 계단 edge를 허용하지 않고

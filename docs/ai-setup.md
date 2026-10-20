@@ -1,7 +1,7 @@
 # Ollama 연결과 복구
 
 Ollama가 문장을 해석하고 FastAPI가 장소·경로를 처리합니다.
-현재 모델·주소는 비공개 .env와 적용한 Compose 조합이 정본입니다.
+현재 모델·주소는 로컬 비공개 .env 또는 VM private/service-env/backend.env와 적용한 Compose 조합이 정본입니다.
 이 문서만으로 로컬/서버 설치·실행 여부를 단정하지 않습니다.
 
 ## Windows 로컬 기본
@@ -20,7 +20,7 @@ docker compose exec backend python -c "import os,urllib.request; print(urllib.re
 
 ## VM/GPU 또는 GPU 터널
 
-VM의 실제 모델·터널 주소는 적용된 비공개 `.env`와 `vm.override.yml`에서
+현재 VM의 실제 모델·터널 주소는 `private/service-env/backend.env`와 `runtime/compose.json`에서
 확인합니다. 템플릿 기본값과 검증 절차는 [배포 안내](../deployment/README.md)를 따릅니다.
 2026-10-16 VM backend에서 GPU Ollama의 모델 목록과 `/api/show` 연결을 확인했으며,
 당시 `gemma4:26b`의 응답은 `Q4_K_M` 양자화·`25.2B` 파라미터였습니다.
@@ -28,7 +28,8 @@ Windows 로컬에서도 GPU를 사용하려면 실제 승인된 터널 주소/�
 단일 GPU Compose 대안은 http://ollama:11434를 사용하므로 VM 터널 설정과 다릅니다.
 
 GPU 호스트의 ollama list/ps, VM/PC 터널의 수신 포트·지문·접속 권한을 확인합니다.
-터널 창 종료·절전·재부팅 후 복구 방식은 서버 운영 정책을 따릅니다.
+VM의 `safealley-ollama-tunnel.service`, `safealley-stt-tunnel.service`는 systemd로 자동 실행합니다.
+노트북에서 연 터널은 별개이며 터널 창 종료·절전·재부팅 후 다시 연결해야 합니다.
 GPU 공용 Ollama를 임의로 재시작하거나 기존 모델을 제거하지 않습니다.
 비밀번호/개인키는 문서·소스에 기록하지 않습니다.
 GPU 음성 인식은 별도의 11436 터널·Whisper 서비스이며 Ollama 모델을 바꿔도

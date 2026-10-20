@@ -5,6 +5,12 @@ collectors → raw 원본 → preprocess → processed 가공 → loaders → Po
 원천 URL·파일명·좌표계·기준일·라이선스를 기록하고 미확인 endpoint를 만들지 않습니다.
 raw/processed/백업/타일은 Git에서 제외합니다. API는 4326, DB 거리 계산은 5179입니다.
 
+이 문서의 Compose 명령은 소스를 clone하고 원본을 준비한 로컬/별도 데이터 작업 환경용입니다.
+현재 VM의 `runtime/compose.json`에는 pipeline/tools 서비스와 raw/processed bind가 없습니다.
+앱 업데이트는 기존 공간 DB·타일을 유지하며 재수집·재적재를 실행하지 않습니다.
+운영 데이터 갱신은 별도 승인·백업·데이터 작업 환경을 준비해 진행하고, 서버에 루트 Compose를
+그대로 적용하지 않습니다. [현재 VM 운영](../deployment/README.md)을 확인하세요.
+
 ## 원천
 
 | 자료 | 입력 | 저장 |

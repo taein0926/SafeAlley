@@ -75,6 +75,9 @@ backend/evals에는 문장·역할·시간·조건 방향·회피·추가/누락
 
 실제 모델 live 평가는 운영자의 외부 호출·부하 허용 범위에서 별도로 수행합니다.
 
+아래는 소스가 있는 로컬 평가 환경 예시다. 현재 VM은 고정 runtime 설정을 사용하며,
+운영 GPU live 평가는 승인 후 [평가 안내](../backend/evals/README.md)의 서버 명령으로 실행한다.
+
 ```powershell
 # 실행 모델/설정과 공간 DB를 먼저 확인합니다.
 docker compose run --rm --no-deps backend python -m evals.evaluate_intent --set dev --quiet

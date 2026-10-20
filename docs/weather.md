@@ -18,9 +18,12 @@ TMP 기온, WSD 풍속, SKY 하늘 상태, PTY 강수 형태, POP 강수 확률�
 
 ## 설정과 확인
 
-.env: KMA_SERVICE_KEY, KASI_SERVICE_KEY(서비스별 승인 키), KASI_LOCATION=인천.
+로컬 .env: KMA_SERVICE_KEY, KASI_SERVICE_KEY(서비스별 승인 키), KASI_LOCATION=인천.
+현재 VM의 수집 키·격자·지역 설정은 `private/service-env/weather.env`에서 관리한다.
 KMA_GRID_NX/NY는 둘 다 공란이면 55,124를 산출합니다.
 키를 VITE_*, Git, 인증 URL/로그에 넣지 않습니다.
+
+아래는 소스가 있는 로컬 개발 환경 명령이며 현재 VM에서 실행하지 않는다.
 
 ```powershell
 docker compose up -d --build weather
@@ -28,6 +31,17 @@ docker compose up -d --build weather
 docker compose --profile tools run --rm pipeline collect-weather
 Invoke-RestMethod 'http://localhost:8000/api/weather?departure_time=22:00'
 ```
+
+현재 VM의 코드 업데이트는 [배포 도구](../deployment/README.md)의 `update --archive`를 사용한다.
+VM에서 키만 변경했다면 비공개 `weather.env`를 편집한 뒤 고정 설정으로 weather만 재생성한다.
+키를 새 압축본에 넣거나 과거 `.env`·Compose 파일을 복사하지 않는다.
+
+```bash
+docker compose -p safealley-deploy -f ~/safealley-deploy/runtime/compose.json up -d --no-deps --no-build --pull never --force-recreate weather
+python3 ~/safealley-deploy/runtime/update.py status
+```
+
+실제 예보 표시와 `forecast_status`는 브라우저의 `/api/weather` 응답으로 별도 확인한다.
 
 forecast_status/provider, solar.provider/date, theme_source를 확인합니다.
 날씨 migration은 0013/0014, 전체 head는 0016입니다.

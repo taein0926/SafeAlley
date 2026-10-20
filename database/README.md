@@ -15,3 +15,8 @@
 데이터는 `postgis_data` 볼륨에 보존한다. 초기화·볼륨 삭제·원본 재적재는
 백업과 대상 확인 없이 수행하지 않는다.
 Git clone은 실제 공간 데이터를 복원하지 않는다.
+
+현재 VM의 실제 볼륨 이름은 `safealley-deploy_postgis_data`이며 초기화 파일은
+고정 `runtime/database/init/`에서 읽기 전용으로 연결한다. 일반 앱 업데이트에서는
+database 컨테이너와 볼륨을 유지한다. 새 migration 배포는 검토 후 명시 승인하며,
+앱 이미지 롤백이 DB 복원을 뜻하지 않는다. [운영 절차](../deployment/README.md).

@@ -33,7 +33,11 @@ collectors → raw → preprocess → processed → loaders → PostGIS → anal
 
 ## 명령
 
-저장소 루트에서 실행하며 옵션 정본은 CLI 도움말이다.
+아래 명령은 소스·원본이 있는 로컬 또는 별도 데이터 작업 환경의 저장소 루트에서 실행한다.
+현재 VM의 고정 runtime 구성에는 pipeline/tools 서비스가 없으며, 앱 배포 도구는 공간 원본을
+재적재하지 않는다. 운영 DB 갱신은 별도 승인·백업·작업 환경을 준비해야 한다.
+현재 서버 업데이트와 데이터 구축을 혼용하지 않는다. [서버 배포](../deployment/README.md).
+옵션 정본은 CLI 도움말이다.
 
 ```powershell
 docker compose --profile tools run --rm pipeline --help

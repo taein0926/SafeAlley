@@ -35,7 +35,8 @@ road_safety_segments는 원본 topology를 바꾸지 않는 별도 분석 구간
 UI의 안전시설 버튼 하나가 경찰/119/병원을 제어해도 DB category는 그대로 유지합니다.
 
 Git clone만으로 기존 데이터를 얻을 수 없습니다. 별도 적재/백업 복원이 필요합니다.
-.env 변경은 기존 DB 암호를 자동 변경하지 않습니다.
+로컬 .env 또는 VM private/service-env의 값 변경은 기존 DB 암호를 자동 변경하지 않습니다.
+VM의 DB 볼륨은 safealley-deploy_postgis_data이며, 앱 업데이트는 기존 데이터를 복원/초기화하지 않습니다.
 사용자 식별/선택 기록은 로그인 인증을 대체하지 않습니다.
 테스트는 전용 fixture·롤백을 사용하며 운영 DB에 실행하지 않습니다.
 

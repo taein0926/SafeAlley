@@ -1,13 +1,14 @@
 # 아키텍처
 
-이 문서는 2026-10-19 확인한 VM 구성 기준입니다. 실제 배포 소스 커밋은 서버 릴리스의 `release.json`에서 확인합니다. 문서 갱신 전 릴리스는 `c69e359`였습니다.
+이 문서는 2026-10-20 VM 운영 경로 전환 기준입니다. 적용 소스는 `runtime/state.json`,
+원본 소스는 보관한 압축본의 `release.json`에서 확인합니다. 전환 기준 소스는 `f6b47f3`입니다.
 
 ## 애플리케이션 경계
 
 ```text
 브라우저
  ├─ OSM 타일 직접 HTTPS 요청
- └─ Nginx / React / CesiumJS
+ └─ HTTPS 외부 :21802 → VM :8081 → Nginx :80(TLS) / React / CesiumJS
        └─ /api/* → FastAPI
              ├─ repository → PostgreSQL / PostGIS
              ├─ 승인된 SSH 터널 → GPU 서버 Ollama → 검색 문장 구조화
@@ -36,16 +37,21 @@ NDJSON 검색 스트림은 proxy_buffering off로 실제 작업 진행을 전달
 | backend | FastAPI, 요청 내 그래프, GPU 음성 중계·CPU 대체 처리 | CPU 대체용 stt_models; map_tiles 읽기 |
 | database | PostgreSQL 17 / PostGIS 3.5 | postgis_data |
 | weather | 발표시각별 배치, 포트 없음 | DB 날씨 캐시 |
-| pipeline | tools 프로필 일회성 적재·분석 | raw/processed; map_tiles 쓰기 |
+| pipeline (로컬/데이터 작업 환경) | tools 프로필 일회성 적재·분석, 현재 VM runtime에는 없음 | raw/processed; map_tiles 쓰기 |
 
 Frontend/backend는 public, backend/database는 private internal 네트워크를 공유합니다.
 배치 작업은 외부 수집/DB 적재를 위해 두 네트워크를 사용합니다.
 로컬 루프백 포트: frontend 3000, backend 8000, DB 5432.
 
-VM/GPU 방식은 루트 Compose와 VM 전용 override를 사용합니다.
+VM/GPU 신규 템플릿은 루트 Compose와 VM 전용 override를 사용합니다.
 VM에 앱/DB/weather를 두고 승인된 SSH 터널로 GPU 서버의 Ollama·Whisper에 접속합니다.
 실제 모델·터널 주소와 템플릿 기본값의 차이는 [배포 안내](../deployment/README.md)를 확인합니다.
-VM은 frontend 루프백 8080만 공개하고 backend/DB 포트는 제거합니다.
+현재 VM의 네 컨테이너는 고정 `runtime/compose.json`에서 실행합니다. frontend는
+`0.0.0.0:8081 → 80`에서 자체 서명 HTTPS를 제공하며 backend/DB 포트는 호스트에 공개하지 않습니다.
+인증서·Nginx 설정은 `private/tls-f6b47f3/`, 서비스 환경변수는 `private/service-env/`입니다.
+Ollama·Whisper SSH 터널은 VM의 systemd 서비스로 자동 실행하며 노트북 터널과 별개입니다.
+`packages/`의 소스를 임시 폴더에서 빌드하고 제거합니다. 앱 갱신은 `runtime/update.py`를 사용하며
+DB 데이터·GPU 서비스·인증서·터널을 새 압축본으로 대체하지 않습니다.
 단일 GPU 서버 대안은 deployment/compose.yml이며 두 방식을 혼용하지 않습니다.
 
 ## 검색과 지도
@@ -67,7 +73,8 @@ OSM 배경 타일과 다르며 실제 조도나 경로 비용을 바꾸지 않�
 
 DB 거리/버퍼: EPSG:5179(m). API/GeoJSON/bbox: EPSG:4326(longitude/latitude).
 원본 SHP 좌표계는 metadata로 확인해 변환합니다.
-비밀값은 .env, VITE_*에는 넣지 않습니다. 원본·DB·백업·타일·모델은 Git과 별도로 관리합니다.
+비밀값은 로컬 .env 또는 서버 private/service-env에서 관리하고 VITE_*에는 넣지 않습니다.
+원본·DB·백업·타일·모델은 Git과 별도로 관리합니다.
 
 상세: [라우팅](routing.md), [데이터](data-pipeline.md), [날씨](weather.md),
 [배포](../deployment/README.md), [테스트](testing.md).

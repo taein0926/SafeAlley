@@ -7,12 +7,21 @@
 ## 실행
 
 Ollama 연결과 모델 준비는 [AI 실행 설정](../../docs/ai-setup.md)을 따른다.
-저장소 루트에서 실행한다. 실제 모델을 호출하므로 단위 테스트보다 오래 걸린다.
+아래 PowerShell 예시는 소스를 clone한 로컬 저장소 루트에서 실행한다.
+실제 모델을 호출하므로 단위 테스트보다 오래 걸린다.
 
 ```powershell
 docker compose exec backend python -m evals.evaluate_intent --set dev --quiet
 docker compose exec backend python -m evals.evaluate_intent --set regression --quiet
 docker compose exec backend python -m evals.evaluate_intent --set holdout --quiet
+```
+
+현재 VM은 소스를 상시 보관하지 않지만 평가 코드는 backend 이미지 안에 있다.
+운영 GPU 부하를 허용받은 뒤에만 다음 고정 설정 명령을 사용한다. 배포 status의 모델 목록
+확인은 이 live 평가를 실행했다는 의미가 아니다.
+
+```bash
+docker compose -p safealley-deploy -f ~/safealley-deploy/runtime/compose.json exec -T backend python -m evals.evaluate_intent --set dev --quiet
 ```
 
 `--set all`은 위 세 묶음을 합친다. 다음 추가 세트는 별도로 실행한다.

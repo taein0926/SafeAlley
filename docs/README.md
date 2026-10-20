@@ -3,6 +3,12 @@
 현재 사용 문서는 코드와 함께 갱신합니다. 제거된 UI/이전 DB·저정밀 좌표 기반 결과와
 낡은 품질 전달 기록은 정리했습니다. 현재 검증 절차는 테스트·평가 도구를 따릅니다.
 
+현재 VM은 `runtime/`(고정 실행 설정), `private/`(환경설정·인증서·복구 백업),
+`packages/`(현재·직전 소스 압축본) 구조입니다. 풀어놓은 소스는 서버에 상시 보관하지 않습니다.
+VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/README.md)입니다.
+저장소 루트의 `docker compose` 예시는 별도 표시가 없으면 소스가 있는 로컬 개발 환경용이며,
+현재 VM에서는 `runtime/compose.json`과 `runtime/update.py`를 사용합니다.
+
 ## 현재 안내
 
 - [시작](../README.md), [아키텍처](architecture.md), [DB](database-schema.md), [라우팅](routing.md)
