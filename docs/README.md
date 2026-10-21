@@ -26,7 +26,8 @@ VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/RE
 
 - [보행/시설 품질 원칙](pedestrian-data-quality.md)
 - [건널목과 육교](intersection-routing.md)
-- [문장 해석·Jev](natural-language.md)
+- [문장 해석·Laya/Jev](natural-language.md)
+- [Laya 연결·모델·전환·복구](laya-preview-provider.md)
 - [Ollama 연결/복구](ai-setup.md)
 - [검색 처리와 캐시](ai-search-performance.md)
 

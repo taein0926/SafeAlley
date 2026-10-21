@@ -11,13 +11,14 @@
 - [ ] 모든 실행 템플릿의 기본 모델은 gemma4:26b이며 실제 대상 모델을 확인한다. 새 데이터 구축은 OSM uniform 임시값 후 시설 재분석, 건물 source=molit-gis-building을 사용한다. 기존 환경설정·운영 DB를 자동 변경하지 않는다.
 - [ ] VM backend에서 적용된 `OLLAMA_BASE_URL`의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 템플릿 기본값을 실제 모델로 단정하지 않는다.
 - [ ] VM backend에서 적용된 `STT_REMOTE_URL`의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
+- [ ] Laya 선택 시 VM 전용 18762→GPU loopback 18761 터널·고정 checkpoint 해시·8개 카드 응답을 확인한다. 노트북 터널에 의존하거나 Laya 포트를 외부 공개하지 않는다.
 - [ ] 현재 연결은 외부 HTTPS :21802 → VM :8081 → frontend :80(TLS). HTTP 자동 이동·자체 서명 인증서 경고·마이크 권한과 인증서 만료를 확인한다.
 - [ ] runtime/update.py status로 버전·HTTPS·정적 파일·DB·GPU endpoint를 확인하고 실제 검색/녹음은 별도 검증한다.
 - [ ] 새 배포는 tar.gz와 .sha256을 함께 업로드하고 update --archive로 갱신한다. DB 볼륨·TLS·터널을 보존한다.
 - [ ] Compose/DB init/Nginx 변경은 고정 운영 설정과 별도 검토한다. 새 migration은 검토 후 --allow-migration으로만 승인하며, DB 변경 후 자동 앱 롤백이 불가능할 수 있음을 확인한다.
 - [ ] DB/backend/Ollama를 외부 공개하지 않는다. user_id는 로그인 기능이 아니다.
 - [ ] 키·비밀번호·SSH 개인키·백업을 Git/소스 ZIP/로그에 넣지 않는다.
-- [ ] 브라우저 OSM와 서버 Nominatim/Jev/KMA/KASI 접속 정책을 확인한다.
+- [ ] 브라우저 OSM와 서버 Nominatim/KMA/KASI 접속 정책을 확인한다. Jev를 선택할 때만 입력 문장의 외부 TypeSafe 전송·과금을 확인한다.
 
 ## 데이터·모델
 
@@ -31,6 +32,8 @@
 - [ ] 실제 음성 응답의 `device=cuda`와 텍스트를 확인한다. GPU 연결 실패 시 CPU INT8 대체 경로는 운영 터널을 끊지 말고 별도 테스트 환경에서 검증한다.
 - [ ] CPU 대체 모델 캐시·HTTPS 마이크·음성 크기/길이 제한과 동시 요청 제한을 확인한다.
 - [ ] Jev는 별도 승인 키로만 활성화하고 실패를 성공처럼 처리하지 않는다.
+- [ ] 현재 Laya 구성에서는 Jev를 비활성화하고 자동 유료 fallback이 없음을 확인한다. 복구 시 provider 설정 백업을 복원하고 backend만 재생성한다.
+- [ ] GPU `safealley-laya.service`, VM `safealley-laya-tunnel.service`의 자동 시작·재연결을 확인하며 기존 Ollama/Whisper를 재시작하지 않는다.
 - [ ] KMA/KASI 수집/5분 재시도·DB 캐시를 확인한다.
 
 ## UI·운영

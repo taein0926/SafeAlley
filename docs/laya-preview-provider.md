@@ -1,5 +1,22 @@
 # Optional Laya provider for live intent preview
 
+## 현재 운영 적용 (2026-10-21)
+
+아래 원래 MR 설명과 기본값은 유지하되, 현재 로컬·VM의 실제 선택은 GPU Laya입니다.
+최종 Gemma 검색·Whisper·DB·HTTPS는 그대로입니다. 새 설치가 자동으로 Laya를 켠다는 뜻은 아닙니다.
+
+- GPU `safealley-laya.service`: 기존 `server.py --mode gpu`를 관리하고 실패 시 재시작합니다. 모델 가중치를 복사하거나 재학습하지 않습니다.
+- VM `safealley-laya-tunnel.service`: 별도 `safealley_laya` 키로 GPU의 `127.0.0.1:18761`에만 연결합니다. 기존 Gemma·Whisper 키·서비스와 분리합니다.
+- VM backend의 실제 URL은 `http://host.docker.internal:18762`입니다. host gateway `172.17.0.1`에만 바인딩하고 방화벽으로 SafeAlley Docker 대역만 허용합니다.
+- 고정 운영 `runtime/compose.json`은 이미 `private/service-env/backend.env`를 raw env_file로 읽습니다. 이 파일에 아래 provider 설정 5개를 넣고 기존 runtime으로 backend만 재생성합니다. 운영 runtime을 신규 Compose 예시로 대체하지 않습니다.
+- 일반 로컬 Compose에서는 아래 선택 override를 반드시 유지합니다. VM은 사용자 노트북의 SSH 연결에 의존하지 않습니다.
+- 상태 API와 실제 POST 응답의 모델 ID·조건 판정을 함께 확인합니다. 현재 updater의 status만으로 Laya 판정까지 검증된 것은 아닙니다.
+
+운영 전환 시 DB·설정 백업과 이전 `backend.env`를 `private/updates/laya-provider-*`에 보관합니다.
+provider 전환만 되돌릴 때는 해당 이전 env를 안전하게 복원하고 고정 runtime의 backend만 재생성합니다.
+앱 이미지 rollback은 env_file 내용을 되돌리지 않으므로 `runtime/update.py rollback`만으로 Jev가 복구된다고 생각하면 안 됩니다.
+키·인증서·DB 볼륨·모델 가중치를 삭제하지 않습니다. [운영 구성](../deployment/README.md)을 함께 확인합니다.
+
 ## Scope and default behavior
 
 This change adds an **opt-in** replacement for input-time Jev requirement cards.

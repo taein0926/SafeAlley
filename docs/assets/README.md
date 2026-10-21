@@ -6,9 +6,9 @@
 
 - 사용자 브라우저: HTTPS `:21802`로 VM에 접속한다.
 - VM: Nginx·React/Cesium, FastAPI, PostgreSQL/PostGIS, 날씨 수집기를 실행한다.
-- GPU 서버: Ollama `gemma4:26b`, 별도 faster-whisper `small`을 실행한다.
+- GPU 서버: Ollama `gemma4:26b`, 별도 faster-whisper `small`, 요구사항 분석용 Laya를 실행한다.
 - VM↔GPU: 비공개 SSH 터널을 사용하며 사용자 PC의 SSH 창과는 별개다.
-- Jev·Nominatim: VM이 호출하는 외부 연동이다. Jev는 입력 중 조건 분석용이다.
+- Nominatim은 VM이 호출하는 외부 장소 연동이다. Jev는 명시적 선택·복구용 외부 미리보기이며, 현재 Laya 구성에서는 호출하지 않는다.
 - 데이터 구축: 별도 승인된 데이터 작업 환경에서 필요할 때 실행한다. 고정 VM runtime의
   네 컨테이너에 pipeline 서비스가 추가된다는 뜻은 아니다.
 

@@ -6,6 +6,10 @@ Ollama가 문장을 해석하고 FastAPI가 장소·경로를 처리합니다.
 
 ## Windows 로컬 기본
 
+아래 기본 Compose 예시는 Laya override를 포함하지 않습니다. 현재 로컬의 Laya 선택을 유지하며
+backend를 재생성하려면 반드시 `-f deployment/compose.laya-preview.override.yml`을 추가합니다.
+[Laya 안내](laya-preview-provider.md)의 설정과 SSH 터널을 유지하세요.
+
 .env.example: OLLAMA_BASE_URL=http://host.docker.internal:11434, OLLAMA_MODEL=gemma4:26b.
 이 모델을 PC에서 직접 실행하려면 충분한 GPU 자원이 필요합니다. 기존 GPU 서버를 사용하는 로컬 설정은 아래 터널 절차를 따릅니다.
 
@@ -29,6 +33,8 @@ Windows 로컬에서도 GPU를 사용하려면 실제 승인된 터널 주소/�
 
 GPU 호스트의 ollama list/ps, VM/PC 터널의 수신 포트·지문·접속 권한을 확인합니다.
 VM의 `safealley-ollama-tunnel.service`, `safealley-stt-tunnel.service`는 systemd로 자동 실행합니다.
+Laya는 VM `safealley-laya-tunnel.service`와 GPU `safealley-laya.service`로 별도 관리합니다.
+VM backend의 `LAYA_PREVIEW_URL`은 `http://host.docker.internal:18762`이며 최종 Gemma 주소는 변경하지 않습니다.
 노트북에서 연 터널은 별개이며 터널 창 종료·절전·재부팅 후 다시 연결해야 합니다.
 GPU 공용 Ollama를 임의로 재시작하거나 기존 모델을 제거하지 않습니다.
 비밀번호/개인키는 문서·소스에 기록하지 않습니다.
@@ -58,7 +64,7 @@ docker compose exec backend python -c "import os,json,urllib.request; print(os.e
 ```
 
 브라우저 `http://localhost:3000/`의 길찾기 요청은 로컬 FastAPI가 처리하고, 문장 해석만 SSH 터널로 GPU Ollama에 전달합니다.
-DB/경로 탐색은 로컬에 남고 Jev 미리보기 설정은 바뀌지 않습니다. 터널 종료·PC 재시작 후에는 다시 연결해야 하며 자동 시작은 설정하지 않습니다.
+DB/경로 탐색은 로컬에 남습니다. Ollama 설정 자체는 미리보기 provider와 별개지만, Laya override 없이 backend를 재생성하면 provider 설정이 전달되지 않으므로 주의합니다. 터널 종료·PC 재시작 후에는 다시 연결해야 하며 자동 시작은 설정하지 않습니다.
 `docker compose restart`만으로는 새 `.env` 값이 반영되지 않으므로 위 재생성 명령을 사용합니다.
 
 ## 직접 API 확인

@@ -10,7 +10,7 @@
 
 - 문장 입력: Ollama가 장소·시간·선호조건을 추출하고 backend가 경로를 계산합니다.
 - 직접 설정: 장소명 또는 지도 선택 좌표, 경로 우선순위·계단 회피·건널목 회피를 사용합니다.
-- 요구사항 미리보기: 선택적 Jev 연동으로 입력 중 인식된 조건을 표시합니다. 최종 경로 판정과는 별개입니다.
+- 요구사항 미리보기: Laya 또는 Jev로 입력 중 인식된 조건을 표시합니다. 현재 로컬·VM은 GPU Laya를 선택하며 최종 경로 해석은 Gemma 그대로입니다. 새 설치 템플릿 기본값은 Jev 선택·미리보기 비활성입니다.
 - 경로 비교: 맞춤·최단 후보의 거리·예상 시간·계단·육교·횡단보도 정보를 표시하고 동일 경로는 중복 제거합니다.
 - 지도: OSM 배경지도, 건물 3D 표현, 시설·계단/육교 토글, 유지되는 2D/3D 시점.
 - 날씨: 미추홀구 대표 격자 예보와 당일 일출·일몰 캐시.
@@ -25,7 +25,7 @@
         └─ /api/* → FastAPI → PostgreSQL / PostGIS
                        ├─ Ollama: 문장 해석(GPU 서버 터널)
                        ├─ Whisper: 음성 변환(GPU 서버 우선·backend CPU 대체)
-                       ├─ Jev: 선택적 입력 중 조건 해석
+                       ├─ GPU Laya: 입력 중 조건 해석 (Jev는 선택·복구용)
                        └─ Nominatim: 장소 검색 fallback
 
 data_pipeline: 외부 원본 → 수집 → 정제 → 좌표 변환 → PostGIS
@@ -70,7 +70,8 @@ Backend 시작 시 Alembic migration을 적용하고 현재 저장소 head는 00
 | --- | --- | --- |
 | DB | POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD | 기존 볼륨 계정은 .env 변경만으로 바뀌지 않음 |
 | 문장 해석 | OLLAMA_BASE_URL / OLLAMA_MODEL | 로컬 host.docker.internal:11434 / gemma4:26b, API 키 불필요 |
-| 요구사항 미리보기 | JEV_PREVIEW_ENABLED / TYPESAFE_API_KEY | 기본 false, 별도 유료 Jev 기능 |
+| 요구사항 미리보기 | INTENT_PREVIEW_PROVIDER / LAYA_PREVIEW_ENABLED / LAYA_PREVIEW_URL | 현재 로컬·VM은 GPU Laya, 최종 Gemma 검색과 별개 |
+| Jev 선택·복구 | JEV_PREVIEW_ENABLED / TYPESAFE_API_KEY | 템플릿 기본 비활성, 별도 유료 API; Laya 실패 시 자동 전환하지 않음 |
 | 날씨 | KMA_SERVICE_KEY / KASI_SERVICE_KEY | 서비스별 공공데이터포털 승인 키 |
 | 장소 fallback | NOMINATIM_BASE_URL / NOMINATIM_USER_AGENT | 지역 제한·캐시·요청 간격 적용 |
 | 음성 | STT_MODEL / STT_REMOTE_URL | `small`; 원격 주소가 있으면 GPU 우선, 연결 실패 시 CPU INT8·stt_models 볼륨 캐시 |
@@ -121,7 +122,7 @@ GeoJSON을 사용합니다. 건물은 i-Map에서 무단 수집한 파일이 아
 | POST /api/agent/execute | 직접 설정의 검증된 rank_routes 실행 |
 | POST /api/routes/shortest, /api/routes/safe | 좌표 경로 GeoJSON |
 | POST /api/agent/route-selections | 후보 선택 기록 |
-| GET /api/agent/intent-preview/status, POST /api/agent/intent-preview | Jev 상태·미리보기 |
+| GET /api/agent/intent-preview/status, POST /api/agent/intent-preview | 선택한 Laya/Jev 상태·미리보기 |
 | GET /api/weather?departure_time=22:00 | DB의 해당 시간 예보 |
 | POST /api/speech/transcribe | 음성 → 텍스트 |
 | GET /api/streetlight-heatmap/manifest | 표시용 밀집도 타일 |

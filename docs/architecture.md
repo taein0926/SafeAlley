@@ -1,13 +1,13 @@
 # 아키텍처
 
-이 문서는 2026-10-20 VM 운영 경로 전환 기준입니다. 적용 소스는 `runtime/state.json`,
-원본 소스는 보관한 압축본의 `release.json`에서 확인합니다. 전환 기준 소스는 `f6b47f3`입니다.
+이 문서는 2026-10-21 Laya 입력 미리보기 전환 기준입니다. 적용 소스는 `runtime/state.json`,
+원본 소스는 보관한 압축본의 `release.json`에서 확인합니다. 고정 runtime 구조의 최초 전환 소스는 `f6b47f3`입니다.
 
 ## 애플리케이션 경계
 
 현재 서비스 구성도의 편집 원본은 [service-architecture.svg](assets/service-architecture.svg)입니다.
 브라우저는 HTTPS로 VM에 접속하고, VM과 GPU 서버 사이에만 비공개 SSH 터널을 사용합니다.
-GPU의 Ollama `gemma4:26b`와 faster-whisper `small`은 별도 서비스입니다.
+GPU의 Ollama `gemma4:26b`, faster-whisper `small`, Laya는 서로 별도 서비스입니다.
 이 원본에서 로컬 `output`의 구성도 PNG/SVG와 최신 발표자료의 구성도를 함께 갱신합니다.
 
 ```text
@@ -19,7 +19,8 @@ GPU의 Ollama `gemma4:26b`와 faster-whisper `small`은 별도 서비스입니�
              ├─ 승인된 SSH 터널 → GPU 서버 Ollama → 검색 문장 구조화
              ├─ 승인된 SSH 터널 → GPU 서버 Whisper → 음성 변환
              │                         └─ 연결 실패 시 backend CPU Whisper
-             ├─ Jev / TypeSafe → 선택적 입력 중 해석
+             ├─ 승인된 SSH 터널 → GPU Laya → 입력 중 조건 해석
+             │                         └─ Jev / TypeSafe는 명시적 선택·복구용, 자동 대체 없음
              └─ Nominatim → 지역 제한 장소 fallback / reverse
 
 외부 원본 → data_pipeline: collectors → raw → preprocess → processed → loaders / analysis → DB
@@ -49,12 +50,14 @@ Frontend/backend는 public, backend/database는 private internal 네트워크를
 로컬 루프백 포트: frontend 3000, backend 8000, DB 5432.
 
 VM/GPU 신규 템플릿은 루트 Compose와 VM 전용 override를 사용합니다.
-VM에 앱/DB/weather를 두고 승인된 SSH 터널로 GPU 서버의 Ollama·Whisper에 접속합니다.
+VM에 앱/DB/weather를 두고 승인된 SSH 터널로 GPU 서버의 Ollama·Whisper·Laya에 접속합니다.
 실제 모델·터널 주소와 템플릿 기본값의 차이는 [배포 안내](../deployment/README.md)를 확인합니다.
 현재 VM의 네 컨테이너는 고정 `runtime/compose.json`에서 실행합니다. frontend는
 `0.0.0.0:8081 → 80`에서 자체 서명 HTTPS를 제공하며 backend/DB 포트는 호스트에 공개하지 않습니다.
 인증서·Nginx 설정은 `private/tls-f6b47f3/`, 서비스 환경변수는 `private/service-env/`입니다.
-Ollama·Whisper SSH 터널은 VM의 systemd 서비스로 자동 실행하며 노트북 터널과 별개입니다.
+Ollama·Whisper·Laya SSH 터널은 VM의 systemd 서비스로 자동 실행하며 노트북 터널과 별개입니다.
+Laya는 VM의 Docker host gateway `18762`에서 GPU loopback `18761`로 연결합니다.
+SafeAlley Docker 대역만 허용하며 새 외부 포트 포워딩이나 Laya 컨테이너를 추가하지 않습니다.
 `packages/`의 소스를 임시 폴더에서 빌드하고 제거합니다. 앱 갱신은 `runtime/update.py`를 사용하며
 DB 데이터·GPU 서비스·인증서·터널을 새 압축본으로 대체하지 않습니다.
 단일 GPU 서버 대안은 deployment/compose.yml이며 두 방식을 혼용하지 않습니다.
@@ -65,7 +68,7 @@ DB 데이터·GPU 서비스·인증서·터널을 새 압축본으로 대체하�
 - 직접 설정: 텍스트 위치만 places/resolve → 좌표·선호를 agent/execute → 같은 rank_routes.
 - 지도 선택: 이미 있는 좌표를 직접 전달하고 reverse는 표시명에만 사용합니다.
 - 장소: places 정규화/별칭/부분검색 → 지역 제한 GIS 건물 → 제한된 Nominatim.
-- 입력 미리보기: 띄어쓰기 경계/마지막 단어 idle → Jev 조건 카드. 최종 경로 적용과 별개입니다.
+- 입력 미리보기: 띄어쓰기 경계/마지막 단어 idle → 선택한 Laya/Jev → FastAPI 보정 → 조건 카드. 최종 경로 적용과 별개입니다.
 
 전체 안전도 도로선은 초기 표시하지 않습니다. 시설/건물/계단·육교는 bbox·타일 캐시를 사용합니다.
 높이가 있는 건물만 extrusion을 적용합니다. 경로는 segment ID 순서/geometry로 dedup합니다.

@@ -43,6 +43,16 @@ Windows에서 skip되며 Linux 격리 환경에서 따로 실행한다.
 없는지 확인하고, 현재 추천 설명 회귀 사례를 실행한다. 실제 GPU 호출 없이 정답 자료와
 설명 함수의 일치 여부를 검사하는 것이며 새로운 모델 정확도 측정은 아니다.
 
+Laya 회귀 테스트는 `tests/unit` 밖의 `tests/test_laya*.py`에도 있으므로 함께 실행합니다.
+backend에서 PowerShell로 실행하는 예시는 아래와 같습니다. 실제 DB·유료 API·GPU 호출은 mock입니다.
+
+```powershell
+$layaTests = Get-ChildItem tests/test_laya*.py | ForEach-Object FullName
+python -m pytest -q tests/unit @layaTests
+```
+Laya 선택/비활성/모델 해시/응답 형식/입력 버전/부정·철회·미완성·출발 시각과 Jev 기본값 보존을 확인합니다.
+실제 GPU `/health`와 `/analyze`, 브라우저 8개 카드 및 최종 Gemma 검색은 별도 live 검증입니다.
+
 ## Frontend
 
 Node 22.18 이상 또는 TypeScript strip-types를 지원하는 Node와 `npm ci`가 필요하다.

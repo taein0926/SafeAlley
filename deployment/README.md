@@ -41,6 +41,26 @@ manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼�
 - 신규 템플릿은 비공개 .env, 현재 VM은 private/service-env/에 DB 비밀번호·날씨 키·실제 모델을 설정합니다.
   Jev는 별도 승인 시에만 JEV_PREVIEW_ENABLED/TYPESAFE_API_KEY를 넣습니다.
 
+### 현재 입력 중 요구사항 분석: GPU Laya
+
+2026-10-21 로컬·VM은 Laya `laya-b3522f4d7939`를 명시적으로 선택합니다.
+최종 문장 해석은 기존 Ollama `gemma4:26b`, 음성은 기존 GPU Whisper이며 DB·TLS를 교체하지 않습니다.
+새 설치 템플릿은 계속 Jev 선택·미리보기 비활성이 기본입니다. 병합·일반 업데이트만으로 provider가 자동 전환되지 않습니다.
+
+- GPU: `safealley-laya.service`가 기존 checkpoint와 Python 환경을 실행합니다. loopback `127.0.0.1:18761`만 수신합니다.
+- VM: `safealley-laya-tunnel.service`가 별도 제한 키와 검증된 지문으로 Docker host gateway `172.17.0.1:18762`를 GPU에 연결합니다.
+- VM의 `SAFEALLEY_LAYA` INPUT 체인은 해당 주소·포트에만 적용하고 SafeAlley public Docker 대역을 허용합니다. 외부 포트나 다른 프로젝트 경로는 열지 않습니다.
+- 기존 Ollama·Whisper 프로세스·SSH 터널은 재사용하며 Laya 때문에 재시작하지 않습니다.
+- 고정 runtime의 `private/service-env/backend.env`는 raw env_file이므로 provider 5개 값을 전달합니다. 이 VM에서 루트 Compose나 신규 override를 덮어쓰지 않습니다.
+- 일반 로컬 Compose는 [Laya override](compose.laya-preview.override.yml)를 명시적으로 추가해야 합니다.
+- 실제 상태는 `/api/agent/intent-preview/status`의 세 true와 POST 응답 `model=laya-b3522f4d7939`로 확인합니다. `runtime/update.py status`는 기존 GPU 연결을 검사하지만 Laya 실제 판정은 별도 확인합니다.
+- Jev 키는 비공개 복구 설정에 보존하되 `JEV_PREVIEW_ENABLED=false`로 비활성화합니다. Laya 실패 시 유료 Jev 자동 fallback은 없습니다.
+
+[모델 위치·연결·검증·복구](../docs/laya-preview-provider.md)를 따릅니다.
+VM Docker CLI가 기존 Buildx/Compose를 못 찾으면 도구를 재설치하거나 데몬을 재시작하기 전에
+클라이언트 plugin 경로를 점검합니다. 현재 사용자 설정에는 `cliPluginsExtraDirs`로
+`/usr/libexec/docker/cli-plugins`를 명시합니다. 인증정보는 이 설정에 기록하지 않습니다.
+
 ### 현재 VM의 한 명령 업데이트
 
 ```text
