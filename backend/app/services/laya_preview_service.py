@@ -79,7 +79,7 @@ def map_cards(body,query=None):
  cards=[]
  for f in CARD_ORDER:
   a=answers[f]
-  if not isinstance(a,dict) or a.get('choice') not in ALLOWED[f]:raise PreviewUnavailable('Laya 조건 판단값이 올바르지 않습니다.')
+  if not isinstance(a,dict) or a.get('type')!='choice' or not isinstance(a.get('choice'),str) or a['choice'] not in ALLOWED[f]:raise PreviewUnavailable('Laya 조건 판단값이 올바르지 않습니다.')
   choice=a['choice'];confidence=a.get('confidence')
   if isinstance(confidence,bool) or not isinstance(confidence,(int,float)) or not math.isfinite(confidence) or not 0<=confidence<=1:raise PreviewUnavailable('Laya 신뢰도 형식이 올바르지 않습니다.')
   state='not_applied' if choice=='skip' else 'analyzing' if choice=='pending' else 'applied'

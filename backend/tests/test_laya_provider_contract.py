@@ -66,3 +66,40 @@ def test_provider_and_hash_configuration_reject_invalid_values():
         Settings(intent_preview_provider="unknown")
     with pytest.raises(ValidationError):
         Settings(laya_checkpoint_sha256="not-a-model-hash")
+
+
+@pytest.mark.parametrize("answer", [
+    {"type": "choice", "choice": [], "confidence": .99},
+    {"type": "choice", "choice": {}, "confidence": .99},
+    {"type": "choice", "choice": True, "confidence": .99},
+    {"type": "choice", "choice": None, "confidence": .99},
+    {"type": "choice", "choice": 1, "confidence": .99},
+    {"type": "choice", "choice": "unknown", "confidence": .99},
+    {"type": "text", "choice": "apply", "confidence": .99},
+    {"choice": "apply", "confidence": .99},
+])
+def test_invalid_laya_answer_returns_503_not_500(monkeypatch, answer):
+    from app.schemas.intent_preview import CARD_ORDER
+
+    monkeypatch.setenv("INTENT_PREVIEW_PROVIDER", "laya")
+    monkeypatch.setenv("LAYA_PREVIEW_ENABLED", "true")
+    get_settings.cache_clear()
+    monkeypatch.setattr(laya_preview_service, "monotonic_ns", lambda: 123)
+    body = {
+        "query": "CCTV 많은 길", "version": 123,
+        "checkpoint_sha256": get_settings().laya_checkpoint_sha256,
+        "answers": {f: {"type": "choice", "choice": "skip", "confidence": .99} for f in CARD_ORDER},
+    }
+    body["answers"]["cctv"] = answer
+
+    class Reply:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return body
+
+    monkeypatch.setattr(laya_preview_service.httpx, "post", lambda *a, **kw: Reply())
+    response = TestClient(app).post("/api/agent/intent-preview", json={"query": body["query"]})
+    assert response.status_code == 503
+    assert "Laya 조건 판단값" in response.json()["detail"]
