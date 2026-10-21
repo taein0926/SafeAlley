@@ -192,6 +192,45 @@ Documentation: https://app.notion.com/p/3fe86c3b70c7818da88ce496bb86ec10
 
 ## Validation, rollout and rollback
 
+### Explicit negative evidence fix (2026-10-21, MR !12)
+
+The existing source-evidence parser already recognized `계단 피하지 않고` as
+negative. The Laya mapper previously retained a native `avoid` prediction
+because its explicit-choice recovery imported positive evidence only. The
+mapper now sets that factor to `skip` / `not_applied`, clears its direction
+and avoids presenting the native confidence as a corrected confidence.
+It does not add new phrase patterns, change the model, or modify Jev guards.
+Last-mention scoping and existing inverse-lighting refinements are retained.
+
+Reported input: `계단 피하지 않고 건널목 피해서 갈래` now activates only
+crossing avoidance. In the full reported night/light/CCTV example, stairs
+stays off while streetlight, CCTV, crossing and time stay on.
+
+Validation after preserving the remote malformed-response safety fix:
+
+| Check | Result |
+| --- | ---: |
+| Related backend regression tests, including 16 new negation cases | 684 passed |
+| Saved native Laya response replay, unchanged gold and prior v6 results | 328/328 |
+| Live GPU Laya through isolated MR FastAPI, normal/negative/example requests | 12/12 |
+| Actual browser example selections, final cards checked | 4/4 |
+| Deployment package/update unit tests in isolated Linux container | 70 passed |
+
+The four example texts were read unchanged from `frontend/src/App.tsx` and
+also selected in the browser at the isolated local verification screen:
+
+| Browser example | Active conditions (all other cards off) |
+| --- | --- |
+| 가로등 · CCTV · 건널목 | Streetlight, CCTV, crossing avoid, night |
+| 가로등 · CCTV · 계단 | Streetlight, CCTV, stairs avoid, night |
+| 종합 조건 | All eight; stairs/crossing avoid, bridge prefer, night |
+| 가로등 · 계단 | Streetlight, stairs avoid, night |
+
+These are request-card correctness checks, not a guarantee that every desired
+road constraint has a feasible distinct route. No additional training, paid
+Jev calls, production configuration/DB changes, frontend or example edits
+were made. GPU checkpoint and the default disabled/opt-in policy are unchanged.
+
 The added tests use mocked Laya responses and never make paid API calls or touch
 the operational DB. Run existing Jev tests as well as new `tests/test_laya*.py`
 tests before switching. Confirm default provider is Jev, Laya is disabled, and
