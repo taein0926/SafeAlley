@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,13 @@ class Settings(BaseSettings):
     ollama_intent_cache_seconds: float = Field(default=300, ge=0, le=3600)
     typesafe_api_key: SecretStr | None = None
     jev_preview_enabled: bool = False
+    intent_preview_provider: Literal["jev", "laya"] = "jev"
+    laya_preview_enabled: bool = False
+    laya_preview_url: str = "http://host.docker.internal:18762"
+    laya_checkpoint_sha256: str = Field(
+        default="b3522f4d79391a93d9272bccdd3a8aadec601b11e9a2be3ea248eb58dd49a9da",
+        pattern=r"^[a-f0-9]{64}$",
+    )
     jev_preview_model: str = "jev-latest"
     jev_preview_min_confidence: float = Field(default=.7, ge=.5, le=1)
     nominatim_base_url: str = Field(default="https://nominatim.openstreetmap.org")

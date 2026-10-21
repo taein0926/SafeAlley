@@ -1,0 +1,11 @@
+# Optional with either root docker-compose.yml or deployment/compose.yml.
+# Do not include in the operational invocation until an operator approves it.
+# Defaults still preserve Jev; .env alone is not automatically passed through
+# by the original Compose files. Include this override explicitly to opt in.
+services:
+  backend:
+    environment:
+      INTENT_PREVIEW_PROVIDER: ${INTENT_PREVIEW_PROVIDER:-jev}
+      LAYA_PREVIEW_ENABLED: ${LAYA_PREVIEW_ENABLED:-false}
+      LAYA_PREVIEW_URL: ${LAYA_PREVIEW_URL:-http://host.docker.internal:18762}
+      LAYA_CHECKPOINT_SHA256: ${LAYA_CHECKPOINT_SHA256:-b3522f4d79391a93d9272bccdd3a8aadec601b11e9a2be3ea248eb58dd49a9da}
