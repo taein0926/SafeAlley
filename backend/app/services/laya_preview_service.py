@@ -85,8 +85,16 @@ def map_cards(body,query=None):
   state='not_applied' if choice=='skip' else 'analyzing' if choice=='pending' else 'applied'
   reason=None
   if query is not None:
+   evidence,_ = preview_factor_evidence(query, f)
    explicit = explicit_pilot_choice(query, f)
-   if explicit is not None and explicit != choice:
+   # A positive native prediction cannot override a scoped source rejection
+   # such as "계단 피하지 않고 건널목 피해서". Use the existing evidence
+   # parser (including its last-mention scope), not another negation regex.
+   if evidence == 'negative':
+    if choice != 'skip':confidence=None
+    choice, state = 'skip', 'not_applied'
+    reason='원문에서 해당 조건의 적용을 부정하여 미적용했습니다.'
+   elif explicit is not None and explicit != choice:
     choice, state, confidence = explicit, 'applied', None
     reason='원문에 명확하게 표현된 거리·장애물 선호를 반영했습니다.'
   # Safety alone must not be inferred from lighting/CCTV. Reuse the existing
@@ -111,9 +119,9 @@ def map_cards(body,query=None):
 def map_hybrid_cards(body, query):
  """Tested composition plus pilot-only explicit departure clock normalization.
 
- Keep pilot corrections; import only existing unfinished and positive/applied
- branches. Conflict, rejection and confidence-only branches cannot replace
- the pilot result. Explicit clocks use the final routing day/night policy.
+ Keep pilot corrections and scoped source rejections; import only existing
+ unfinished and positive/applied branches. Confidence-only branches cannot
+ replace the pilot result. Explicit clocks use the final routing day/night policy.
  """
  cards=map_cards(body,query=query)
  payload=build_request(query,'laya-local-validation-only')
@@ -150,8 +158,8 @@ def analyze_preview(query):
  if not isinstance(body,dict) or body.get('checkpoint_sha256')!=s.laya_checkpoint_sha256:raise PreviewUnavailable('고정 Laya 모델과 일치하지 않습니다.')
  if body.get('version')!=version or body.get('query')!=query:raise PreviewUnavailable('Laya 응답의 입력 버전이 다릅니다.')
  cards=map_hybrid_cards(body,query=query)
- # Selected by sealed paired comparison (2026-10-21). Original mapper is kept
- # intact so baseline behavior can still be reproduced and restored.
+ # Selected by sealed paired comparison (2026-10-21). Retain the frozen clause
+ # refinements; scoped negative evidence is enforced in map_cards above.
  cards=refine_clause_cards(body,query,cards)
  cards=refine_clause_cards_v2(body,query,cards)
  cards=refine_clause_cards_v3(body,query,cards)
