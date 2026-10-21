@@ -19,6 +19,7 @@ DEPLOY_FILES = (
     "deployment/compose.yml", "deployment/.env.example", "deployment/manage.py",
     "deployment/package.py", "deployment/README.md", "deployment/test_deployment.py",
     "deployment/compose.vm.override.yml",
+    "deployment/compose.laya-preview.override.yml",
     "deployment/local-gpu-stt-tunnel.ps1",
     "deployment/vm_update.py", "deployment/test_vm_update.py",
 )
