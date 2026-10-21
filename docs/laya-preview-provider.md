@@ -192,7 +192,7 @@ Documentation: https://app.notion.com/p/3fe86c3b70c7818da88ce496bb86ec10
 
 ## Validation, rollout and rollback
 
-### Explicit negative evidence fix (2026-10-21, MR !12)
+### Explicit negative evidence fix (2026-10-21, follow-up to merged MR !12)
 
 The existing source-evidence parser already recognized `계단 피하지 않고` as
 negative. The Laya mapper previously retained a native `avoid` prediction
