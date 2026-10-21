@@ -206,15 +206,37 @@ Reported input: `계단 피하지 않고 건널목 피해서 갈래` now activat
 crossing avoidance. In the full reported night/light/CCTV example, stairs
 stays off while streetlight, CCTV, crossing and time stay on.
 
-Validation after preserving the remote malformed-response safety fix:
+### Coordinated obstacle negation follow-up (2026-10-21, MR !13)
+
+`건널목과 계단은 피하지 말고 갈래` exposed a separate scope gap: the
+shared parser stops the first noun's scope at the next noun. The earlier
+single-factor fix therefore disabled only the last noun's card.
+
+The Laya-only final guard now recognizes an immediately coordinated obstacle
+list and checks the shared rejection separately for each named factor. It
+reuses the existing cancellation/direct-rejection predicates and preserves the
+remaining original query for last-mention checks. A later explicit positive
+request still wins. Positive avoidance, `빼고`, and independent clauses remain
+unchanged. The shared Jev parser, trained checkpoint, frontend and examples
+are not modified.
+
+Validation including both single-factor and coordinated-negation fixes:
 
 | Check | Result |
 | --- | ---: |
-| Related backend regression tests, including 16 new negation cases | 684 passed |
-| Saved native Laya response replay, unchanged gold and prior v6 results | 328/328 |
-| Live GPU Laya through isolated MR FastAPI, normal/negative/example requests | 12/12 |
+| Related backend regression tests, including 69 single/grouped-negation cases | 737 passed |
+| Saved native Laya responses through the complete updated analysis pipeline | 328/328 |
+| Live GPU Laya through isolated MR FastAPI, normal/negative/example requests | 28/28 |
 | Actual browser example selections, final cards checked | 4/4 |
 | Deployment package/update unit tests in isolated Linux container | 70 passed |
+
+The 53 additional grouped-negation regression cases cover both orders of each
+obstacle pair, all six three-factor permutations, noun-list connectors,
+aliases, compact input, the reported full query, later positive corrections,
+and unaffected positive/independent clauses. Live GPU checks cover the
+reported full query and its reversed order, all obstacle-pair/triple orders,
+and the four unchanged original browser examples. Browser verification uses
+the isolated local test screen, not a production deployment.
 
 The four example texts were read unchanged from `frontend/src/App.tsx` and
 also selected in the browser at the isolated local verification screen:

@@ -3,6 +3,7 @@
 No training, external inference, Jev calls, database, or example edits.
 """
 from datetime import time
+from itertools import permutations
 from types import SimpleNamespace
 
 import pytest
@@ -88,3 +89,75 @@ def test_low_lighting_avoidance_remains_a_positive_preference(analyze):
 
 def test_unfinished_input_remains_pending(analyze):
     assert analyze('계단을', stairs='avoid')['stairs'].state == 'analyzing'
+
+
+OBSTACLE_NAMES = {'stairs': '계단', 'crossing': '건널목', 'bridge': '육교'}
+
+
+@pytest.mark.parametrize('factors', list(permutations(OBSTACLE_NAMES, 2)))
+@pytest.mark.parametrize('tail', ['피하지 말고 갈래', '피하지 않고 갈래', '피하지 않아도 돼', '고려하지 말고 가줘'])
+def test_shared_negation_covers_both_obstacles_in_either_order(analyze, factors, tail):
+    query = '과 '.join(OBSTACLE_NAMES[f] for f in factors) + '은 ' + tail
+    cards = analyze(query, **{f: 'avoid' for f in factors})
+    assert not [f for f, c in cards.items() if c.state == 'applied']
+    for f in factors:
+        assert cards[f].judgment == 'skip' and cards[f].direction is None
+
+
+@pytest.mark.parametrize('factors', list(permutations(OBSTACLE_NAMES)))
+def test_shared_negation_covers_three_obstacles(analyze, factors):
+    query = '과 '.join(OBSTACLE_NAMES[f] for f in factors) + '는 피하지 말고 갈래'
+    cards = analyze(query, stairs='avoid', crossing='avoid', bridge='avoid')
+    assert all(c.state == 'not_applied' for c in cards.values())
+
+
+@pytest.mark.parametrize('connector', ['과 ', '와 ', ' 및 ', '하고 ', ' 그리고 ', ', ', '이랑 ', '랑 '])
+def test_shared_negation_connectors(analyze, connector):
+    cards = analyze('건널목' + connector + '계단은 피하지 말고 갈래', crossing='avoid', stairs='avoid')
+    assert cards['crossing'].state == cards['stairs'].state == 'not_applied'
+
+
+@pytest.mark.parametrize('query', [
+    '건널목과계단은피하지말고갈래',
+    '횡단보도와 층계는 피하지 말고 갈래',
+    '횡단보도와 고가 보도는 피하지 말고 갈래',
+])
+def test_shared_negation_compact_input_and_aliases(analyze, query):
+    native = dict(crossing='avoid', stairs='avoid') if '고가' not in query else dict(crossing='avoid', bridge='avoid')
+    cards = analyze(query, **native)
+    assert all(c.state == 'not_applied' for c in cards.values())
+
+
+@pytest.mark.parametrize('clause', [
+    '건널목과 계단은 피하지 말고 갈래',
+    '계단과 건널목은 피하지 말고 갈래',
+])
+def test_reported_grouped_negation_preserves_lighting_cctv_and_time(analyze, clause):
+    query = '밤 9시에 인천비즈니스고등학교에서 인천청인학교까지 가로등, CCTV 많은 길로 안내해. ' + clause
+    cards = analyze(query, streetlight='apply', cctv='apply', time='night', stairs='avoid', crossing='avoid')
+    assert {f: c.judgment for f, c in cards.items() if c.state == 'applied'} == {
+        'streetlight': 'apply', 'cctv': 'apply', 'time': 'night'}
+
+
+@pytest.mark.parametrize('query,active', [
+    ('건널목과 계단은 피하지 말고 육교를 피해서 갈래', {'bridge'}),
+    ('육교와 계단은 피하지 말고 건널목을 피해서 갈래', {'crossing'}),
+    ('건널목과 계단은 피하지 말고 갈래. 계단은 피해서 가줘', {'stairs'}),
+    ('계단과 건널목은 피하지 말고 갈래. 건널목은 피해서 가줘', {'crossing'}),
+])
+def test_shared_negation_does_not_cancel_other_or_later_requests(analyze, query, active):
+    cards = analyze(query, stairs='avoid', crossing='avoid', bridge='avoid' if '육교' in query else 'skip')
+    assert {f for f, c in cards.items() if c.state == 'applied'} == active
+
+
+@pytest.mark.parametrize('query,active', [
+    ('건널목과 계단은 피해서 갈래', {'crossing', 'stairs'}),
+    ('계단과 건널목은 피해서 갈래', {'crossing', 'stairs'}),
+    ('건널목과 계단은 적게 지나는 길로 안내해줘', {'crossing', 'stairs'}),
+    ('건널목은 피하고 계단은 피하지 말고 갈래', {'crossing'}),
+    ('계단은 피하고 건널목은 피하지 말고 갈래', {'stairs'}),
+    ('건널목과 계단은 빼고 갈래', {'crossing', 'stairs'}),
+])
+def test_shared_guard_preserves_positive_and_separate_clause_requests(analyze, query, active):
+    cards = analyze(query, stairs='avoid', crossing='avoid')
+    assert {f for f, c in cards.items() if c.state == 'applied'} == active
