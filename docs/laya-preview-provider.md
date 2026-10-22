@@ -192,11 +192,102 @@ Documentation: https://app.notion.com/p/3fe86c3b70c7818da88ce496bb86ec10
 
 ## Validation, rollout and rollback
 
+### Explicit negative evidence fix (2026-10-21, follow-up to merged MR !12)
+
+The existing source-evidence parser already recognized `계단 피하지 않고` as
+negative. The Laya mapper previously retained a native `avoid` prediction
+because its explicit-choice recovery imported positive evidence only. The
+mapper now sets that factor to `skip` / `not_applied`, clears its direction
+and avoids presenting the native confidence as a corrected confidence.
+It does not add new phrase patterns, change the model, or modify Jev guards.
+Last-mention scoping and existing inverse-lighting refinements are retained.
+
+Reported input: `계단 피하지 않고 건널목 피해서 갈래` now activates only
+crossing avoidance. In the full reported night/light/CCTV example, stairs
+stays off while streetlight, CCTV, crossing and time stay on.
+
+### Coordinated obstacle negation follow-up (2026-10-21, MR !13)
+
+`건널목과 계단은 피하지 말고 갈래` exposed a separate scope gap: the
+shared parser stops the first noun's scope at the next noun. The earlier
+single-factor fix therefore disabled only the last noun's card.
+
+The Laya-only final guard now recognizes an immediately coordinated obstacle
+list and checks the shared rejection separately for each named factor. It
+reuses the existing cancellation/direct-rejection predicates and preserves the
+remaining original query for last-mention checks. A later explicit positive
+request still wins. Positive avoidance, `빼고`, and independent clauses remain
+unchanged. The shared Jev parser, trained checkpoint, frontend and examples
+are not modified.
+
+Validation including both single-factor and coordinated-negation fixes:
+
+| Check | Result |
+| --- | ---: |
+| Related backend regression tests, including 69 single/grouped-negation cases | 737 passed |
+| Saved native Laya responses through the complete updated analysis pipeline | 328/328 |
+| Live GPU Laya through isolated MR FastAPI, normal/negative/example requests | 28/28 |
+| Actual browser example selections, final cards checked | 4/4 |
+| Deployment package/update unit tests in isolated Linux container | 70 passed |
+
+The 53 additional grouped-negation regression cases cover both orders of each
+obstacle pair, all six three-factor permutations, noun-list connectors,
+aliases, compact input, the reported full query, later positive corrections,
+and unaffected positive/independent clauses. Live GPU checks cover the
+reported full query and its reversed order, all obstacle-pair/triple orders,
+and the four unchanged original browser examples. Browser verification uses
+the isolated local test screen, not a production deployment.
+
+The four example texts were read unchanged from `frontend/src/App.tsx` and
+also selected in the browser at the isolated local verification screen:
+
+| Browser example | Active conditions (all other cards off) |
+| --- | --- |
+| 가로등 · CCTV · 건널목 | Streetlight, CCTV, crossing avoid, night |
+| 가로등 · CCTV · 계단 | Streetlight, CCTV, stairs avoid, night |
+| 종합 조건 | All eight; stairs/crossing avoid, bridge prefer, night |
+| 가로등 · 계단 | Streetlight, stairs avoid, night |
+
+These are request-card correctness checks, not a guarantee that every desired
+road constraint has a feasible distinct route. No additional training, paid
+Jev calls, production configuration/DB changes, frontend or example edits
+were made. GPU checkpoint and the default disabled/opt-in policy are unchanged.
+
 The added tests use mocked Laya responses and never make paid API calls or touch
 the operational DB. Run existing Jev tests as well as new `tests/test_laya*.py`
 tests before switching. Confirm default provider is Jev, Laya is disabled, and
 the same frontend contract is returned. Replay frozen evidence on latest main
 as a separate offline check, since shared helper changes can affect results.
+
+### Source/package alignment follow-up (2026-10-22)
+
+Read-only checks on the deployed browser found the four unchanged examples
+correct, but both orders of coordinated negation and individual negation still
+incorrectly activated obstacle cards. This is not a passing deployment test.
+The exact VM image revision was not retrieved. Remote main did not include
+MR !13's `75cacd6` correction at the time of the check.
+
+The repository's bundled `SafeAlley-deploy.tar.gz` also contained older source
+(`release.json` base commit `953420b`), without either explicit-negative fix.
+The distributable is refreshed from a pinned corrected commit. The package
+test compares all Laya adapter/refinement modules and the preview HTTP router
+against the checkout (normalizing Git/Windows line endings), and verifies the
+archive checksum and per-file manifest hashes. This detects source/archive
+drift without connecting to the VM or changing runtime settings.
+
+`tests/test_laya_http_negation_regression.py` adds twelve HTTP-boundary cases:
+individual/shared negation, both noun orders, short/full inputs, and all four
+original browser examples read directly from the unchanged frontend source.
+Wrong-positive model fixtures must be corrected in the response sent to the
+browser. The test checks the selected Laya model ID, final states/directions,
+and that no Jev call is made. These are offline fixture tests, not new GPU
+inference or proof that the updated archive is running on the VM.
+
+No further model training, phrase rules, frontend/example edits, provider
+switch, database migration or production deployment is performed by this
+follow-up. The operator must deploy the corrected archive through the existing
+reviewed VM update process, then repeat the browser checks. Rebuilding only
+the frontend does not update this Python backend correction.
 
 After deployment approval: verify GPU hash/health and private connectivity,
 apply only the provider settings, rebuild/recreate the backend with the actual

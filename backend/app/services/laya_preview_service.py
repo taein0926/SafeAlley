@@ -6,11 +6,11 @@ import httpx
 from app.core.config import get_settings
 from app.schemas.intent_preview import CARD_ORDER, ConditionCard, IntentPreviewResponse, IntentPreviewStatus
 from app.services.jev_preview_service import PreviewUnavailable, build_request, parse_decisions
-from app.services.incomplete_conditions import preview_factor_evidence, incomplete_condition_factors
+from app.services.incomplete_conditions import preview_factor_evidence, incomplete_condition_factors, _CANCEL_CUE
 from app.services.laya_departure_clock import explicit_departure_clock
 from app.services.weather_service import resolve_route_time
 from app.services.laya_clause_candidate import refine_clause_cards
-from app.services.laya_clause_candidate_v2 import refine_clause_cards_v2
+from app.services.laya_clause_candidate_v2 import refine_clause_cards_v2, _DIRECT_CANCEL
 from app.services.laya_clause_candidate_v3 import refine_clause_cards_v3
 from app.services.laya_clause_candidate_v4 import refine_clause_cards_v4
 from app.services.laya_clause_candidate_v5 import refine_clause_cards_v5
@@ -22,6 +22,11 @@ ALLOWED.update(stairs={'avoid','minimize','skip','pending'},crossing={'avoid','m
 
 _OBSTACLES = {'stairs': r'계단|층계', 'crossing': r'횡단보도|건널목', 'bridge': r'육교|고가\s*보도'}
 _OBSTACLE_NOUN = r'(?:계단|층계|횡단보도|건널목|육교|고가\s*보도)'
+_OBSTACLE_GROUP = re.compile(
+ r'(?<![가-힣])(?P<nouns>' + _OBSTACLE_NOUN
+ + r'(?:\s*(?:와|과|및|하고|그리고|,|이랑|랑)\s*' + _OBSTACLE_NOUN + r')+)'
+ + r'(?:은|는|을|를|이|가|도)?\s*'
+)
 # Only a local noun list followed immediately by a completed avoidance cue.
 # No arbitrary text between the nouns and predicate: do not borrow another
 # clause's direction, a place name, or a partial "피"/negated "피하지".
@@ -73,6 +78,35 @@ def preview_status():
   except (httpx.HTTPError,ValueError,AttributeError):pass
  return IntentPreviewStatus(enabled=s.laya_preview_enabled,configured=configured,available=available)
 
+def reject_grouped_negative_cards(query, cards):
+ """Apply a shared local rejection to every explicitly coordinated obstacle.
+
+ Project only the matched noun group, preserving the entire remaining query
+ for existing last-mention checks. A later positive request can therefore win.
+ No new cancellation vocabulary or shared Jev parser changes are introduced.
+ """
+ rejected=set()
+ for match in _OBSTACLE_GROUP.finditer(query):
+  tail=query[match.end():]
+  # The rejection must immediately follow the list. Do not borrow it from a
+  # later clause or interpret a place name such as 계단아파트 as a condition.
+  projected_tail=tail
+  if not _CANCEL_CUE.match(tail):
+   direct=_DIRECT_CANCEL.match(tail)
+   # Reuse the already supported direct rejection guard (e.g. 고려하지 말고).
+   # Obstacle 빼고/제외해 denotes avoiding the obstacle, not cancelling it.
+   if direct is None or direct.group().strip().startswith(('빼고','제외해')):continue
+   projected_tail='필요 없어 '+tail[direct.end():]
+  for factor,pattern in _OBSTACLES.items():
+   if not re.search(pattern,match['nouns']):continue
+   noun={'stairs':'계단','crossing':'건널목','bridge':'육교'}[factor]
+   projected=query[:match.start()]+noun+'은 '+projected_tail
+   if preview_factor_evidence(projected,factor)[0]=='negative':
+    rejected.add(factor)
+ return [ConditionCard(factor=c.factor,state='not_applied',judgment='skip',confidence=None,
+          reason='함께 묶인 장애물 조건 전체에 명시적 부정을 적용했습니다.')
+         if c.factor in rejected else c for c in cards]
+
 def map_cards(body,query=None):
  answers=body.get('answers')
  if not isinstance(answers,dict) or set(answers)!=set(CARD_ORDER):raise PreviewUnavailable('Laya 카드 응답이 올바르지 않습니다.')
@@ -85,8 +119,16 @@ def map_cards(body,query=None):
   state='not_applied' if choice=='skip' else 'analyzing' if choice=='pending' else 'applied'
   reason=None
   if query is not None:
+   evidence,_ = preview_factor_evidence(query, f)
    explicit = explicit_pilot_choice(query, f)
-   if explicit is not None and explicit != choice:
+   # A positive native prediction cannot override a scoped source rejection
+   # such as "계단 피하지 않고 건널목 피해서". Use the existing evidence
+   # parser (including its last-mention scope), not another negation regex.
+   if evidence == 'negative':
+    if choice != 'skip':confidence=None
+    choice, state = 'skip', 'not_applied'
+    reason='원문에서 해당 조건의 적용을 부정하여 미적용했습니다.'
+   elif explicit is not None and explicit != choice:
     choice, state, confidence = explicit, 'applied', None
     reason='원문에 명확하게 표현된 거리·장애물 선호를 반영했습니다.'
   # Safety alone must not be inferred from lighting/CCTV. Reuse the existing
@@ -111,9 +153,9 @@ def map_cards(body,query=None):
 def map_hybrid_cards(body, query):
  """Tested composition plus pilot-only explicit departure clock normalization.
 
- Keep pilot corrections; import only existing unfinished and positive/applied
- branches. Conflict, rejection and confidence-only branches cannot replace
- the pilot result. Explicit clocks use the final routing day/night policy.
+ Keep pilot corrections and scoped source rejections; import only existing
+ unfinished and positive/applied branches. Confidence-only branches cannot
+ replace the pilot result. Explicit clocks use the final routing day/night policy.
  """
  cards=map_cards(body,query=query)
  payload=build_request(query,'laya-local-validation-only')
@@ -150,11 +192,12 @@ def analyze_preview(query):
  if not isinstance(body,dict) or body.get('checkpoint_sha256')!=s.laya_checkpoint_sha256:raise PreviewUnavailable('고정 Laya 모델과 일치하지 않습니다.')
  if body.get('version')!=version or body.get('query')!=query:raise PreviewUnavailable('Laya 응답의 입력 버전이 다릅니다.')
  cards=map_hybrid_cards(body,query=query)
- # Selected by sealed paired comparison (2026-10-21). Original mapper is kept
- # intact so baseline behavior can still be reproduced and restored.
+ # Selected by sealed paired comparison (2026-10-21). Retain the frozen clause
+ # refinements; scoped negative evidence is enforced in map_cards above.
  cards=refine_clause_cards(body,query,cards)
  cards=refine_clause_cards_v2(body,query,cards)
  cards=refine_clause_cards_v3(body,query,cards)
  cards=refine_clause_cards_v4(body,query,cards)
  cards=refine_clause_cards_v5(body,query,cards)
- return IntentPreviewResponse(query=query,model='laya-'+s.laya_checkpoint_sha256[:12],conditions=refine_clause_cards_v6(body,query,cards))
+ cards=refine_clause_cards_v6(body,query,cards)
+ return IntentPreviewResponse(query=query,model='laya-'+s.laya_checkpoint_sha256[:12],conditions=reject_grouped_negative_cards(query,cards))

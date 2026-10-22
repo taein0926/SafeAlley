@@ -14,6 +14,27 @@ import package
 
 
 class PackageTests(unittest.TestCase):
+    def test_bundled_laya_runtime_matches_checkout(self):
+        """A source fix must not leave the distributable on an older adapter."""
+        bundle = package.ROOT / "SafeAlley-deploy.tar.gz"
+        if not bundle.exists():
+            self.skipTest("The nested distributable is excluded from source deployment packages")
+        self.assertEqual(
+            bundle.with_suffix(bundle.suffix + '.sha256').read_text().strip(),
+            hashlib.sha256(bundle.read_bytes()).hexdigest(),
+        )
+        sources = sorted((package.ROOT / 'backend/app/services').glob('laya*.py'))
+        sources.append(package.ROOT / 'backend/app/api/intent_preview.py')
+        with tarfile.open(bundle, 'r:gz') as archive:
+            manifest = json.loads(archive.extractfile('SafeAlley/release.json').read())
+            for source in sources:
+                name = source.relative_to(package.ROOT).as_posix()
+                with self.subTest(name=name):
+                    data = archive.extractfile('SafeAlley/' + name).read()
+                    self.assertEqual(data.replace(b'\r\n', b'\n'), source.read_bytes().replace(b'\r\n', b'\n'),
+                                     "Refresh the source deployment package")
+                    self.assertEqual(manifest['sha256'][name], hashlib.sha256(data).hexdigest())
+
     def test_all_model_template_defaults_match_current_model(self):
         defaults = {
             ".env.example": "OLLAMA_MODEL=gemma4:26b",
