@@ -259,6 +259,36 @@ tests before switching. Confirm default provider is Jev, Laya is disabled, and
 the same frontend contract is returned. Replay frozen evidence on latest main
 as a separate offline check, since shared helper changes can affect results.
 
+### Source/package alignment follow-up (2026-10-22)
+
+Read-only checks on the deployed browser found the four unchanged examples
+correct, but both orders of coordinated negation and individual negation still
+incorrectly activated obstacle cards. This is not a passing deployment test.
+The exact VM image revision was not retrieved. Remote main did not include
+MR !13's `75cacd6` correction at the time of the check.
+
+The repository's bundled `SafeAlley-deploy.tar.gz` also contained older source
+(`release.json` base commit `953420b`), without either explicit-negative fix.
+The distributable is refreshed from a pinned corrected commit. The package
+test compares all Laya adapter/refinement modules and the preview HTTP router
+against the checkout (normalizing Git/Windows line endings), and verifies the
+archive checksum and per-file manifest hashes. This detects source/archive
+drift without connecting to the VM or changing runtime settings.
+
+`tests/test_laya_http_negation_regression.py` adds twelve HTTP-boundary cases:
+individual/shared negation, both noun orders, short/full inputs, and all four
+original browser examples read directly from the unchanged frontend source.
+Wrong-positive model fixtures must be corrected in the response sent to the
+browser. The test checks the selected Laya model ID, final states/directions,
+and that no Jev call is made. These are offline fixture tests, not new GPU
+inference or proof that the updated archive is running on the VM.
+
+No further model training, phrase rules, frontend/example edits, provider
+switch, database migration or production deployment is performed by this
+follow-up. The operator must deploy the corrected archive through the existing
+reviewed VM update process, then repeat the browser checks. Rebuilding only
+the frontend does not update this Python backend correction.
+
 After deployment approval: verify GPU hash/health and private connectivity,
 apply only the provider settings, rebuild/recreate the backend with the actual
 deployment's Compose files, then test cards plus an actual Gemma route. Review
