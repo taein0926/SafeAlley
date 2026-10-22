@@ -25,6 +25,10 @@ class PackageTests(unittest.TestCase):
         )
         sources = sorted((package.ROOT / 'backend/app/services').glob('laya*.py'))
         sources.append(package.ROOT / 'backend/app/api/intent_preview.py')
+        sources.extend(package.ROOT / name for name in (
+            'backend/app/services/distance_preference.py',
+            'backend/app/services/local_llm_service.py',
+        ))
         with tarfile.open(bundle, 'r:gz') as archive:
             manifest = json.loads(archive.extractfile('SafeAlley/release.json').read())
             for source in sources:

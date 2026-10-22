@@ -15,6 +15,7 @@ from app.services.laya_clause_candidate_v3 import refine_clause_cards_v3
 from app.services.laya_clause_candidate_v4 import refine_clause_cards_v4
 from app.services.laya_clause_candidate_v5 import refine_clause_cards_v5
 from app.services.laya_clause_candidate_v6 import refine_clause_cards_v6
+from app.services.distance_preference import short_distance_choice
 
 ALLOWED={f:{'apply','skip','pending'} for f in CARD_ORDER}
 ALLOWED.update(stairs={'avoid','minimize','skip','pending'},crossing={'avoid','minimize','skip','pending'},
@@ -182,6 +183,25 @@ def map_hybrid_cards(body, query):
   combined=[time_card if c.factor=='time' else c for c in combined]
  return combined
 
+def refine_distance_cards(query,cards):
+ """Correct explicit distance requests without changing other request semantics."""
+ choice=short_distance_choice(query)
+ if choice is None:return cards
+ corrected=[]
+ for card in cards:
+  if card.factor=='distance':
+   applied=choice=='apply'
+   corrected.append(ConditionCard(factor='distance',state='applied' if applied else 'not_applied',
+     judgment=choice,direction='minimize' if applied else None,confidence=None,
+     reason='원문에 명시된 이동거리 최소화 요청을 반영했습니다.' if applied
+      else '거리 우선 요청을 제외하거나 시설 접근성과 구분했습니다.'))
+  elif choice=='apply' and card.factor in {'cctv','crossing'} and preview_factor_evidence(query,card.factor)[0]=='absent':
+   corrected.append(ConditionCard(factor=card.factor,state='not_applied',judgment='skip',confidence=None,
+     reason='이동거리 요청만으로 원문에 없는 조건을 추가하지 않습니다.'))
+  else:corrected.append(card)
+ return corrected
+
+
 def analyze_preview(query):
  s=get_settings()
  if not s.laya_preview_enabled:raise PreviewUnavailable('Laya 시범 분석이 비활성입니다.')
@@ -200,4 +220,5 @@ def analyze_preview(query):
  cards=refine_clause_cards_v4(body,query,cards)
  cards=refine_clause_cards_v5(body,query,cards)
  cards=refine_clause_cards_v6(body,query,cards)
- return IntentPreviewResponse(query=query,model='laya-'+s.laya_checkpoint_sha256[:12],conditions=reject_grouped_negative_cards(query,cards))
+ cards=reject_grouped_negative_cards(query,cards)
+ return IntentPreviewResponse(query=query,model='laya-'+s.laya_checkpoint_sha256[:12],conditions=refine_distance_cards(query,cards))
