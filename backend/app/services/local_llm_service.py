@@ -16,6 +16,7 @@ from app.services.incomplete_conditions import (
     incomplete_condition_factors,
     preview_factor_evidence,
 )
+from app.services.distance_preference import short_distance_choice
 
 
 class LocalLLMUnavailableError(RuntimeError):
@@ -711,6 +712,11 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
             _reconcile_live_preview_preferences(query, intent)
             _apply_explicit_correction(query, intent)
             _discard_unmentioned_distance(query, intent)
+            distance_choice = short_distance_choice(query)
+            if distance_choice == 'apply':
+                _set_preference(intent, 'distance_m', 'minimize')
+            elif distance_choice == 'skip':
+                _drop_preference(intent, 'distance_m')
             unfinished = incomplete_condition_factors(query)
             intent.preferences = [p for p in intent.preferences if p.factor not in unfinished]
             _validate_query_semantics(query, intent)
