@@ -220,6 +220,23 @@ def signature(container):
                              for m in container["Mounts"])}
 
 
+def python_image_metadata_only(before, after, old_image, new_image):
+    """이미지 자체의 동일 Python 계열 패치 메타정보만 변경됐는지 확인한다."""
+    old, new = env_map(before), env_map(after)
+    old_defaults, new_defaults = env_map(old_image), env_map(new_image)
+    versions = [re.fullmatch(r'(\d+\.\d+)\.\d+', env.get('PYTHON_VERSION', '')) for env in (old, new)]
+    if not all(versions) or versions[0].group(1) != versions[1].group(1):
+        return False
+    for env, defaults in ((old, old_defaults), (new, new_defaults)):
+        for key in ('PYTHON_VERSION', 'PYTHON_SHA256'):
+            if not env.get(key) or env[key] != defaults.get(key):
+                return False
+        if not re.fullmatch(r'[a-f0-9]{64}', env['PYTHON_SHA256']):
+            return False
+        env.pop('PYTHON_VERSION'); env.pop('PYTHON_SHA256')
+    return old == new
+
+
 def assert_unreferenced(targets, containers):
     targets = [Path(t).resolve() for t in targets]
     for c in containers:
@@ -399,6 +416,10 @@ class VM:
                     previous["mounts"] = [(t, str(self.runtime / "database/init") if d == "/docker-entrypoint-initdb.d" else s, d, rw)
                                           for t, s, d, rw in previous["mounts"]]
                     previous["mounts"].sort()
+                if not adopt and previous['env_hash'] != current['env_hash']:
+                    image_defaults = json.loads(run(['docker', 'image', 'inspect', before[service]['Image'], c['Image']]))
+                    if python_image_metadata_only(before[service], c, *image_defaults):
+                        previous['env_hash'] = current['env_hash']
                 require(current == previous, service + " environment/network/volume/image changed unexpectedly.")
         self.probe_connections()
 

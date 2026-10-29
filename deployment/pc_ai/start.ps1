@@ -1,12 +1,16 @@
-﻿param([switch]$TunnelOnly)
+﻿param([switch]$ConnectVm, [switch]$TunnelOnly)
 $ErrorActionPreference = 'Stop'
 $taskRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $taskPrivate = Join-Path $taskRoot 'deployment/.private/pc-ai'
-$taskConfigPath = Join-Path $taskPrivate 'connection.json'
-if (-not (Test-Path -LiteralPath $taskConfigPath)) { throw 'PC AI 비공개 연결 설정이 없습니다.' }
-$taskConfig = Get-Content -LiteralPath $taskConfigPath -Raw | ConvertFrom-Json
-$taskMutex = New-Object Threading.Mutex($false, 'Local\SafeAlleyPcAiTunnel')
-if (-not $taskMutex.WaitOne(0)) { Write-Host 'PC AI 연결 관리자가 이미 실행 중입니다.'; exit 0 }
+if ($TunnelOnly -and -not $ConnectVm) { throw '-TunnelOnly에는 명시적인 -ConnectVm 옵션이 필요합니다.' }
+$taskMutex = $null
+if ($ConnectVm) {
+    $taskConfigPath = Join-Path $taskPrivate 'connection.json'
+    if (-not (Test-Path -LiteralPath $taskConfigPath)) { throw 'PC AI 비공개 연결 설정이 없습니다.' }
+    $taskConfig = Get-Content -LiteralPath $taskConfigPath -Raw | ConvertFrom-Json
+    $taskMutex = New-Object Threading.Mutex($false, 'Local\SafeAlleyPcAiTunnel')
+    if (-not $taskMutex.WaitOne(0)) { Write-Host 'PC AI 연결 관리자가 이미 실행 중입니다.'; $taskMutex.Dispose(); exit 0 }
+}
 function Test-TaskDockerReady {
     $ErrorActionPreference = 'SilentlyContinue'
     docker info --format '{{.ServerVersion}}' 2>$null | Out-Null
@@ -37,6 +41,7 @@ try {
         $taskWarmBody = @{query='밤 10시에 최단거리로 가로등 CCTV 안전시설 많은 길, 계단과 건널목 피하고 육교 우선으로 안내해줘';version=0} | ConvertTo-Json
         Invoke-RestMethod -Uri 'http://127.0.0.1:18761/analyze' -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($taskWarmBody)) -TimeoutSec 120 | Out-Null
     }
+    if (-not $ConnectVm) { Write-Host '로컬 서비스와 모델 준비 완료. VM에는 연결하지 않았습니다.'; return }
     $taskLog = Join-Path $taskPrivate 'tunnel-manager.log'
     $taskArgs = @('-N','-T','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes',
         '-o','ExitOnForwardFailure=yes','-o','ConnectTimeout=15','-o','ServerAliveInterval=20','-o','ServerAliveCountMax=3',
@@ -56,4 +61,4 @@ try {
         Add-Content -LiteralPath $taskLog -Encoding UTF8 -Value ((Get-Date -Format o)+' 연결 종료. 5초 후 재연결합니다.')
         Start-Sleep -Seconds 5
     }
-} finally { $taskMutex.ReleaseMutex(); $taskMutex.Dispose() }
+} finally { if ($null -ne $taskMutex) { $taskMutex.ReleaseMutex(); $taskMutex.Dispose() } }

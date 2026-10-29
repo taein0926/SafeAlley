@@ -38,9 +38,15 @@ LAYA_RUNTIME_DIR=C:/절대경로/검증한-Laya-실행폴더
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1
 ```
 
-실행기는 Docker와 Ollama를 확인하고 모델을 준비한 다음 SSH를 유지한다. 연결 종료 시 재시도한다.
-`-TunnelOnly`는 이미 실행 중인 PC 서비스에 연결만 추가하는 점검 옵션이다.
-중복 실행은 mutex로 방지한다. 로그인 시 실행하도록 Windows 작업 스케줄러에 등록할 수 있다.
+기본 실행은 로컬 서비스와 모델만 준비하며 VM에는 연결하지 않는다.
+사용자가 VM 연결을 요청했을 때만 다음 명령을 실행한다. 로그인 자동 연결은 등록하지 않는다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1 -ConnectVm -TunnelOnly
+```
+
+`-ConnectVm`은 VM 연결을 명시적으로 요청하는 옵션이고 `-TunnelOnly`는 모델 기동을 생략한다.
+연결 관리자가 실행되는 동안에는 SSH 종료 시 재시도한다. 중복 연결은 mutex로 방지한다.
 PC 종료·절전·로그아웃 또는 인터넷 단절 중에는 AI 기능을 제공할 수 없다.
 노트북 절전 설정은 사용자가 운영 조건에 맞게 관리한다.
 

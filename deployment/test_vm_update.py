@@ -71,6 +71,33 @@ class ModelProbeTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(AssertionError): self.probe(**options)
 
 
+class PythonMetadataTests(unittest.TestCase):
+    def setUp(self):
+        self.old_image = {'Config': {'Env': ['PYTHON_VERSION=3.12.15', 'PYTHON_SHA256='+'a'*64]}}
+        self.new_image = {'Config': {'Env': ['PYTHON_VERSION=3.12.16', 'PYTHON_SHA256='+'b'*64]}}
+        self.old, self.new = copy.deepcopy(self.old_image), copy.deepcopy(self.new_image)
+        for container in (self.old, self.new): container['Config']['Env'].append('STT_LOCAL_FALLBACK=false')
+
+    def allowed(self):
+        return updater.python_image_metadata_only(self.old, self.new, self.old_image, self.new_image)
+
+    def test_image_patch_metadata_and_rollback_are_allowed(self):
+        self.assertTrue(self.allowed())
+        self.assertTrue(updater.python_image_metadata_only(self.new, self.old, self.new_image, self.old_image))
+
+    def test_application_setting_change_is_rejected(self):
+        self.new['Config']['Env'][-1] = 'STT_LOCAL_FALLBACK=true'
+        self.assertFalse(self.allowed())
+
+    def test_runtime_metadata_override_is_rejected(self):
+        self.new['Config']['Env'][0] = 'PYTHON_VERSION=3.12.17'
+        self.assertFalse(self.allowed())
+
+    def test_python_minor_upgrade_is_rejected(self):
+        for item in (self.new, self.new_image): item['Config']['Env'][0] = 'PYTHON_VERSION=3.13.1'
+        self.assertFalse(self.allowed())
+
+
 class ArchiveTests(unittest.TestCase):
     def test_valid_archive_and_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
