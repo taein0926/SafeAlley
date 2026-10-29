@@ -12,6 +12,12 @@ from app.services import speech_service as speech
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def default_speech_environment(monkeypatch):
+    monkeypatch.delenv('STT_REMOTE_URL', raising=False)
+    monkeypatch.setenv('STT_LOCAL_FALLBACK', 'true')
+
+
 def wav(seconds=1, value=0):
     output = BytesIO()
     with wave.open(output, 'wb') as audio:
@@ -109,3 +115,23 @@ def test_gpu_rejects_invalid_audio_without_cpu_fallback(monkeypatch):
     response = client.post('/api/speech/transcribe', content=wav(1, 500),
                            headers={'Content-Type': 'audio/wav'})
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize('remote', ['', 'http://pc-whisper:18081'])
+@pytest.mark.parametrize('failure', ['connect', 'busy'])
+def test_remote_only_never_starts_local_model(monkeypatch, remote, failure):
+    class ForbiddenModel:
+        def transcribe(self, *_args, **_kwargs):
+            pytest.fail('PC 전용 모드에서는 API 서버가 모델을 실행하면 안 됩니다.')
+    def unavailable(*_args, **_kwargs):
+        if failure == 'connect':
+            raise httpx.ConnectError('unavailable')
+        return httpx.Response(503, json={'detail': 'busy'})
+    monkeypatch.setenv('STT_REMOTE_URL', remote)
+    monkeypatch.setenv('STT_LOCAL_FALLBACK', 'false')
+    monkeypatch.setattr(speech, '_model', ForbiddenModel())
+    monkeypatch.setattr(httpx, 'post', unavailable)
+    response = client.post('/api/speech/transcribe', content=wav(1, 500),
+                           headers={'Content-Type': 'audio/wav'})
+    assert response.status_code == 503
+    assert not speech._lock.locked()

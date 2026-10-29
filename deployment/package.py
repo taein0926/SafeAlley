@@ -22,6 +22,8 @@ DEPLOY_FILES = (
     "deployment/compose.laya-preview.override.yml",
     "deployment/local-gpu-stt-tunnel.ps1",
     "deployment/vm_update.py", "deployment/test_vm_update.py",
+    "deployment/compose.pc-ai.yml", "deployment/pc_ai/start.ps1",
+    "deployment/pc_ai/relay.py", "deployment/pc_ai/README.md",
 )
 ROOT_FILES = {"README.md", "NOTICE.md", ".gitignore", ".env.example", "AGENTS.md", "docker-compose.yml"}
 DENY_PARTS = {".git", ".local", ".private", "secrets", "raw", "processed", "node_modules",
@@ -83,7 +85,7 @@ def build_package(output, ref="HEAD"):
         "source_mode": "git-commit",
         "working_tree_changes": False,
         "local_working_tree_changes_present": bool(git("status", "--porcelain")),
-        "requires": "Docker Compose, Python 3.10+, internet and server .env; existing VM volumes and GPU Ollama or separate initial DB restore",
+        "requires": "Docker Compose, Python 3.10+, internet, private server .env, existing DB volumes or initial restore; PC model runtime and SSH connection in PC AI mode",
         "sha256": {name: hashlib.sha256(data).hexdigest() for name, data in payload.items()},
     }
     output.parent.mkdir(parents=True, exist_ok=True)

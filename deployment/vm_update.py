@@ -429,11 +429,16 @@ tags=json.load(urllib.request.urlopen(base+'/api/tags',timeout=20))
 assert os.environ['OLLAMA_MODEL'] in [m['name'] for m in tags['models']]
 url=os.environ['STT_REMOTE_URL'].rstrip('/')
 health=json.load(urllib.request.urlopen(url+'/health',timeout=20))
-assert health.get('ready') and health.get('device')=='cuda'
-print('GPU_ENDPOINTS_OK')'''
-        require(run(["docker", "exec", PROJECT + "-backend-1", "python", "-c", probe]).strip() == "GPU_ENDPOINTS_OK",
-                "GPU Ollama/Whisper connectivity failed.")
-        print("VERIFIED: HTTPS, redirect, frontend assets, DB, GPU Ollama and CUDA Whisper endpoints.", flush=True)
+assert health.get('ready') and health.get('device') in {'cpu','cuda'}
+if os.environ.get('INTENT_PREVIEW_PROVIDER') == 'laya':
+    preview=os.environ['LAYA_PREVIEW_URL'].rstrip('/')
+    laya=json.load(urllib.request.urlopen(preview+'/health',timeout=20))
+    assert laya.get('ready')
+    assert laya.get('checkpoint_sha256') == os.environ['LAYA_CHECKPOINT_SHA256']
+print('MODEL_ENDPOINTS_OK')'''
+        require(run(["docker", "exec", PROJECT + "-backend-1", "python", "-c", probe]).strip() == "MODEL_ENDPOINTS_OK",
+                "Ollama/Whisper/Laya 모델 연결 확인에 실패했습니다.")
+        print("검증 완료: HTTPS, 리다이렉트, 프런트엔드 파일, DB 및 모델 연결.", flush=True)
 
     def save_package(self, archive, manifest):
         self.packages.mkdir(mode=0o700, exist_ok=True)

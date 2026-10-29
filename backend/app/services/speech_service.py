@@ -69,6 +69,8 @@ def transcribe(payload):
             raise
         except (httpx.RequestError, ValueError):
             pass
+    if os.getenv('STT_LOCAL_FALLBACK', 'true').lower() not in {'true', '1', 'yes'}:
+        raise SpeechError('음성 모델 PC에 연결할 수 없습니다. PC의 AI 서비스 연결을 확인해 주세요.', 503)
     if not _lock.acquire(blocking=False):
         raise SpeechError('다른 음성을 변환 중입니다. 잠시 후 다시 시도해 주세요.', 503)
     started = perf_counter()

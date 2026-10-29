@@ -4,7 +4,15 @@
 배포하지 않습니다. 실제 배포 commit과 설정은 서버에서 따로 확인하세요.
 비밀번호·API 키·SSH 개인키·DB 백업은 저장소/소스 ZIP에 넣지 않습니다.
 
-## 1. VM 앱 + GPU Ollama (현재 분리 구성)
+## 현재 구성: VM 앱 + PC의 세 모델
+
+2026-10-29부터 로컬·VM의 모델 요청은 사용자 PC의 Gemma4 E2B, Whisper small,
+Laya ONNX로 전달합니다. VM은 웹·API·DB·날씨 배치를 유지하고 추론 모델을 실행하지 않습니다.
+PC가 켜져 있고 Windows 로그인·Docker·Ollama·SSH 연결이 유지되어야 AI 기능을 사용할 수 있습니다.
+설치·기동·장애 확인은 [PC AI 운영 안내](pc_ai/README.md)를 참고하세요.
+VM 배포에는 아래 기존 고정 `runtime/compose.json`과 `vm_update.py`를 계속 사용합니다.
+
+## 1. 이전 구성: VM 앱 + GPU Ollama
 
 VM에서 frontend/backend/database/weather를 실행하고 기존 GPU 호스트 Ollama와 별도 GPU Whisper 서비스를 사용합니다.
 신규 구성 템플릿은 루트 docker-compose.yml + deployment/compose.vm.override.yml입니다.

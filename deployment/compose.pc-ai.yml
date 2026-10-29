@@ -1,0 +1,65 @@
+# 이 PC의 모델 세 개를 로컬 웹과 VM 웹이 함께 사용한다.
+services:
+  backend:
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: gemma4:e2b-it-qat
+      OLLAMA_KEEP_ALIVE: "-1m"
+      STT_REMOTE_URL: http://pc-whisper:18081
+      STT_LOCAL_FALLBACK: "false"
+      INTENT_PREVIEW_PROVIDER: laya
+      LAYA_PREVIEW_ENABLED: "true"
+      LAYA_PREVIEW_URL: http://pc-laya:18761
+      LAYA_CHECKPOINT_SHA256: b3522f4d79391a93d9272bccdd3a8aadec601b11e9a2be3ea248eb58dd49a9da
+      JEV_PREVIEW_ENABLED: "false"
+  pc-whisper:
+    build:
+      context: ./backend
+    command: [python, -m, uvicorn, app.services.gpu_stt_server:app, --host, 0.0.0.0, --port, "18081"]
+    environment:
+      STT_MODEL: small
+      STT_DEVICE: cpu
+      STT_CPU_THREADS: "2"
+      STT_MODEL_DIR: /models/stt
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - stt_models:/models/stt
+    ports: ["127.0.0.1:18081:18081"]
+    networks: [public]
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 1600m
+    memswap_limit: 1600m
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:18081/health'))['ready']"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 120s
+  pc-laya:
+    image: safealley-laya-onnx-cpu:b3522f4d7939-v1
+    command: [python, server.py, --bind, 0.0.0.0, --threads, "2", --prefilter]
+    volumes:
+      - ${LAYA_RUNTIME_DIR:?검증한 Laya 실행 폴더를 지정하세요}/laya-fp32.onnx:/models/laya-fp32.onnx:ro
+      - ${LAYA_RUNTIME_DIR}/onnx-model.json:/models/onnx-model.json:ro
+      - ${LAYA_RUNTIME_DIR}/checkpoint-meta:/models/checkpoint:ro
+    ports: ["127.0.0.1:18761:18761"]
+    networks: [public]
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 3g
+    memswap_limit: 3g
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:18761/health'))['ready']"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 180s

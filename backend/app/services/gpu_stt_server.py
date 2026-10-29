@@ -1,4 +1,4 @@
-"""Private GPU Whisper endpoint; bind only to loopback behind an SSH tunnel."""
+"""비공개 Whisper 실행기. 호스트에서는 loopback/SSH로만 접근한다."""
 import os
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -17,8 +17,12 @@ _lock = Lock()
 async def lifespan(_app):
     global _model
     from faster_whisper import WhisperModel
-    _model = WhisperModel(os.getenv('STT_MODEL', 'small'), device='cuda',
-                          compute_type='int8_float16', num_workers=1,
+    device = os.getenv('STT_DEVICE', 'cuda')
+    if device not in {'cpu', 'cuda'}:
+        raise ValueError('STT_DEVICE는 cpu 또는 cuda여야 합니다.')
+    _model = WhisperModel(os.getenv('STT_MODEL', 'small'), device=device,
+                          compute_type='int8_float16' if device == 'cuda' else 'int8',
+                          cpu_threads=int(os.getenv('STT_CPU_THREADS', '2')), num_workers=1,
                           download_root=os.getenv('STT_MODEL_DIR'))
     yield
     _model = None
@@ -31,7 +35,7 @@ app = FastAPI(lifespan=lifespan)
 def health():
     if _model is None:
         raise HTTPException(503, 'Speech model is not ready')
-    return {'ready': True, 'device': 'cuda'}
+    return {'ready': True, 'device': os.getenv('STT_DEVICE', 'cuda')}
 
 
 def _transcribe(payload):
@@ -48,13 +52,13 @@ def _transcribe(payload):
         if len(text) > 500:
             raise SpeechError('인식된 질문이 너무 깁니다. 짧게 다시 녹음해 주세요.')
         return {'text': text, 'language': 'ko', 'model': os.getenv('STT_MODEL', 'small'),
-                'device': 'cuda',
+                'device': os.getenv('STT_DEVICE', 'cuda'),
                 'duration_s': round(len(audio) / 16000, 2),
                 'latency_ms': round((perf_counter() - started) * 1000, 1)}
     except SpeechError:
         raise
     except Exception as exc:
-        raise SpeechError('GPU 음성 모델을 실행하지 못했습니다.', 503) from exc
+        raise SpeechError('음성 모델을 실행하지 못했습니다.', 503) from exc
     finally:
         _lock.release()
 

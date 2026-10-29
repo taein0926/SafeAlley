@@ -30,6 +30,7 @@ def test_cached_intents_are_isolated_and_queries_are_not_conflated(monkeypatch):
     local_llm_service.parse_route_intent("다른 길")
     assert len(calls) == 2
     assert calls[0]["keep_alive"] == "10m"
+    assert calls[0]["options"] == {"temperature": 0, "num_ctx": 4096, "num_predict": 512}
 
 
 def test_intent_cache_expires_and_respects_model_and_disable(monkeypatch):

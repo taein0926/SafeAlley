@@ -672,7 +672,7 @@ def _parse_route_intent_uncached(query: str) -> ParsedRouteIntent:
         "think": False,
         "keep_alive": settings.ollama_keep_alive,
         "format": ParsedRouteIntent.model_json_schema(),
-        "options": {"temperature": 0},
+        "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 512},
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": query},

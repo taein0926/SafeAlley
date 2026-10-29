@@ -8,7 +8,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import vm_update as updater
 
@@ -39,6 +39,36 @@ def make_archive(folder, payload=None, extra=None):
             tar.addfile(info, io.BytesIO(data) if data is not None else None)
     Path(str(archive) + ".sha256").write_text(updater.sha(archive) + "\n")
     return archive, manifest
+
+
+class ModelProbeTests(unittest.TestCase):
+    def probe(self, device='cpu', checkpoint='expected', ready=True):
+        connection = MagicMock()
+        connection.getresponse.return_value.status = 302
+        connection.getresponse.return_value.getheader.return_value = 'https://ltmetric-pms.synology.me:21802/'
+        env = {'OLLAMA_BASE_URL': 'http://gemma', 'OLLAMA_MODEL': 'gemma4:e2b-it-qat',
+               'STT_REMOTE_URL': 'http://whisper', 'INTENT_PREVIEW_PROVIDER': 'laya',
+               'LAYA_PREVIEW_URL': 'http://laya', 'LAYA_CHECKPOINT_SHA256': 'expected'}
+        responses = {'http://gemma/api/tags': {'models': [{'name': env['OLLAMA_MODEL']}]},
+                     'http://whisper/health': {'ready': ready, 'device': device},
+                     'http://laya/health': {'ready': True, 'checkpoint_sha256': checkpoint}}
+        def run(args):
+            if args[0] == 'curl':
+                return '<script src="/assets/app.js"></script>' if args[-1].endswith('/') else 'ok'
+            with patch.dict(os.environ, env, clear=True), patch('urllib.request.urlopen',
+                    side_effect=lambda url, **kw: io.StringIO(json.dumps(responses[url]))):
+                exec(args[-1], {})
+            return 'MODEL_ENDPOINTS_OK'
+        with patch.object(updater.http.client, 'HTTPConnection', return_value=connection), patch.object(updater, 'run', side_effect=run):
+            updater.VM('/unused').probe_connections()
+
+    def test_cpu_and_cuda_workers_are_supported(self):
+        for device in ('cpu', 'cuda'):
+            with self.subTest(device=device): self.probe(device=device)
+
+    def test_unready_or_unexpected_model_is_rejected(self):
+        for options in ({'ready': False}, {'device': 'unknown'}, {'checkpoint': 'wrong'}):
+            with self.subTest(options=options), self.assertRaises(AssertionError): self.probe(**options)
 
 
 class ArchiveTests(unittest.TestCase):
@@ -174,6 +204,9 @@ class UpdateTests(unittest.TestCase):
         images = patch.object(updater.VM, "images", return_value=[])
         images.start()
         self.addCleanup(images.stop)
+        disk = patch.object(updater.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 20 * 1024 ** 3})())
+        disk.start()
+        self.addCleanup(disk.stop)
 
     def setup_vm(self, root):
         vm = updater.VM(root)
