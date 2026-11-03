@@ -22,6 +22,7 @@ VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/RE
 - [검색 진행·후보/조건 카드](route-progress-floating-cards.md)
 - [테스트](testing.md), [배포](../deployment/README.md), [배포 점검](deployment-checklist.md)
 - [PC 모델 실행·VM 연결](../deployment/pc_ai/README.md), [공개 저장소 민감정보 점검](public-repository-security.md)
+- [2026-11-03 VM 배포·DB/설정 보존 검증 기록](vm-deployment-2026-11-03.md)
 
 ## 데이터·해석·운영
 

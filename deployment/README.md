@@ -15,14 +15,19 @@ VM 배포에는 아래 기존 고정 `runtime/compose.json`과 `vm_update.py`를
 ## VM 웹 접속·관리자 SSH
 
 웹 주소는 `https://ltmetric-pms.synology.me:21802/`입니다.
-관리자 SSH는 아래 계정·포트를 사용합니다. 기존 승인된 개인키와 검증한 서버 지문이 필요합니다.
+관리자 SSH는 아래 계정·포트를 사용합니다. 서버에서 허용한 관리자 비밀번호 또는 등록된 관리자 키와 검증한 서버 지문이 필요합니다.
 비밀번호·개인키·known_hosts·실제 연결 설정은 저장소에 넣지 않습니다.
 
 ```powershell
 ssh -o StrictHostKeyChecking=yes -p 22203 ltmetric@ltmetric-pms.synology.me
 ```
 
-관리자 SSH는 셸 작업용이며 PC AI 터널의 제한된 전용 키와 별개입니다.
+위 명령에서 비밀번호를 요청하면 터미널에 직접 입력합니다. 입력 문자는 표시되지 않습니다.
+비밀번호를 명령 인수·스크립트·문서·로그에 저장하지 않습니다.
+`BatchMode=yes`로 실행한 키 전용 자동 접속은 비밀번호를 요청하지 않으므로 일반 SSH 접속과 구분합니다.
+
+관리자 SSH는 셸·파일 전송 작업용이며 PC AI 터널의 제한된 전용 키와 별개입니다.
+PC AI 전용 키는 서버에서 셸 실행을 차단하므로 이 키로 배포 명령이나 SCP를 실행하지 않습니다.
 PC AI 터널은 [PC AI 안내](pc_ai/README.md)의 `start.ps1 -ConnectVm -TunnelOnly`로 연결합니다.
 
 ## 현재 요청 경로와 설정
@@ -72,6 +77,15 @@ Laya 실패 시 유료 Jev 자동 fallback은 없습니다.
 VM Docker CLI가 기존 Buildx/Compose를 못 찾으면 데몬 재시작 전에 client plugin 경로를 확인합니다.
 현재 구성의 `cliPluginsExtraDirs`는 `/usr/libexec/docker/cli-plugins`를 가리킵니다.
 
+### 2026-11-03 VM 배포 확인
+
+당시 전달본 게시 커밋 `6412bdf`의 압축파일을 적용해 VM 실행 소스가 `f9b09e2`에서
+`e2f16a5`로 바뀌었습니다. DB 스키마 `0016`, DB 컨테이너·볼륨·공간 데이터 건수,
+비공개 파일 8개·환경변수·이미지 외 실행 설정이 배포 전과 일치했습니다.
+실제 Gemma 경로 검색·Laya 분석과 날씨·모델 연결을 확인했습니다.
+[상세 기록과 검증 범위](../docs/vm-deployment-2026-11-03.md)를 따릅니다.
+이후 문서 수정·압축본 갱신은 이 배포 기록과 별개이며 실제 버전은 runtime/state.json으로 확인합니다.
+
 ### 현재 VM의 한 명령 업데이트
 
 ```text
@@ -113,7 +127,7 @@ python3 ~/safealley-deploy/runtime/update.py status
 
 도구는 체크섬·manifest·파일 경로 검증 → DB 백업·검증 → 변경된 backend/frontend/weather
 이미지 빌드 → Nginx TLS 설정 검사 → 앱 컨테이너 교체 → HTTPS/API/정적 파일·PC 모델 연결을 확인합니다.
-database 컨테이너·기존 데이터 볼륨·외부 포트·터널·PC 모델는 일반 업데이트에서 교체하지 않습니다.
+database 컨테이너·기존 데이터 볼륨·외부 포트·터널·PC 모델은 일반 업데이트에서 교체하지 않습니다.
 같은 커밋은 검증과 이미지 정리만 하고 빌드·교체하지 않습니다.
 `--rebuild`는 동일 버전의 재빌드·교체를 명시적으로 요청합니다.
 
@@ -227,7 +241,7 @@ models는 모델 준비 단계이며 서비스 시작만으로 모델이 자동 
 ## 전달·백업
 
 소스 전달본은 `deployment/package.py`가 지정한 출력 경로에 만듭니다.
-GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 교체 가능한 최신 전달본이며,
+GitHub·GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 교체 가능한 최신 전달본이며,
 `output/deployment/`의 커밋명별 파일은 로컬 보관용입니다. 실제 서버 적용 커밋은
 현재 VM의 `runtime/state.json`과 보관한 압축본 내부 `release.json`으로 확인합니다.
 소스 tar.gz, 비공개 DB dump+체크섬, 서버 비공개 .env를 구분합니다.
@@ -237,7 +251,7 @@ tar.gz는 Docker 이미지·공간 DB·원본·모델·비밀값을 포함한 �
 # uv가 설치된 Windows 개발 PC에서 필요한 경우만. 기존 대상은 덮어쓰지 않습니다.
 $releaseCommit = (git rev-parse --short HEAD).Trim()
 uv run --python 3.12 --no-project python deployment/package.py --ref HEAD --output "output/deployment/SafeAlley-main-$releaseCommit.tar.gz"
-# 검증 후 GitLab 전달본을 교체할 때는 압축본과 .sha256을 함께 갱신합니다.
+# 검증 후 GitHub·GitLab 전달본을 교체할 때는 압축본과 .sha256을 함께 갱신합니다.
 uv run --python 3.12 --no-project python deployment/manage.py backup --source-local --exclude-feedback --file output/private-transfer/safealley.dump
 ```
 
@@ -265,7 +279,8 @@ frontend 이미지 빌드는 공개 정적 파일의 권한을 디렉터리 755/
 [전체 테스트](../docs/testing.md), [배포 점검](../docs/deployment-checklist.md)을 따릅니다.
 소스 테스트 통과는 실제 PC 모델/음성/포워딩/HTTPS 검증의 대체가 아닙니다.
 실제 요청 후 PC의 ollama ps, 대상 DB·migration·정밀 시설 좌표·타일·날씨를 확인합니다.
-proxy는 스트림 buffering off, query 읽기 timeout 660초, 음성 8MB/180초를 유지합니다.
+proxy는 스트림 buffering off, query 읽기 timeout 660초, 음성 업로드 8MB·음성 proxy 읽기 timeout 180초를 유지합니다.
+녹음 길이는 backend 기준 30초이며 브라우저는 29초에 자동 중지합니다. 180초는 녹음 길이가 아닙니다.
 마이크는 localhost 개발 또는 HTTPS에서 사용합니다.
 
 정지/백업/이전 이미지 보관과 복원 연습을 수행합니다. down -v로 볼륨을 지우지 않습니다.

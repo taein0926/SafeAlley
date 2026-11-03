@@ -31,6 +31,12 @@ JEV_PREVIEW_ENABLED=true와 서버 TYPESAFE_API_KEY가 모두 필요하며 기�
 상태 API는 enabled/configured/available만 반환하고 키를 노출하지 않습니다.
 이는 유료 외부 서비스이고 Ollama 문장 검색과는 별개입니다.
 
+처음 상태를 확인할 때 모델이 미준비이거나 상태 요청이 실패하면 5초 뒤 재확인합니다.
+준비 상태로 바뀌면 현재 입력이 비어 있지 않을 때 같은 미리보기 흐름으로 분석을 재개합니다.
+동시에 진행되는 상태 요청은 하나로 합치고 준비된 뒤에는 재시도 타이머를 중단합니다.
+분석 결과·오류 뒤에도 상태를 확인하며, 화면이 해제되면 타이머와 요청을 정리하고 늦은 응답을 무시합니다.
+상태 확인 요청은 추가 유료 Jev 분석 호출이 아닙니다.
+
 카드는 distance/streetlight/cctv/safety / stairs/crossing/bridge/time 순서입니다.
 analyzing/applied/not_applied, direction/confidence/period/judgment를 보존합니다.
 Jev 응답 뒤에는 8개 고정 카드 공통 원문 검증을 수행합니다. Laya는 일부 공통 검증과 자체 v6 보정을 조합하므로 두 provider의 성능이 동일하다는 뜻은 아닙니다. 원문에 없는 항목은 Jev가

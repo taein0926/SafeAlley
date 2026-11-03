@@ -16,7 +16,8 @@ Laya 체크포인트 SHA-256은 `b3522f4d79391a93d9272bccdd3a8aadec601b11e9a2be3
 ## PC 준비 및 기동
 
 Docker Desktop, Ollama, Windows OpenSSH가 필요하다. Ollama에는 위 Gemma 모델이 있어야 한다.
-`ollama pull gemma4:e2b-it-qat`로 모델을 준비한다. 이미 Ollama가 실행 중이면 다시 기동하지 않는다.
+Ollama 앱을 실행한 뒤 `ollama pull gemma4:e2b-it-qat`로 모델을 준비한다.
+직접 `ollama serve`를 사용한다면 별도 PowerShell 창에서 실행해 유지한다. 이미 실행 중이면 다시 기동하지 않는다.
 검증한 `safealley-laya-onnx-cpu:b3522f4d7939-v1` 이미지와 Laya 실행 폴더,
 기존 `safealley_stt_models` 볼륨의 Whisper 캐시를 보존한다.
 Laya 실행 폴더에는 `laya-fp32.onnx`, `onnx-model.json`, `checkpoint-meta/`가 필요하다.
@@ -40,6 +41,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.p
 ```
 
 기본 실행은 로컬 서비스와 모델만 준비하며 VM에는 연결하지 않는다.
+실제 기동 대상은 database·backend·frontend·pc-whisper·pc-laya다. 로컬 날씨 배치도 필요하면
+같은 Compose 조합으로 `docker compose -f docker-compose.yml -f deployment/compose.pc-ai.yml up -d weather`를 실행한다.
 사용자가 VM 연결을 요청했을 때만 다음 명령을 실행한다. 로그인 자동 연결은 등록하지 않는다.
 
 ```powershell
@@ -76,6 +79,8 @@ VM backend의 Whisper 모델 볼륨 마운트와 기존 Laya 실행기는 전환
 다른 서비스가 사용하는 `gpu-ollama-tunnel`과 DB·지도·날씨 데이터는 보존한다.
 VM 앱 배포는 기존 `safealley-deploy/runtime/update.py` 절차를 사용하며 DB 백업과 롤백을 유지한다.
 웹 주소·관리자 SSH 접속·배포 파일 업로드 명령은 [VM 배포 안내](../README.md)를 따른다.
+관리자 접속은 서버가 허용한 비밀번호 또는 별도 관리자 키를 사용한다. 위 PC AI 전용 키는
+터널만 허용하므로 셸 명령·SCP용으로 사용하지 않는다. 비밀번호는 터미널에 직접 입력한다.
 
 ## 확인 방법
 
@@ -84,3 +89,6 @@ PC의 `127.0.0.1:18081/health`, `127.0.0.1:18761/health`가 준비 상태여야 
 VM backend 안에서 세 모델 주소의 `/api/tags` 또는 `/health`가 응답해야 한다.
 웹에서 음성 입력 후 텍스트, 입력 중 조건 카드, 최종 자연어 경로를 각각 확인한다.
 `STT_LOCAL_FALLBACK=false`는 PC가 끊어졌을 때 VM CPU에 모델을 내려받거나 실행하지 않도록 한다.
+PC 모델은 ready인데 VM 상태가 unavailable이면 연결 관리자 실행 여부와 터널 로그부터 확인한다.
+실행 중인 관리자는 끊김 후 재시도하지만 종료된 관리자가 자동으로 다시 실행되지는 않는다.
+2026-11-03 배포에서 확인한 연결 복구·보존·실제 API 결과는 [VM 배포 기록](../../docs/vm-deployment-2026-11-03.md)에 남겼다.

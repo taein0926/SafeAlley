@@ -88,13 +88,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.p
 | 지도 | VITE_OSM_TILE_URL / VITE_BUILDING_SOURCE | OSM 타일 / molit-gis-building |
 
 현재 PC AI 구성의 Ollama 모델 준비:
+Ollama 앱이 실행 중이어야 합니다. 직접 서버를 실행한다면 별도 PowerShell 창에서
+`ollama serve`를 실행해 유지하고, 아래 명령은 원래 창에서 실행합니다.
 
 ```powershell
 ollama --version
 ollama pull gemma4:e2b-it-qat
-ollama serve # 이미 실행 중이면 새로 실행하지 않습니다.
-Invoke-RestMethod http://localhost:11434/api/tags
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1
+Invoke-RestMethod http://localhost:11434/api/tags
 ```
 
 일반 `.env.example`과 기본 Compose의 `gemma4:26b`는 기존 설치용 기본값입니다.
@@ -157,7 +158,9 @@ output/          로컬 검증 산출물(Git 제외)
 
 ## 문서와 검증
 
-배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 생성합니다. GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 최신 전달본으로 교체하며, `output/deployment/`는 로컬 보관용입니다.
+배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 생성합니다. GitHub·GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 최신 전달본으로 교체하며, `output/deployment/`는 로컬 보관용입니다.
+2026-11-03 VM 배포에서 실행 소스 `e2f16a5`의 적용과 DB·비공개 설정 보존을 확인했습니다.
+검증 항목과 범위는 [VM 배포 기록](docs/vm-deployment-2026-11-03.md)을 참고하세요.
 현재 VM 접속 주소는 `https://ltmetric-pms.synology.me:21802/`이며 HTTP 요청은 HTTPS로 이동합니다.
 PC 모델을 VM에 연결하려면 로컬 모델 준비 후 다음 명령을 별도 PowerShell 창에서 유지합니다.
 
@@ -172,6 +175,7 @@ SSH 개인키·검증된 서버 지문·비공개 `connection.json`이 필요합
 `python3 ~/safealley-deploy/runtime/update.py status`로 현재 소스 커밋과 연결 상태를 확인합니다.
 새 tar.gz와 체크섬을 업로드한 뒤 같은 도구의 `update --archive ...` 한 명령으로 갱신합니다.
 실제 서버 적용 커밋은 `runtime/state.json`, 압축본 소스 커밋은 내부 `release.json`으로 확인합니다.
+이후 문서 커밋이나 새 전달본 게시가 기존 VM 이미지의 재배포를 뜻하지는 않습니다.
 문서 수정은 새 커밋과 새 묶음을 만들기 전까지 기존 전달본에 반영되지 않습니다.
 실제 .env·DB·모델은 포함하지 않으며, 아카이브 내부 release.json으로 소스 커밋과 파일 체크섬을 확인합니다.
 기존 VM 업데이트에서는 데이터·비공개 설정·PC 모델을 보존합니다. [배포 절차](deployment/README.md)

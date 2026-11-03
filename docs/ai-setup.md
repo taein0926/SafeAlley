@@ -6,11 +6,12 @@ Laya ONNX FP32(CPU)를 함께 사용합니다. FastAPI의 장소·경로 처리�
 
 ## PC 준비와 로컬 실행
 
-Docker Desktop, Ollama, Windows OpenSSH를 준비합니다. Gemma 모델을 준비합니다.
+Docker Desktop, Ollama, Windows OpenSSH를 준비합니다. Ollama 앱을 실행한 뒤 Gemma 모델을 준비합니다.
+직접 서버를 실행한다면 별도 PowerShell 창에서 `ollama serve`를 실행해 유지합니다.
+아래 명령은 원래 창에서 실행하며 이미 실행 중인 Ollama를 다시 기동하지 않습니다.
 
 ```powershell
 ollama pull gemma4:e2b-it-qat
-ollama serve # 이미 실행 중이면 생략
 Invoke-RestMethod http://127.0.0.1:11434/api/tags
 ```
 
