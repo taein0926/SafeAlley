@@ -17,7 +17,7 @@ docker compose exec backend python -m evals.evaluate_intent --set holdout --quie
 ```
 
 현재 VM은 소스를 상시 보관하지 않지만 평가 코드는 backend 이미지 안에 있다.
-운영 GPU 부하를 허용받은 뒤에만 다음 고정 설정 명령을 사용한다. 배포 status의 모델 목록
+운영 PC의 Gemma GPU 부하를 허용받은 뒤에만 다음 고정 설정 명령을 사용한다. 배포 status의 모델 목록
 확인은 이 live 평가를 실행했다는 의미가 아니다.
 
 ```bash

@@ -23,9 +23,9 @@
 브라우저 ── 직접 타일 요청 ── OSM Tile Server
    └─ React / CesiumJS (Nginx)
         └─ /api/* → FastAPI → PostgreSQL / PostGIS
-                       ├─ Ollama: 문장 해석(GPU 서버 터널)
-                       ├─ Whisper: 음성 변환(GPU 서버 우선·backend CPU 대체)
-                       ├─ GPU Laya: 입력 중 조건 해석 (Jev는 선택·복구용)
+                       ├─ PC Ollama: Gemma4 E2B 문장 해석(GPU)
+                       ├─ PC Whisper small: 음성 변환(CPU INT8)
+                       ├─ PC Laya ONNX: 입력 중 조건 해석(CPU)
                        └─ Nominatim: 장소 검색 fallback
 
 data_pipeline: 외부 원본 → 수집 → 정제 → 좌표 변환 → PostGIS
@@ -43,7 +43,7 @@ Docker Desktop(Windows는 Linux 컨테이너) 또는 Docker Engine과 Compose v2
 ```powershell
 # 최초 한 번만 복사. 기존 .env는 덮어쓰지 마세요.
 Copy-Item .env.example .env
-# .env의 DB 비밀번호와 필요한 연동 설정을 편집한 뒤 실행
+# .env의 DB 비밀번호와 필요한 연동 설정을 편집한 뒤 기본 웹·API·DB 실행
 docker compose up -d --build
 ```
 
@@ -55,6 +55,16 @@ docker compose up -d --build
 기본 컨테이너는 frontend/backend/database/weather입니다.
 pipeline은 tools 프로필의 일회성 명령이며 웹 서버가 아닙니다.
 Backend 시작 시 Alembic migration을 적용하고 현재 저장소 head는 0016입니다.
+
+현재 PC 모델까지 사용하려면 [PC AI 준비 절차](deployment/pc_ai/README.md)에 따라
+Gemma 모델·Whisper 캐시·Laya 이미지/실행 폴더와 `.env`를 먼저 준비하고 실행합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1
+```
+
+이 명령은 로컬 서비스와 모델만 준비합니다. VM 연결은 별도로 명시해야 합니다.
+기본 Compose만 실행하면 현재 PC AI 구성이 자동으로 적용되지는 않습니다.
 
 **Git clone과 컨테이너 시작만으로 기존 공간 데이터가 복원되지는 않습니다.**
 도로·건물·시설·장소, raw/processed 원본, 히트맵 타일은 별도 적재/승인된 백업 이관이 필요합니다.
@@ -69,26 +79,27 @@ Backend 시작 시 Alembic migration을 적용하고 현재 저장소 head는 00
 | 기능 | 설정 | 기본/주의 |
 | --- | --- | --- |
 | DB | POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD | 기존 볼륨 계정은 .env 변경만으로 바뀌지 않음 |
-| 문장 해석 | OLLAMA_BASE_URL / OLLAMA_MODEL | 로컬 host.docker.internal:11434 / gemma4:26b, API 키 불필요 |
-| 요구사항 미리보기 | INTENT_PREVIEW_PROVIDER / LAYA_PREVIEW_ENABLED / LAYA_PREVIEW_URL | 현재 로컬·VM은 GPU Laya, 최종 Gemma 검색과 별개 |
+| 문장 해석 | OLLAMA_BASE_URL / OLLAMA_MODEL | PC AI override: 로컬 host.docker.internal:11434 / gemma4:e2b-it-qat, API 키 불필요 |
+| 요구사항 미리보기 | INTENT_PREVIEW_PROVIDER / LAYA_PREVIEW_ENABLED / LAYA_PREVIEW_URL | PC Laya ONNX CPU, 최종 Gemma 검색과 별개 |
 | Jev 선택·복구 | JEV_PREVIEW_ENABLED / TYPESAFE_API_KEY | 템플릿 기본 비활성, 별도 유료 API; Laya 실패 시 자동 전환하지 않음 |
 | 날씨 | KMA_SERVICE_KEY / KASI_SERVICE_KEY | 서비스별 공공데이터포털 승인 키 |
 | 장소 fallback | NOMINATIM_BASE_URL / NOMINATIM_USER_AGENT | 지역 제한·캐시·요청 간격 적용 |
-| 음성 | STT_MODEL / STT_REMOTE_URL | `small`; 원격 주소가 있으면 GPU 우선, 연결 실패 시 CPU INT8·stt_models 볼륨 캐시 |
+| 음성 | STT_MODEL / STT_REMOTE_URL / STT_LOCAL_FALLBACK | PC Whisper `small` CPU INT8; 현재 구성은 false로 backend 대체 실행을 막음 |
 | 지도 | VITE_OSM_TILE_URL / VITE_BUILDING_SOURCE | OSM 타일 / molit-gis-building |
 
-Windows 호스트 Ollama를 사용하는 **기본 로컬 설정**(모델을 실행할 충분한 GPU 자원이 필요합니다):
+현재 PC AI 구성의 Ollama 모델 준비:
 
 ```powershell
 ollama --version
-ollama pull gemma4:26b
+ollama pull gemma4:e2b-it-qat
 ollama serve # 이미 실행 중이면 새로 실행하지 않습니다.
 Invoke-RestMethod http://localhost:11434/api/tags
-docker compose up -d --force-recreate backend
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1
 ```
 
-다른 모델/서버를 사용하면 .env를 실제 설치에 맞게 설정합니다.
-VM/GPU 분리 구성의 실제 모델·터널 주소는 로컬 기본값과 다를 수 있습니다.
+일반 `.env.example`과 기본 Compose의 `gemma4:26b`는 기존 설치용 기본값입니다.
+현재 구성은 `deployment/compose.pc-ai.yml`이 E2B 모델과 PC Whisper·Laya 설정을 덮어씁니다.
+VM에서는 고정 runtime과 비공개 환경파일을 유지하며 PC 연결 주소를 사용합니다.
 적용된 서버 설정과 템플릿의 차이는 [배포 안내](deployment/README.md)에서 확인하세요.
 환경변수 변경은 컨테이너 재생성, VITE_* 변경은 frontend 재빌드가 필요합니다.
 
@@ -148,6 +159,14 @@ output/          로컬 검증 산출물(Git 제외)
 
 배포 소스 전달본은 `deployment/package.py`로 커밋을 고정해 생성합니다. GitLab 루트의 `SafeAlley-deploy.tar.gz`와 `.sha256`은 최신 전달본으로 교체하며, `output/deployment/`는 로컬 보관용입니다.
 현재 VM 접속 주소는 `https://ltmetric-pms.synology.me:21802/`이며 HTTP 요청은 HTTPS로 이동합니다.
+PC 모델을 VM에 연결하려면 로컬 모델 준비 후 다음 명령을 별도 PowerShell 창에서 유지합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1 -ConnectVm -TunnelOnly
+```
+
+SSH 개인키·검증된 서버 지문·비공개 `connection.json`이 필요합니다.
+관리자 SSH 접속과 업데이트 명령은 [배포 안내](deployment/README.md)를 따릅니다.
 자체 서명 인증서의 브라우저 경고·마이크 권한은 [배포 안내](deployment/README.md)를 확인하세요.
 서버는 고정 `runtime/compose.json`과 Docker 이미지로 실행하며, 소스는 빌드 후 임시 폴더에서 제거합니다.
 `python3 ~/safealley-deploy/runtime/update.py status`로 현재 소스 커밋과 연결 상태를 확인합니다.
@@ -155,7 +174,7 @@ output/          로컬 검증 산출물(Git 제외)
 실제 서버 적용 커밋은 `runtime/state.json`, 압축본 소스 커밋은 내부 `release.json`으로 확인합니다.
 문서 수정은 새 커밋과 새 묶음을 만들기 전까지 기존 전달본에 반영되지 않습니다.
 실제 .env·DB·모델은 포함하지 않으며, 아카이브 내부 release.json으로 소스 커밋과 파일 체크섬을 확인합니다.
-기존 VM 업데이트에서는 데이터·비공개 설정·GPU 모델을 보존합니다. [배포 절차](deployment/README.md)
+기존 VM 업데이트에서는 데이터·비공개 설정·PC 모델을 보존합니다. [배포 절차](deployment/README.md)
 
 - [테스트 실행](docs/testing.md)
 - [아키텍처](docs/architecture.md) · [DB](docs/database-schema.md) · [라우팅](docs/routing.md)
@@ -164,6 +183,7 @@ output/          로컬 검증 산출물(Git 제외)
 - [검색 진행·후보 카드](docs/route-progress-floating-cards.md)
 - [배포](deployment/README.md) · [점검](docs/deployment-checklist.md)
 - [문장 해석](docs/natural-language.md) · [AI 연결](docs/ai-setup.md) · [전체 문서](docs/README.md)
+- [공개 저장소 민감정보 점검](docs/public-repository-security.md)
 
 Mock/합성 테스트는 실제 모델 정확도·시설 운영·현장 안전의 live 검증이 아닙니다.
 수정 시 [AGENTS.md](AGENTS.md)를 따릅니다.

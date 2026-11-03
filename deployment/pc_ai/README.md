@@ -1,7 +1,7 @@
 # PC의 Gemma·Whisper·Laya를 함께 사용하는 구성
 
 로컬 웹과 VM 웹은 같은 PC 모델을 사용한다. FastAPI의 경로 계산과 DB 접근은 각 서버에 남는다.
-외부 GPU 서버 `211.58.157.60`은 이 구성에서 사용하지 않는다.
+이전 외부 GPU 서버는 이 구성에서 사용하지 않는다.
 
 | 기능 | PC 실행 위치 | VM backend의 연결 주소 |
 |---|---|---|
@@ -16,6 +16,7 @@ Laya 체크포인트 SHA-256은 `b3522f4d79391a93d9272bccdd3a8aadec601b11e9a2be3
 ## PC 준비 및 기동
 
 Docker Desktop, Ollama, Windows OpenSSH가 필요하다. Ollama에는 위 Gemma 모델이 있어야 한다.
+`ollama pull gemma4:e2b-it-qat`로 모델을 준비한다. 이미 Ollama가 실행 중이면 다시 기동하지 않는다.
 검증한 `safealley-laya-onnx-cpu:b3522f4d7939-v1` 이미지와 Laya 실행 폴더,
 기존 `safealley_stt_models` 볼륨의 Whisper 캐시를 보존한다.
 Laya 실행 폴더에는 `laya-fp32.onnx`, `onnx-model.json`, `checkpoint-meta/`가 필요하다.
@@ -46,6 +47,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.p
 ```
 
 `-ConnectVm`은 VM 연결을 명시적으로 요청하는 옵션이고 `-TunnelOnly`는 모델 기동을 생략한다.
+먼저 기본 명령으로 모델을 준비한 뒤 별도 PowerShell 창에서 연결 명령을 실행하고 창을 유지한다.
 연결 관리자가 실행되는 동안에는 SSH 종료 시 재시도한다. 중복 연결은 mutex로 방지한다.
 PC 종료·절전·로그아웃 또는 인터넷 단절 중에는 AI 기능을 제공할 수 없다.
 노트북 절전 설정은 사용자가 운영 조건에 맞게 관리한다.
@@ -73,6 +75,7 @@ VM backend의 Whisper 모델 볼륨 마운트와 기존 Laya 실행기는 전환
 `safealley-ollama-tunnel`, `safealley-stt-tunnel`, `safealley-laya-tunnel`만 정리 대상으로 삼는다.
 다른 서비스가 사용하는 `gpu-ollama-tunnel`과 DB·지도·날씨 데이터는 보존한다.
 VM 앱 배포는 기존 `safealley-deploy/runtime/update.py` 절차를 사용하며 DB 백업과 롤백을 유지한다.
+웹 주소·관리자 SSH 접속·배포 파일 업로드 명령은 [VM 배포 안내](../README.md)를 따른다.
 
 ## 확인 방법
 

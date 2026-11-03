@@ -6,18 +6,18 @@
 ## 구성·접근
 
 - [ ] 배포 source commit과 전달본 commit을 구분하고, 미커밋 파일은 패키지에 포함되지 않음을 확인한다.
-- [ ] 현재 VM: 고정 runtime/compose.json + private/service-env, 기존 GPU Ollama/Whisper와 승인된 SSH 터널. 루트 Compose + VM override는 신규 설치 템플릿이다.
-- [ ] 단일 GPU 대안: deployment/compose.yml + manage.py. VM override와 혼용하지 않는다.
-- [ ] 모든 실행 템플릿의 기본 모델은 gemma4:26b이며 실제 대상 모델을 확인한다. 새 데이터 구축은 OSM uniform 임시값 후 시설 재분석, 건물 source=molit-gis-building을 사용한다. 기존 환경설정·운영 DB를 자동 변경하지 않는다.
-- [ ] VM backend에서 적용된 `OLLAMA_BASE_URL`의 Ollama와 실제 설정 모델에 접속할 수 있는지 확인한다. 템플릿 기본값을 실제 모델로 단정하지 않는다.
-- [ ] VM backend에서 적용된 `STT_REMOTE_URL`의 GPU Whisper에 접속할 수 있는지 확인한다. 두 SSH 터널의 재연결 상태를 따로 확인한다.
-- [ ] Laya 선택 시 VM 전용 18762→GPU loopback 18761 터널·고정 checkpoint 해시·8개 카드 응답을 확인한다. 노트북 터널에 의존하거나 Laya 포트를 외부 공개하지 않는다.
+- [ ] 현재 VM은 고정 runtime/compose.json + private/service-env이며 모델 요청은 PC로 전달한다.
+- [ ] 로컬은 루트 Compose + deployment/compose.pc-ai.yml을 사용한다. 이전 GPU 템플릿과 혼용하지 않는다.
+- [ ] 현재 모델은 gemma4:e2b-it-qat이며 Whisper small·Laya ONNX는 PC CPU에서 실행한다. 일반 템플릿의 gemma4:26b와 구분한다.
+- [ ] VM backend의 Ollama :11439, Whisper :11440, Laya :18763과 실제 모델에 연결되는지 확인한다.
+- [ ] PC 모델 준비 후 명시적으로 -ConnectVm -TunnelOnly를 실행하고 연결 관리자·지문·전용 키·재연결을 확인한다.
+- [ ] VM 전달기의 바인딩/CIDR, 고정 Laya checkpoint 해시와 실제 8개 카드 응답을 확인한다. 모델 포트를 외부 공개하지 않는다.
 - [ ] 현재 연결은 외부 HTTPS :21802 → VM :8081 → frontend :80(TLS). HTTP 자동 이동·자체 서명 인증서 경고·마이크 권한과 인증서 만료를 확인한다.
-- [ ] runtime/update.py status로 버전·HTTPS·정적 파일·DB·GPU endpoint를 확인하고 실제 검색/녹음은 별도 검증한다.
+- [ ] runtime/update.py status로 버전·HTTPS·정적 파일·DB·PC 모델 endpoint를 확인하고 실제 검색/녹음은 별도 검증한다.
 - [ ] 새 배포는 tar.gz와 .sha256을 함께 업로드하고 update --archive로 갱신한다. DB 볼륨·TLS·터널을 보존한다.
 - [ ] Compose/DB init/Nginx 변경은 고정 운영 설정과 별도 검토한다. 새 migration은 검토 후 --allow-migration으로만 승인하며, DB 변경 후 자동 앱 롤백이 불가능할 수 있음을 확인한다.
 - [ ] DB/backend/Ollama를 외부 공개하지 않는다. user_id는 로그인 기능이 아니다.
-- [ ] 키·비밀번호·SSH 개인키·백업을 Git/소스 ZIP/로그에 넣지 않는다.
+- [ ] 키·비밀번호·SSH 개인키·백업을 Git/소스 압축파일/로그에 넣지 않는다. [공개 저장소 점검](public-repository-security.md)에 따라 현재 파일·Git 이력·이전 압축본도 검사한다.
 - [ ] 브라우저 OSM와 서버 Nominatim/KMA/KASI 접속 정책을 확인한다. Jev를 선택할 때만 입력 문장의 외부 TypeSafe 전송·과금을 확인한다.
 
 ## 데이터·모델
@@ -29,11 +29,11 @@
 - [ ] demo가 운영 분석값을 덮어쓰지 않도록 설정·재분석을 확인한다.
 - [ ] 원천·가공·타일·모델은 소스와 별도 관리하고 가로등 갱신 후 히트맵을 재생성한다.
 - [ ] 실제 모델 준비/추론 후 ollama ps에서 GPU 사용을 확인한다.
-- [ ] 실제 음성 응답의 `device=cuda`와 텍스트를 확인한다. GPU 연결 실패 시 CPU INT8 대체 경로는 운영 터널을 끊지 말고 별도 테스트 환경에서 검증한다.
-- [ ] CPU 대체 모델 캐시·HTTPS 마이크·음성 크기/길이 제한과 동시 요청 제한을 확인한다.
+- [ ] 실제 음성 응답의 `model=small`, `device=cpu`와 텍스트를 확인한다. 현재는 PC CPU 처리가 정상이며 STT_LOCAL_FALLBACK=false로 VM 대체 실행을 막는다.
+- [ ] PC Whisper 모델 캐시·HTTPS 마이크·음성 크기/길이 제한과 동시 요청 제한을 확인한다.
 - [ ] Jev는 별도 승인 키로만 활성화하고 실패를 성공처럼 처리하지 않는다.
 - [ ] 현재 Laya 구성에서는 Jev를 비활성화하고 자동 유료 fallback이 없음을 확인한다. 복구 시 provider 설정 백업을 복원하고 backend만 재생성한다.
-- [ ] GPU `safealley-laya.service`, VM `safealley-laya-tunnel.service`의 자동 시작·재연결을 확인하며 기존 Ollama/Whisper를 재시작하지 않는다.
+- [ ] PC pc-laya·pc-whisper와 Ollama 상태를 확인한다. PC 종료·절전·로그아웃 시 AI 중단을 고려하고 기존 외부 GPU 서비스는 재시작하지 않는다.
 - [ ] KMA/KASI 수집/5분 재시도·DB 캐시를 확인한다.
 
 ## UI·운영

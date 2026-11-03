@@ -49,8 +49,12 @@ def check_content(name, data):
     # Defense in depth, not a guarantee against arbitrary hard-coded secrets.
     # Report filenames only. Operators must still review sources before distribution.
     patterns = (
-        rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
-        rb"(?:glpat-|ghp_|github_pat_)[A-Za-z0-9_]{20,}",
+        rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----",
+        rb"(?:glpat-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{20,}",
+        rb"(?:AKIA|ASIA)[A-Z0-9]{16}",
+        rb"AIza[0-9A-Za-z_-]{35}",
+        rb"xox[baprs]-[A-Za-z0-9-]{20,}",
+        rb"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}",
         rb"eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}",
     )
     if any(re.search(pattern, data) for pattern in patterns):

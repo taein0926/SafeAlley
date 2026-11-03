@@ -1,6 +1,6 @@
 # 문장 입력의 음성 입력
 
-마이크 버튼으로 녹음한 음성을 FastAPI가 받아 GPU 서버의 Whisper로 우선 변환한다.
+마이크 버튼으로 녹음한 음성을 FastAPI가 받아 PC의 Whisper small CPU로 변환한다.
 문장 해석·경로 탐색·실시간 조건 분석 서비스와 별개의 입력 보조 기능이다.
 
 ## 사용 흐름
@@ -19,32 +19,29 @@
 
 ## 실행 구조
 
-아래 빌드 명령은 소스가 있는 로컬 개발 환경용이다. 현재 VM의 코드 업데이트는
-고정 runtime/update.py를 사용하며 이 Compose 명령으로 운영 컨테이너를 재생성하지 않는다.
+현재 로컬 실행은 [PC AI 준비 절차](../deployment/pc_ai/README.md)를 따른다.
 
 ```powershell
-docker compose up -d --build backend frontend
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File deployment/pc_ai/start.ps1
 ```
 
-VM 배포에서는 브라우저 → VM FastAPI → 비공개 SSH 터널 → GPU 서버의
-faster-whisper 순서로 처리한다. GPU 서버의 별도 Python 서비스는 시작할 때
-`STT_MODEL=small`을 CUDA(`int8_float16`)로 올려두며 동시 추론을 한 건으로 제한한다.
-VM backend는 `STT_REMOTE_URL`로 이 서비스에 접속한다. 연결이 실패하면
-VM의 faster-whisper `small` CPU INT8·2 threads로 대체한다. 로컬 Docker는
-원격 주소가 설정되지 않았으면 CPU 경로를 사용하며, 승인된 로컬 터널을
-설정한 경우 GPU 우선 경로를 사용할 수 있다. [배포 안내](../deployment/README.md)를 따른다.
+로컬은 브라우저 → 로컬 FastAPI → `pc-whisper:18081`, VM은 브라우저 → VM FastAPI →
+전달기 `host.docker.internal:11440` → 비공개 SSH 역방향 터널 → PC Whisper 순서로 처리한다.
+PC `pc-whisper`는 `STT_MODEL=small`, CPU INT8·2스레드로 모델을 준비하고 동시 추론을 한 건으로 제한한다.
+현재 로컬·VM은 `STT_LOCAL_FALLBACK=false`이므로 PC 연결 실패 시 backend 모델로 대체하지 않고 오류를 안내한다.
+VM 앱 소스 갱신은 고정 `runtime/update.py`를 사용한다.
 
-GPU 서비스와 CPU 대체 구현은 각각
-[gpu_stt_server.py](../backend/app/services/gpu_stt_server.py),
-[speech_service.py](../backend/app/services/speech_service.py)에 있다.
-CPU 모델의 첫 다운로드·적재에는 네트워크와 디스크·RAM·CPU가 필요하다.
-`stt_models` 볼륨은 CPU 대체 모델 캐시이며 녹음 보관소가 아니다.
+PC 실행기는 [gpu_stt_server.py](../backend/app/services/gpu_stt_server.py),
+FastAPI 중계·선택형 대체 구현은 [speech_service.py](../backend/app/services/speech_service.py)에 있다.
+파일명과 달리 현재 실행기는 CPU 모드를 사용한다. 기존 GPU/CPU 대체 기능은 이전 설치 호환용이다.
+PC AI Compose는 `HF_HUB_OFFLINE=1`이며 기존 `stt_models` 볼륨의 모델 캐시가 필요하다.
+캐시는 Git에 없고 녹음 보관소도 아니다. 새 PC에서는 승인된 모델 캐시를 별도로 준비한다.
 
 `POST /api/speech/transcribe`는 raw audio body를 받고
 `text / language / model / device / duration_s / latency_ms`를 반환한다.
-`device=cuda`는 GPU 처리, `device=cpu`는 대체 처리를 뜻한다.
+현재 정상 응답은 `model=small`, `device=cpu`다. `device`만으로 실행 호스트를 구분할 수 없으므로 PC 서비스 health와 적용된 `STT_REMOTE_URL`도 확인한다.
 `latency_ms`는 각 인식 함수 내부의 디코딩·추론 시간으로, 브라우저 전송과
-VM↔GPU 전송을 모두 포함한 사용자 체감 시간이 아니다.
+VM↔PC 전송을 모두 포함한 사용자 체감 시간이 아니다.
 
 - 지원 형식: WebM, Ogg, WAV, MP4.
 - 413: 크기·길이 초과.
@@ -55,7 +52,7 @@ VM↔GPU 전송을 모두 포함한 사용자 체감 시간이 아니다.
 ## 개인정보·제한
 
 사용자가 누를 때만 마이크 권한을 요청한다. 음성은 SafeAlley backend를
-거쳐 사내 GPU 서버로 전달될 수 있으며 공개 외부 STT API에는 보내지 않는다.
+거쳐 PC의 Whisper로 전달되며 공개 외부 STT API에는 보내지 않는다.
 앱은 음성과 STT 텍스트를
 파일·DB·로그에 저장하지 않고 Nginx 음성 요청 버퍼링도 비활성화한다.
 이후 길찾기나 실시간 조건 분석에 전달되는 문장은 각 서비스의 정책을 따른다.

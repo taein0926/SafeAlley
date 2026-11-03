@@ -14,8 +14,25 @@ import package
 
 
 class PackageTests(unittest.TestCase):
-    def test_bundled_laya_runtime_matches_checkout(self):
-        """A source fix must not leave the distributable on an older adapter."""
+    def test_package_rejects_common_public_repository_credentials(self):
+        candidates = (
+            b'-----BEGIN ' + b'ENCRYPTED PRIVATE KEY-----',
+            b'-----BEGIN ' + b'DSA PRIVATE KEY-----',
+            b'gho_' + b'x' * 36,
+            b'glpat-' + b'x' * 24,
+            b'AKIA' + b'A' * 16,
+            b'AIza' + b'x' * 35,
+            b'xoxb-' + b'x' * 24,
+            b'sk-proj-' + b'x' * 40,
+        )
+        for candidate in candidates:
+            with self.subTest(prefix=candidate[:4]):
+                with self.assertRaisesRegex(ValueError, 'Potential credential') as error:
+                    package.check_content('example.txt', candidate)
+                self.assertNotIn(candidate.decode(), str(error.exception))
+
+    def test_bundled_runtime_and_docs_match_checkout(self):
+        """실행 코드·문서 변경을 전달본에서 빠뜨리지 않도록 검사한다."""
         bundle = package.ROOT / "SafeAlley-deploy.tar.gz"
         if not bundle.exists():
             self.skipTest("The nested distributable is excluded from source deployment packages")
@@ -23,16 +40,13 @@ class PackageTests(unittest.TestCase):
             bundle.with_suffix(bundle.suffix + '.sha256').read_text().strip(),
             hashlib.sha256(bundle.read_bytes()).hexdigest(),
         )
-        sources = sorted((package.ROOT / 'backend/app/services').glob('laya*.py'))
-        sources.append(package.ROOT / 'backend/app/api/intent_preview.py')
-        sources.extend(package.ROOT / name for name in (
-            'backend/app/services/distance_preference.py',
-            'backend/app/services/local_llm_service.py',
-        ))
+        names = {name for name in package.git('ls-files', '-z').decode().split('\0')
+                 if name and package.allowed(name)}
         with tarfile.open(bundle, 'r:gz') as archive:
             manifest = json.loads(archive.extractfile('SafeAlley/release.json').read())
-            for source in sources:
-                name = source.relative_to(package.ROOT).as_posix()
+            self.assertEqual(set(manifest['sha256']), names)
+            for name in sorted(names):
+                source = package.ROOT / name
                 with self.subTest(name=name):
                     data = archive.extractfile('SafeAlley/' + name).read()
                     self.assertEqual(data.replace(b'\r\n', b'\n'), source.read_bytes().replace(b'\r\n', b'\n'),

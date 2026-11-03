@@ -13,14 +13,15 @@ VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/RE
 
 서비스 구성도 편집 원본은 [SVG](assets/service-architecture.svg)이며 소스 전달본에도 포함합니다.
 로컬 `output`의 발표자료·화면정의서·구성도 이미지는 Git/배포 소스 압축본과 별도로 관리합니다.
-현재 안내용 발표자료는 `SafeAlley_발표자료_v3.pptx`이고, 이전 v1/v2·날짜별 기술별첨은
-당시 상태의 보관 자료이지 현재 배포 상태를 설명하는 정본이 아닙니다.
+기존 `SafeAlley_발표자료_v3.pptx`와 이전 발표자료는 당시 상태의 보관 자료입니다.
+현재 PC 모델 구성은 이 문서들과 SVG를 기준으로 확인하고 새 발표자료를 내보낼 때 반영합니다.
 
 - [시작](../README.md), [아키텍처](architecture.md), [DB](database-schema.md), [라우팅](routing.md)
 - [데이터 운영](data-pipeline.md), [건물 원천/매핑](building-data.md)
 - [날씨](weather.md), [음성](speech-input.md), [소개창](welcome-intro.md)
 - [검색 진행·후보/조건 카드](route-progress-floating-cards.md)
 - [테스트](testing.md), [배포](../deployment/README.md), [배포 점검](deployment-checklist.md)
+- [PC 모델 실행·VM 연결](../deployment/pc_ai/README.md), [공개 저장소 민감정보 점검](public-repository-security.md)
 
 ## 데이터·해석·운영
 
@@ -28,7 +29,7 @@ VM 운영·한 명령 업데이트의 정본은 [서버 배포](../deployment/RE
 - [건널목과 육교](intersection-routing.md)
 - [문장 해석·Laya/Jev](natural-language.md)
 - [Laya 연결·모델·전환·복구](laya-preview-provider.md)
-- [Ollama 연결/복구](ai-setup.md)
+- [PC AI 연결/복구](ai-setup.md)
 - [검색 처리와 캐시](ai-search-performance.md)
 
 [출처/라이선스](../NOTICE.md), [수정 규칙](../AGENTS.md).

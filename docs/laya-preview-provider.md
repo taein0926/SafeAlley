@@ -1,21 +1,25 @@
 # Optional Laya provider for live intent preview
 
-## 현재 운영 적용 (2026-10-21)
+## 현재 구성: PC Laya ONNX (2026-10-29 전환)
 
-아래 원래 MR 설명과 기본값은 유지하되, 현재 로컬·VM의 실제 선택은 GPU Laya입니다.
-최종 Gemma 검색·Whisper·DB·HTTPS는 그대로입니다. 새 설치가 자동으로 Laya를 켠다는 뜻은 아닙니다.
+현재 로컬·VM은 PC CPU의 Laya ONNX FP32 실행기를 사용한다. 설치·이미지/모델 이관·SSH 연결은
+[PC AI 운영 안내](../deployment/pc_ai/README.md)를 따른다. 최종 검색은 PC Gemma E2B,
+음성은 PC Whisper small CPU이며 VM은 모델을 실행하지 않는다.
 
-- GPU `safealley-laya.service`: 기존 `server.py --mode gpu`를 관리하고 실패 시 재시작합니다. 모델 가중치를 복사하거나 재학습하지 않습니다.
-- VM `safealley-laya-tunnel.service`: 별도 `safealley_laya` 키로 GPU의 `127.0.0.1:18761`에만 연결합니다. 기존 Gemma·Whisper 키·서비스와 분리합니다.
-- VM backend의 실제 URL은 `http://host.docker.internal:18762`입니다. host gateway `172.17.0.1`에만 바인딩하고 방화벽으로 SafeAlley Docker 대역만 허용합니다.
-- 고정 운영 `runtime/compose.json`은 이미 `private/service-env/backend.env`를 raw env_file로 읽습니다. 이 파일에 아래 provider 설정 5개를 넣고 기존 runtime으로 backend만 재생성합니다. 운영 runtime을 신규 Compose 예시로 대체하지 않습니다.
-- 일반 로컬 Compose에서는 아래 선택 override를 반드시 유지합니다. VM은 사용자 노트북의 SSH 연결에 의존하지 않습니다.
-- 상태 API와 실제 POST 응답의 모델 ID·조건 판정을 함께 확인합니다. 현재 updater의 status만으로 Laya 판정까지 검증된 것은 아닙니다.
+- 로컬 backend URL: `http://pc-laya:18761`.
+- VM backend URL: `http://host.docker.internal:18763` → VM 전달기·역방향 SSH → PC loopback `18761`.
+- 모델 ID: `laya-b3522f4d7939`. checkpoint SHA-256은 아래 계약과 동일하다.
+- PC AI override는 provider=laya, Laya 활성, Jev 비활성을 설정한다. 일반 템플릿 기본값은 별도다.
+- 상태 API의 세 true와 실제 POST 응답의 해시·8개 카드 판정을 확인한다.
+  모델 미준비·상태 오류 뒤 화면은 5초 간격으로 재확인하고 준비 후 현재 입력을 분석한다.
+- 연결 실패 시 유료 Jev 자동 대체는 없다. VM·PC 환경파일 변경은 실제 Compose 조합으로 재생성해야 한다.
+- PC 모델·실행 이미지·비공개 설정·DB는 Git과 소스 압축본에 포함하지 않는다.
 
-운영 전환 시 DB·설정 백업과 이전 `backend.env`를 `private/updates/laya-provider-*`에 보관합니다.
-provider 전환만 되돌릴 때는 해당 이전 env를 안전하게 복원하고 고정 runtime의 backend만 재생성합니다.
-앱 이미지 rollback은 env_file 내용을 되돌리지 않으므로 `runtime/update.py rollback`만으로 Jev가 복구된다고 생각하면 안 됩니다.
-키·인증서·DB 볼륨·모델 가중치를 삭제하지 않습니다. [운영 구성](../deployment/README.md)을 함께 확인합니다.
+## 이전 GPU 전환·평가 기록
+
+아래는 2026-10-21~22 GPU 서비스 전환 당시의 계약·검증 기록이다.
+아래 GPU 주소·systemd·터널·모델 설치 명령을 현재 PC 구성에 적용하지 않는다.
+API 계약과 backend 보정 흐름은 참고하되, 현재 실행 주소·기동·복구는 위 PC AI 안내를 기준으로 한다.
 
 ## Scope and default behavior
 

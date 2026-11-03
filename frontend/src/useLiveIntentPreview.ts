@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emptyConditionCards, type ConditionCard } from "./conditionCards";
-import { createPreviewScheduler, previewUnavailableMessage, requestIntentPreview, type PreviewStatus } from "./liveIntentPreview";
+import { createPreviewScheduler, createPreviewStatusMonitor, previewUnavailableMessage, requestIntentPreview, type PreviewStatus } from "./liveIntentPreview";
 import { createPreviewCompletion } from "./previewCompletion";
 
 export function useLiveIntentPreview() {
@@ -21,12 +21,25 @@ export function useLiveIntentPreview() {
     const controller = new AbortController();
     const completionGate = createPreviewCompletion({ onChange: setCompleted });
     completion.current = completionGate;
-    const refreshStatus = () => fetch("/api/agent/intent-preview/status", { signal: controller.signal })
-      .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<PreviewStatus>; })
-      .then((data) => {
-        if (!stopped) status.current = data;
-        return data;
-      });
+    const statusMonitor = createPreviewStatusMonitor({
+      request: () => fetch("/api/agent/intent-preview/status", { signal: controller.signal })
+        .then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<PreviewStatus>; }),
+      onStatus: (data) => {
+        if (stopped) return;
+        status.current = data;
+        if (!data?.available && latestText.current.trim()) {
+          setBlocked(true); setUpdating(false); setNotice(previewUnavailableMessage(data));
+        }
+      },
+      onAvailable: () => {
+        if (stopped) return;
+        setBlocked(false); setNotice(null);
+        if (latestText.current.trim()) {
+          completionGate.edit(latestText.current); localScheduler.update(latestText.current);
+        }
+      },
+    });
+    const refreshStatus = statusMonitor.refresh;
     const localScheduler = createPreviewScheduler({
       request: requestIntentPreview,
       // Keep the last accepted judgment visible while the revised input is evaluated.
@@ -51,18 +64,8 @@ export function useLiveIntentPreview() {
       onEmpty: () => { completionGate.reset(); analyzedText.current = ""; setActive(false); setCards(emptyConditionCards("not_applied")); setBlocked(false); setUpdating(false); setNotice(null); },
     });
     scheduler.current = localScheduler;
-    void refreshStatus()
-      .then((data) => {
-        if (!stopped) {
-          status.current = data;
-          if (latestText.current.trim()) {
-            if (data.available) { completionGate.edit(latestText.current); localScheduler.update(latestText.current); }
-            else { setBlocked(true); setNotice(previewUnavailableMessage(data)); }
-          }
-        }
-      })
-      .catch(() => { if (!stopped) status.current = null; });
-    return () => { stopped = true; controller.abort(); localScheduler.dispose(); scheduler.current = null; completionGate.dispose(); completion.current = null; };
+    void refreshStatus().catch(() => {});
+    return () => { stopped = true; statusMonitor.dispose(); controller.abort(); localScheduler.dispose(); scheduler.current = null; completionGate.dispose(); completion.current = null; };
   }, []);
 
   const update = useCallback((text: string) => {

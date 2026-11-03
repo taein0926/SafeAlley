@@ -33,6 +33,13 @@ build/
 /deployment/.private/
 *.dump
 *.dump.sha256
+# 공개 저장소에 개인키·인증서 저장소를 추가하지 않는다.
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa
+id_ed25519
 
 data_pipeline/raw/*
 !data_pipeline/raw/.gitkeep

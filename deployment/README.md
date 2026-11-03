@@ -12,62 +12,65 @@ PC가 켜져 있고 Windows 로그인·Docker·Ollama·SSH 연결이 유지되�
 설치·기동·장애 확인은 [PC AI 운영 안내](pc_ai/README.md)를 참고하세요.
 VM 배포에는 아래 기존 고정 `runtime/compose.json`과 `vm_update.py`를 계속 사용합니다.
 
-## 1. 이전 구성: VM 앱 + GPU Ollama
+## VM 웹 접속·관리자 SSH
 
-VM에서 frontend/backend/database/weather를 실행하고 기존 GPU 호스트 Ollama와 별도 GPU Whisper 서비스를 사용합니다.
-신규 구성 템플릿은 루트 docker-compose.yml + deployment/compose.vm.override.yml입니다.
-2026-10-20 기존 VM은 아래 고정 `runtime/compose.json` 구조로 전환했습니다.
-템플릿을 현재 VM 위에 그대로 적용하지 않습니다.
-manage.py는 아래 단일 GPU 대안 전용이므로 VM override 작업에 혼용하지 않습니다.
+웹 주소는 `https://ltmetric-pms.synology.me:21802/`입니다.
+관리자 SSH는 아래 계정·포트를 사용합니다. 기존 승인된 개인키와 검증한 서버 지문이 필요합니다.
+비밀번호·개인키·known_hosts·실제 연결 설정은 저장소에 넣지 않습니다.
+
+```powershell
+ssh -o StrictHostKeyChecking=yes -p 22203 ltmetric@ltmetric-pms.synology.me
+```
+
+관리자 SSH는 셸 작업용이며 PC AI 터널의 제한된 전용 키와 별개입니다.
+PC AI 터널은 [PC AI 안내](pc_ai/README.md)의 `start.ps1 -ConnectVm -TunnelOnly`로 연결합니다.
+
+## 현재 요청 경로와 설정
 
 ```text
-브라우저 HTTPS :21802 → 승인된 TCP 포워딩 → VM :8081 → frontend Nginx :80 (TLS)
-                                        └→ backend(FastAPI) → PostGIS
-                                                          → host gateway:11435 → SSH 터널 → GPU Ollama
-                                                          → host gateway:11436 → SSH 터널 → GPU Whisper
-                            weather 배치 → KMA/KASI → PostGIS
+브라우저 HTTPS :21802 → VM :8081 → frontend Nginx :80 (TLS)
+                                  └→ backend(FastAPI) → PostGIS
+                                                    → 전달기 :11439 → SSH → PC Gemma E2B
+                                                    → 전달기 :11440 → SSH → PC Whisper small
+                                                    → 전달기 :18763 → SSH → PC Laya ONNX
+                      weather 배치 → KMA/KASI → PostGIS
 브라우저 → 외부 OSM 타일 (직접 요청)
 ```
 
-- 현재 VM은 `0.0.0.0:8081 → frontend:80`이며 Nginx가 그 포트에서 HTTPS를 받습니다.
-  외부 주소는 `https://ltmetric-pms.synology.me:21802/`입니다. backend/DB는 호스트에 공개하지 않습니다.
-  템플릿의 `127.0.0.1:8080`은 신규 설치용 안전 기본값이지 현재 운영 포트가 아닙니다.
-- 자체 서명 인증서는 `private/tls-f6b47f3/`에 있습니다. 인증서·개인키·Nginx 설정을 삭제하지 않습니다.
-  HTTP 요청은 Nginx error 497 처리로 외부 HTTPS 주소로 이동합니다. 인증서를 신뢰하지 않는
-  브라우저는 경고를 표시합니다. 예외 접속 후 마이크를 확인하고, 차단되면 인증서 신뢰 등록을 검토합니다.
-  현재 인증서 만료는 2027-10-20 UTC이며 갱신과 브라우저 테스트가 필요합니다.
-- 터널은 승인된 GPU Ollama loopback 11434를 Docker host gateway 11435로 연결합니다.
-  gateway 주소/방화벽/SSH 키·서버 지문·재연결 방식은 실제 서버에 맞춰 관리합니다.
-- backend 설정 주소는 http://host.docker.internal:11435입니다. 저장소의 일반 실행·VM 분리·단일 GPU
-  구성은 모두 `gemma4:26b`를 기본값으로 사용하며 현재 VM에서도 이 모델을 사용합니다.
-  모델 값은 매 배포마다 적용된 비공개 설정과 backend 환경에서 확인합니다.
-- GPU 서버의 기존 Ollama/모델/다른 서비스는 임의로 재시작하거나 교체하지 않습니다.
-- 음성은 VM FastAPI에서만 받습니다. GPU Whisper는 GPU 서버의 127.0.0.1에만 바인딩하고
-  별도 제한된 SSH 키/터널로 연결합니다. 터널이 일시 중단되면 VM의 CPU Whisper로 대체합니다.
-  `backend/app/services/gpu_stt_server.py`는 GPU 호스트에서 별도 Python 환경으로 실행하며
-  `STT_MODEL=small`, `STT_MODEL_DIR`와 CUDA 12/cuDNN 9 런타임을 사용합니다.
-- 신규 템플릿은 비공개 .env, 현재 VM은 private/service-env/에 DB 비밀번호·날씨 키·실제 모델을 설정합니다.
-  Jev는 별도 승인 시에만 JEV_PREVIEW_ENABLED/TYPESAFE_API_KEY를 넣습니다.
+- 현재 VM은 `0.0.0.0:8081 → frontend:80`에서 HTTPS를 받습니다. backend/DB는 호스트에 공개하지 않습니다.
+  신규 VM 템플릿의 `127.0.0.1:8080`은 현재 운영 포트와 다릅니다.
+- 자체 서명 인증서·개인키·Nginx 설정은 `private/tls-f6b47f3/`에서 보존합니다.
+  HTTP 요청은 Nginx error 497 처리로 HTTPS 주소로 이동합니다. 서버 인증서를 확인한 뒤
+  브라우저 예외 접속 또는 신뢰 등록 후 실제 마이크 권한을 확인합니다.
+  보관된 인증서 만료 기록은 2027-10-20 UTC이며 실제 인증서로 재확인합니다.
+- PC의 SSH 연결 관리자가 세 역방향 loopback 포트를 유지하고 VM 전달기가 앱 네트워크로 연결합니다.
+  모델 API를 인터넷에 공개하지 않으며 gateway 주소·방화벽·SSH 지문은 실제 환경에 맞춥니다.
+- VM backend는 `OLLAMA_BASE_URL=http://host.docker.internal:11439`,
+  `OLLAMA_MODEL=gemma4:e2b-it-qat`, `STT_REMOTE_URL=http://host.docker.internal:11440`,
+  `LAYA_PREVIEW_URL=http://host.docker.internal:18763`을 사용합니다.
+- 음성은 PC의 `pc-whisper`에서 CPU INT8·2스레드로 처리합니다.
+  `STT_LOCAL_FALLBACK=false`이므로 PC 연결 실패 시 VM에서 Whisper를 실행하지 않습니다.
+  `backend/app/services/gpu_stt_server.py`는 파일 이름과 달리 현재 PC에서 CPU 모드로 실행합니다.
+- 실제 DB·날씨 키·모델 설정은 VM `private/service-env/`에 보관합니다.
+  로컬은 비공개 `.env`와 `deployment/compose.pc-ai.yml`을 사용합니다.
+  일반 Compose·VM override·단일 GPU 템플릿은 이전 설치용이며 현재 runtime을 덮어쓰지 않습니다.
 
-### 현재 입력 중 요구사항 분석: GPU Laya
+### 입력 중 요구사항 분석: PC Laya
 
-2026-10-21 로컬·VM은 Laya `laya-b3522f4d7939`를 명시적으로 선택합니다.
-최종 문장 해석은 기존 Ollama `gemma4:26b`, 음성은 기존 GPU Whisper이며 DB·TLS를 교체하지 않습니다.
-새 설치 템플릿은 계속 Jev 선택·미리보기 비활성이 기본입니다. 병합·일반 업데이트만으로 provider가 자동 전환되지 않습니다.
+로컬·VM은 PC CPU의 ONNX 실행기에서 Laya `laya-b3522f4d7939`를 사용합니다.
+로컬 backend는 `http://pc-laya:18761`, VM backend는 위 전달기 주소를 사용합니다.
+검증한 이미지·ONNX·메타데이터는 별도 이관해야 하며 Git 복제로 설치되지 않습니다.
+현재 PC AI override는 `INTENT_PREVIEW_PROVIDER=laya`, `LAYA_PREVIEW_ENABLED=true`,
+`JEV_PREVIEW_ENABLED=false`를 설정합니다. 일반 템플릿의 비활성 기본값과 구분합니다.
 
-- GPU: `safealley-laya.service`가 기존 checkpoint와 Python 환경을 실행합니다. loopback `127.0.0.1:18761`만 수신합니다.
-- VM: `safealley-laya-tunnel.service`가 별도 제한 키와 검증된 지문으로 Docker host gateway `172.17.0.1:18762`를 GPU에 연결합니다.
-- VM의 `SAFEALLEY_LAYA` INPUT 체인은 해당 주소·포트에만 적용하고 SafeAlley public Docker 대역을 허용합니다. 외부 포트나 다른 프로젝트 경로는 열지 않습니다.
-- 기존 Ollama·Whisper 프로세스·SSH 터널은 재사용하며 Laya 때문에 재시작하지 않습니다.
-- 고정 runtime의 `private/service-env/backend.env`는 raw env_file이므로 provider 5개 값을 전달합니다. 이 VM에서 루트 Compose나 신규 override를 덮어쓰지 않습니다.
-- 일반 로컬 Compose는 [Laya override](compose.laya-preview.override.yml)를 명시적으로 추가해야 합니다.
-- 실제 상태는 `/api/agent/intent-preview/status`의 세 true와 POST 응답 `model=laya-b3522f4d7939`로 확인합니다. `runtime/update.py status`는 기존 GPU 연결을 검사하지만 Laya 실제 판정은 별도 확인합니다.
-- Jev 키는 비공개 복구 설정에 보존하되 `JEV_PREVIEW_ENABLED=false`로 비활성화합니다. Laya 실패 시 유료 Jev 자동 fallback은 없습니다.
+상태 API `/api/agent/intent-preview/status`의 세 true와 실제 POST 응답의
+`model=laya-b3522f4d7939`·8개 카드 판정을 확인합니다. 모델이 늦게 준비되면 화면이
+5초 간격으로 상태를 재확인하고 준비 후 현재 입력을 분석합니다. 화면 종료 시 재확인을 중단합니다.
+Laya 실패 시 유료 Jev 자동 fallback은 없습니다.
+[PC 모델 준비·연결](pc_ai/README.md)과 [Laya 계약·검증](../docs/laya-preview-provider.md)을 따릅니다.
 
-[모델 위치·연결·검증·복구](../docs/laya-preview-provider.md)를 따릅니다.
-VM Docker CLI가 기존 Buildx/Compose를 못 찾으면 도구를 재설치하거나 데몬을 재시작하기 전에
-클라이언트 plugin 경로를 점검합니다. 현재 사용자 설정에는 `cliPluginsExtraDirs`로
-`/usr/libexec/docker/cli-plugins`를 명시합니다. 인증정보는 이 설정에 기록하지 않습니다.
+VM Docker CLI가 기존 Buildx/Compose를 못 찾으면 데몬 재시작 전에 client plugin 경로를 확인합니다.
+현재 구성의 `cliPluginsExtraDirs`는 `/usr/libexec/docker/cli-plugins`를 가리킵니다.
 
 ### 현재 VM의 한 명령 업데이트
 
@@ -109,8 +112,8 @@ python3 ~/safealley-deploy/runtime/update.py status
 ```
 
 도구는 체크섬·manifest·파일 경로 검증 → DB 백업·검증 → 변경된 backend/frontend/weather
-이미지 빌드 → Nginx TLS 설정 검사 → 앱 컨테이너 교체 → HTTPS/API/정적 파일·GPU 연결을 확인합니다.
-database 컨테이너·기존 데이터 볼륨·외부 포트·터널·GPU 서비스는 일반 업데이트에서 교체하지 않습니다.
+이미지 빌드 → Nginx TLS 설정 검사 → 앱 컨테이너 교체 → HTTPS/API/정적 파일·PC 모델 연결을 확인합니다.
+database 컨테이너·기존 데이터 볼륨·외부 포트·터널·PC 모델는 일반 업데이트에서 교체하지 않습니다.
 같은 커밋은 검증과 이미지 정리만 하고 빌드·교체하지 않습니다.
 `--rebuild`는 동일 버전의 재빌드·교체를 명시적으로 요청합니다.
 
@@ -173,9 +176,15 @@ status/update는 운영 설정을 임의로 최신 기본값으로 바꾸지 않
 현재 VM의 `update`는 신규 설치/DB 복원 명령이 아닙니다. head는 0016입니다.
 `adopt`/`finalize`는 기존 릴리스 구조를 최초 한 번 전환하는 관리자 명령이며 매 배포마다 실행하지 않습니다.
 컨테이너는 running/healthy라도 실제 장소·경로·날씨·마이크까지 자동 검증됐다는 뜻은 아닙니다.
-업데이트 후 브라우저에서 확인합니다. GPU endpoint 점검은 LLM live 추론·STT 발화 정확도 평가가 아닙니다.
+업데이트 후 브라우저에서 확인합니다. 모델 endpoint 점검은 LLM live 추론·STT 발화 정확도 평가가 아닙니다.
 
-### 노트북 개발 환경에서 GPU 음성 사용
+## 이전 GPU 구성과 별도 설치 대안
+
+이 절은 과거 설치 호환용입니다. 현재 PC AI 구성에 적용하지 않습니다.
+루트 Compose·VM override·단일 GPU 템플릿의 기본 모델 `gemma4:26b`는 유지합니다.
+현재 PC AI override는 `gemma4:e2b-it-qat`와 CPU Whisper·Laya를 명시합니다.
+
+### 이전 노트북 개발 환경에서 GPU 음성 사용
 
 로컬 Docker는 기본적으로 CPU 음성 인식을 사용합니다. 승인된 GPU 서버에 Whisper가
 설치되어 있다면, 노트북 사용자 전용 SSH 키를 GPU 서버의 Whisper 포트에만 허용하고
@@ -183,10 +192,10 @@ status/update는 운영 설정을 임의로 최신 기본값으로 바꾸지 않
 `127.0.0.1:11436` 터널을 엽니다. 서버 접속에는 노트북 터널이 필요하지 않습니다.
 키와 서버 지문은 사용자 `.ssh`에 두고 저장소에 넣지 않습니다. 로컬 비공개 `.env`에는
 `STT_REMOTE_URL=http://host.docker.internal:11436`을 설정합니다. GPU 연결이 끊기면
-VM과 동일하게 로컬 Docker 백엔드의 CPU Whisper로 대체됩니다. 터널이 살아 있는지는
+이전 VM 구성처럼 로컬 Docker 백엔드의 CPU Whisper로 대체됩니다. 현재 PC AI 구성에는 이 대체 정책을 적용하지 않습니다. 터널이 살아 있는지는
 `http://127.0.0.1:11436/health`로, 실제 음성 응답의 `device`가 `cuda`인지로 확인합니다.
 
-## 2. 단일 GPU 서버 대안
+### 단일 GPU 서버 대안
 
 deployment/compose.yml은 GPU Ollama 컨테이너까지 같은 프로젝트에 구성하는 별도 설치 방식입니다.
 deployment/manage.py는 이 Compose와 deployment/.env를 사용하고 프로젝트 이름은 safealley-deploy입니다.
@@ -254,8 +263,8 @@ frontend 이미지 빌드는 공개 정적 파일의 권한을 디렉터리 755/
 ## 검증·운영
 
 [전체 테스트](../docs/testing.md), [배포 점검](../docs/deployment-checklist.md)을 따릅니다.
-소스 테스트 통과는 실제 GPU/음성/포워딩/HTTPS 검증의 대체가 아닙니다.
-실제 요청 후 GPU 호스트 ollama ps, 대상 DB·migration·정밀 시설 좌표·타일·날씨를 확인합니다.
+소스 테스트 통과는 실제 PC 모델/음성/포워딩/HTTPS 검증의 대체가 아닙니다.
+실제 요청 후 PC의 ollama ps, 대상 DB·migration·정밀 시설 좌표·타일·날씨를 확인합니다.
 proxy는 스트림 buffering off, query 읽기 timeout 660초, 음성 8MB/180초를 유지합니다.
 마이크는 localhost 개발 또는 HTTPS에서 사용합니다.
 

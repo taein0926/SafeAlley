@@ -20,13 +20,13 @@ SQL·좌표를 모델이 임의 생성하도록 하지 않습니다.
 
 ## 입력 중 미리보기(Laya / Jev)
 
-현재 로컬·VM은 GPU 서버의 Laya `laya-b3522f4d7939`를 사용합니다. FastAPI가 모델 해시·입력 버전·
-8개 판단값을 검사하고 고정 v6 보정을 적용합니다. 최종 검색은 Laya가 아니라 기존 Gemma가 해석합니다.
+현재 로컬·VM은 PC CPU의 Laya ONNX `laya-b3522f4d7939`를 사용합니다. FastAPI가 모델 해시·입력 버전·
+8개 판단값을 검사하고 고정 v6 보정을 적용합니다. 최종 검색은 PC의 Gemma4 E2B가 해석합니다.
 Laya는 TypeSafe API 키를 사용하지 않으며 장애 시 Jev를 자동 호출하지 않습니다.
 연결·선택·복구는 [Laya 안내](laya-preview-provider.md)를 따릅니다. 아래 Jev 설명은 해당 provider를
 명시적으로 선택했을 때의 동작이며, 새 설치 템플릿 기본값은 Jev 선택·미리보기 비활성입니다.
 
-입력 중 전체 문장은 별도 TypeSafe API로 전달될 수 있으므로 민감한 주소/개인정보 입력을 주의합니다.
+Jev를 명시적으로 선택하면 입력 중 전체 문장은 별도 TypeSafe API로 전달될 수 있으므로 민감한 주소/개인정보 입력을 주의합니다.
 JEV_PREVIEW_ENABLED=true와 서버 TYPESAFE_API_KEY가 모두 필요하며 기본은 비활성화입니다.
 상태 API는 enabled/configured/available만 반환하고 키를 노출하지 않습니다.
 이는 유료 외부 서비스이고 Ollama 문장 검색과는 별개입니다.
@@ -82,7 +82,7 @@ backend/evals에는 문장·역할·시간·조건 방향·회피·추가/누락
 실제 모델 live 평가는 운영자의 외부 호출·부하 허용 범위에서 별도로 수행합니다.
 
 아래는 소스가 있는 로컬 평가 환경 예시다. 현재 VM은 고정 runtime 설정을 사용하며,
-운영 GPU live 평가는 승인 후 [평가 안내](../backend/evals/README.md)의 서버 명령으로 실행한다.
+실제 모델 평가는 승인 후 [평가 안내](../backend/evals/README.md)의 서버 명령으로 실행한다.
 
 ```powershell
 # 실행 모델/설정과 공간 DB를 먼저 확인합니다.

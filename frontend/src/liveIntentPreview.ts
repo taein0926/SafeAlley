@@ -3,6 +3,45 @@ import { CONDITION_ORDER, type ConditionCard } from "./conditionCards.ts";
 export type PreviewResponse = { query: string; model: string; conditions: ConditionCard[]; cached?: boolean };
 export type PreviewStatus = { enabled: boolean; configured: boolean; available: boolean };
 
+export function createPreviewStatusMonitor(options: {
+  request: () => Promise<PreviewStatus>;
+  onStatus: (status: PreviewStatus | null) => void;
+  onAvailable: () => void;
+  retryDelayMs?: number;
+}) {
+  let disposed = false;
+  let available = false;
+  let pending: Promise<PreviewStatus> | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  function retry() {
+    if (!disposed && timer === undefined) {
+      timer = setTimeout(() => { timer = undefined; void refresh().catch(() => {}); }, options.retryDelayMs ?? 5000);
+    }
+  }
+  function refresh(): Promise<PreviewStatus> {
+    if (disposed) return Promise.reject(new Error("조건 분석 상태 확인이 종료되었습니다."));
+    if (pending) return pending;
+    pending = options.request().then((data) => {
+      if (!disposed) {
+        const recovered = data.available && !available;
+        available = data.available;
+        options.onStatus(data);
+        if (available) {
+          if (timer !== undefined) clearTimeout(timer);
+          timer = undefined;
+          if (recovered) options.onAvailable();
+        } else retry();
+      }
+      return data;
+    }).catch((error: unknown) => {
+      if (!disposed) { available = false; options.onStatus(null); retry(); }
+      throw error;
+    }).finally(() => { pending = null; });
+    return pending;
+  }
+  return { refresh, dispose() { disposed = true; if (timer !== undefined) clearTimeout(timer); } };
+}
+
 const previewSessionId = typeof globalThis.crypto?.randomUUID === "function"
   ? globalThis.crypto.randomUUID()
   : `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
